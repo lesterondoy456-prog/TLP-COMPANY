@@ -1,0 +1,16 @@
+{
+  "name": "salesport-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js --production"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "mssql": "12.7.14"
+  }
+}
