@@ -35,12 +35,15 @@ test('product customer approvals validate identity and date order while retainin
 });
 
 test('partial product edits preserve child collections and stock, while explicit empty arrays clear only that collection', () => {
-  const existing = validateProduct({ ...product(), stock: 5, processes: [{ name: 'Printing' }], offices: [{ name: 'TLP COMPANY' }], inventorySetup: 'monthly', inventorySchedules: [{ scheduleDate: null, month: 'November' }] });
+  const existing = validateProduct({ ...product(), stock: 5, processes: [{ name: 'Printing' }], offices: [{ name: 'TLP COMPANY' }], inventorySetup: 'monthly' });
   const edited = validateProduct({ revision: '2' }, existing);
   assert.equal(edited.stock, 5);
   assert.deepEqual(edited.linkedSupplies, existing.linkedSupplies);
   assert.deepEqual(edited.processes, existing.processes);
-  assert.deepEqual(edited.inventorySchedules, existing.inventorySchedules);
+  assert.equal(edited.inventorySetup, 'monthly');
+  const setupChanged = validateProduct({ inventorySetup: 'quarterly' }, existing);
+  assert.equal(setupChanged.inventorySetup, 'quarterly');
+  assert.equal(setupChanged.stock, 5);
   const cleared = validateProduct({ linkedSupplies: [] }, existing);
   assert.deepEqual(cleared.linkedSupplies, []);
   assert.deepEqual(cleared.processes, existing.processes);

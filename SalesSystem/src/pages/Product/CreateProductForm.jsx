@@ -37,7 +37,27 @@ const NUMBER_FIELDS = {
   thickness: { label: 'Thickness', places: 6 },
   weight: { label: 'Weight', places: 6 },
 };
-const ROW_LIMITS = { processes: 100, offices: 50, customerApprovals: 100, inventorySchedules: 100, linkedSupplies: 200 };
+const ROW_LIMITS = { processes: 100, offices: 50, customerApprovals: 100, linkedSupplies: 200 };
+const MONTHLY_SCHEDULE = [
+  { sched: 'Apr-30', month: 'April' },
+  { sched: 'Aug-31', month: 'August' },
+  { sched: 'Dec-31', month: 'December' },
+  { sched: 'Feb-28', month: 'February' },
+  { sched: 'Jan-31', month: 'January' },
+  { sched: 'Jul-31', month: 'July' },
+  { sched: 'Jun-30', month: 'June' },
+  { sched: 'Mar-31', month: 'March' },
+  { sched: 'May-31', month: 'May' },
+  { sched: 'Nov-30', month: 'November' },
+  { sched: 'Oct-31', month: 'October' },
+  { sched: 'Sep-30', month: 'September' },
+];
+const QUARTERLY_SCHEDULE = [
+  { sched: 'Dec-31', month: 'December' },
+  { sched: 'Jun-30', month: 'June' },
+  { sched: 'Mar-31', month: 'March' },
+  { sched: 'Sep-30', month: 'September' },
+];
 
 function initialValues(record) {
   const text = Object.fromEntries(Object.entries(TEXT_FIELDS).map(([key, field]) => [key, record?.[key] ?? field.initial ?? '']));
@@ -51,7 +71,6 @@ function initialValues(record) {
     offices: (record?.offices || []).map(row => ({ name: row.name || '', selected: true })),
     customerApprovals: (record?.customerApprovals || []).map(row => ({ ...row, approvalDate: dateInput(row.approvalDate), eolDate: dateInput(row.eolDate) })),
     inventorySetup: record?.inventorySetup ?? '',
-    inventorySchedules: (record?.inventorySchedules || []).map(row => ({ ...row, scheduleDate: dateInput(row.scheduleDate), month: row.month || '' })),
     linkedSupplies: (record?.linkedSupplies || []).map(row => ({ ...row })),
     isActive: record?.isActive !== false,
   };
@@ -92,6 +111,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
   const supplies = (options.supplies || []).filter(row => row.isActive !== false);
   const headers = (options.headers || []).filter(row => Number(row.id) !== Number(record?.id));
   const officeNames = [...new Set(['TLP COMPANY', ...(options.offices || []), ...form.offices.map(row => row.name)])].filter(Boolean);
+  const inventorySchedule = form.inventorySetup === 'monthly' ? MONTHLY_SCHEDULE : form.inventorySetup === 'quarterly' ? QUARTERLY_SCHEDULE : [];
 
   function set(key, value) {
     setForm(current => ({ ...current, [key]: value }));
@@ -211,7 +231,6 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
         eolRemarks: (row.eolRemarks || '').trim(),
       }));
     body.inventorySetup = form.inventorySetup;
-    body.inventorySchedules = form.inventorySchedules.map(row => ({ scheduleDate: row.scheduleDate || null, month: (row.month || '').trim() }));
     body.linkedSupplies = form.linkedSupplies.map(row => ({ suppliesId: Number(row.suppliesId), quantity: Number(row.quantity), unit: row.unit || '' }));
     body.isActive = record ? form.isActive : true;
     setBusy(true);
@@ -239,7 +258,6 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
               <section className="product-section">
                 <h3>Basic Information</h3>
                 <div className="product-fields">
-                  <label className="field"><span>Product Id</span><input value={record?.id ?? ''} readOnly /></label>
                   {textField('sku')}
                   {textField('revision')}
                   <label className="field product-span-2" htmlFor={fieldId('description')}><span>Description</span><textarea {...controlProps('description', 'Description')} rows={3} maxLength={1000} value={form.description} onChange={event => set('description', event.target.value)} />{fieldError('description')}</label>
@@ -300,12 +318,8 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
             <section className="product-section">
               <h3>Inventory Setup</h3>
               <label className="field product-inventory-setup" htmlFor={fieldId('inventorySetup')}><span>Inventory Setup</span><select {...controlProps('inventorySetup', 'Inventory Setup')} value={form.inventorySetup} onChange={event => set('inventorySetup', event.target.value)}><option value="">None</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option></select></label>
-              <div className="product-section-heading product-schedule-heading"><h3>Schedule</h3><button type="button" className="button secondary small" disabled={form.inventorySchedules.length >= ROW_LIMITS.inventorySchedules} onClick={() => set('inventorySchedules', [...form.inventorySchedules, { scheduleDate: '', month: '' }])}>Add schedule</button></div>
-              <div className="table-scroll product-line-table"><table><thead><tr><th>Sched</th><th>Month</th><th>Actions</th></tr></thead><tbody>{form.inventorySchedules.map((row, index) => <tr key={index}>
-                <td><input {...controlProps('inventorySchedules.' + index + '.scheduleDate', 'Sched ' + (index + 1))} type="date" value={row.scheduleDate || ''} onChange={event => updateRow('inventorySchedules', index, 'scheduleDate', event.target.value)} />{fieldError('inventorySchedules.' + index + '.scheduleDate')}</td>
-                <td><input {...controlProps('inventorySchedules.' + index + '.month', 'Month ' + (index + 1))} value={row.month || ''} maxLength={40} onChange={event => updateRow('inventorySchedules', index, 'month', event.target.value)} />{fieldError('inventorySchedules.' + index + '.month')}</td>
-                <td><button type="button" className="icon-button danger-text" aria-label={'Remove schedule ' + (index + 1)} onClick={() => removeRow('inventorySchedules', index)}><Icon name="x" size={16} /></button></td>
-              </tr>)}{!form.inventorySchedules.length && <tr><td colSpan={3} className="product-empty-rows">No inventory schedules added.</td></tr>}</tbody></table></div>
+              <div className="product-section-heading product-schedule-heading"><h3>Schedule</h3></div>
+              <div className="table-scroll product-line-table"><table aria-label="Inventory schedule"><thead><tr><th>Sched</th><th>Month</th></tr></thead><tbody>{inventorySchedule.map(row => <tr key={row.sched}><td>{row.sched}</td><td>{row.month}</td></tr>)}{!inventorySchedule.length && <tr><td colSpan={2} className="product-empty-rows">Select Monthly or Quarterly to view the schedule.</td></tr>}</tbody></table></div>
             </section>
           </div>
           <div role="tabpanel" id={formId + '-panel-supplies'} aria-labelledby={formId + '-tab-supplies'} hidden={tab !== 'supplies'}>

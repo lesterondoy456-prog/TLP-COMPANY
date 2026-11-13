@@ -485,7 +485,7 @@ router.delete('/products/:id', async (req, res) => {
   });
 });
 
-// Product master with customer approvals, schedules and linked supplies.
+// Product master with customer approvals, inventory setup and linked supplies.
 router.get('/products', async (req, res) => {
   const recordsQuery = request();
   const recordsResult = await recordsQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[planType],p.[color],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[thickness],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
@@ -494,7 +494,6 @@ router.get('/products', async (req, res) => {
     SELECT productId,name FROM dbo.ProductProcesses  ORDER BY productId,position;
 SELECT productId,name FROM dbo.ProductOffices  ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals  ORDER BY productId,position;
-SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules  ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId  ORDER BY l.productId,l.position;`);
   const productsById = new Map(recordsResult.recordsets[0].map(productRow => [productRow.id, {
@@ -502,7 +501,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     processes: [],
     offices: [],
     customerApprovals: [],
-    inventorySchedules: [],
     linkedSupplies: []
   }]));
   for (const {
@@ -520,11 +518,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordsResult.recordsets[4]) productsById.get(linkedProductId)?.["inventorySchedules"].push(productRow);
-  for (const {
-    productId: linkedProductId,
-    ...productRow
-  } of recordsResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  } of recordsResult.recordsets[4]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordsRows = [...productsById.values()];
   const records = recordsRows;
   res.json({
@@ -547,7 +541,6 @@ router.get('/products/:id', async (req, res) => {
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
 SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
-SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
   const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
@@ -555,7 +548,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     processes: [],
     offices: [],
     customerApprovals: [],
-    inventorySchedules: [],
     linkedSupplies: []
   }]));
   for (const {
@@ -573,11 +565,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.["inventorySchedules"].push(productRow);
-  for (const {
-    productId: linkedProductId,
-    ...productRow
-  } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
   if (!recordRows.length) {
     const error = new Error('The product could not be found.');
@@ -635,7 +623,6 @@ router.post('/products', async (req, res) => {
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
 SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
-SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
       const productsById2 = new Map(currentResult.recordsets[0].map(productRow => [productRow.id, {
@@ -643,7 +630,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         processes: [],
         offices: [],
         customerApprovals: [],
-        inventorySchedules: [],
         linkedSupplies: []
       }]));
       for (const {
@@ -661,11 +647,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       for (const {
         productId: linkedProductId,
         ...productRow
-      } of currentResult.recordsets[4]) productsById2.get(linkedProductId)?.["inventorySchedules"].push(productRow);
-      for (const {
-        productId: linkedProductId,
-        ...productRow
-      } of currentResult.recordsets[5]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
+      } of currentResult.recordsets[4]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
       const currentRows = [...productsById2.values()];
       if (!currentRows.length) {
         const error = new Error('The product could not be found.');
@@ -688,7 +670,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       customerApprovals: [],
       linkedSupplies: [],
       inventorySetup: '',
-      inventorySchedules: [],
       ...(current || {})
     };
     for (const key of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
@@ -748,19 +729,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
           eolDate: row.eolDate || null,
           approvalRemarks: typeof row.approvalRemarks === 'string' ? row.approvalRemarks.trim() : '',
           eolRemarks: typeof row.eolRemarks === 'string' ? row.eolRemarks.trim() : ''
-        };
-      });
-    }
-    if (Object.hasOwn(input, 'inventorySchedules') && input['inventorySchedules'] !== undefined) {
-      if (!Array.isArray(input.inventorySchedules) || input.inventorySchedules.length > 100) {
-        const error = new Error('The submitted collection exceeds the supported size.');
-        error.status = 400;
-        throw error;
-      }
-      product.inventorySchedules = input.inventorySchedules.map(row => {
-        return {
-          scheduleDate: row.scheduleDate || null,
-          month: typeof row.month === 'string' ? row.month.trim() : ''
         };
       });
     }
@@ -919,12 +887,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('customerId', sql.Int, row.customerId).input('approvalDate', sql.VarChar(sql.MAX), row.approvalDate).input('eolDate', sql.VarChar(sql.MAX), row.eolDate).input('approvalRemarks', sql.NVarChar(sql.MAX), row.approvalRemarks).input('eolRemarks', sql.NVarChar(sql.MAX), row.eolRemarks).query('INSERT INTO dbo.ProductCustomerApprovals(productId,position,customerId,approvalDate,eolDate,approvalRemarks,eolRemarks) VALUES(@id,@position,@customerId,@approvalDate,@eolDate,@approvalRemarks,@eolRemarks)');
       }
     }
-    if (!current || Object.hasOwn(input, 'inventorySchedules') && input.inventorySchedules !== undefined) {
-      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductInventorySchedules WHERE productId=@id');
-      for (const [position, row] of product.inventorySchedules.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(sql.MAX), row.scheduleDate).input('month', sql.NVarChar(sql.MAX), row.month).query('INSERT INTO dbo.ProductInventorySchedules(productId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
-      }
-    }
     if (!current || Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductSupplies WHERE productId=@id');
       for (const [position, row] of product.linkedSupplies.entries()) {
@@ -942,7 +904,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
 SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
-SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
   const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
@@ -950,7 +911,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     processes: [],
     offices: [],
     customerApprovals: [],
-    inventorySchedules: [],
     linkedSupplies: []
   }]));
   for (const {
@@ -968,11 +928,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.["inventorySchedules"].push(productRow);
-  for (const {
-    productId: linkedProductId,
-    ...productRow
-  } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
   if (!recordRows.length) {
     const error = new Error('The product could not be found.');
@@ -1015,7 +971,6 @@ router.put('/products/:id', async (req, res) => {
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
 SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
-SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
       const productsById2 = new Map(currentResult.recordsets[0].map(productRow => [productRow.id, {
@@ -1023,7 +978,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         processes: [],
         offices: [],
         customerApprovals: [],
-        inventorySchedules: [],
         linkedSupplies: []
       }]));
       for (const {
@@ -1041,11 +995,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       for (const {
         productId: linkedProductId,
         ...productRow
-      } of currentResult.recordsets[4]) productsById2.get(linkedProductId)?.["inventorySchedules"].push(productRow);
-      for (const {
-        productId: linkedProductId,
-        ...productRow
-      } of currentResult.recordsets[5]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
+      } of currentResult.recordsets[4]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
       const currentRows = [...productsById2.values()];
       if (!currentRows.length) {
         const error = new Error('The product could not be found.');
@@ -1068,7 +1018,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       customerApprovals: [],
       linkedSupplies: [],
       inventorySetup: '',
-      inventorySchedules: [],
       ...(current || {})
     };
     for (const key of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
@@ -1132,19 +1081,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         };
       });
     }
-    if (Object.hasOwn(input, 'inventorySchedules') && input['inventorySchedules'] !== undefined) {
-      if (!Array.isArray(input.inventorySchedules) || input.inventorySchedules.length > 100) {
-        const error = new Error('The submitted collection exceeds the supported size.');
-        error.status = 400;
-        throw error;
-      }
-      product.inventorySchedules = input.inventorySchedules.map(row => {
-        return {
-          scheduleDate: row.scheduleDate || null,
-          month: typeof row.month === 'string' ? row.month.trim() : ''
-        };
-      });
-    }
     if (Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
       if (!Array.isArray(input.linkedSupplies) || input.linkedSupplies.length > 200) {
         const error = new Error('The submitted collection exceeds the supported size.');
@@ -1300,12 +1236,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('customerId', sql.Int, row.customerId).input('approvalDate', sql.VarChar(sql.MAX), row.approvalDate).input('eolDate', sql.VarChar(sql.MAX), row.eolDate).input('approvalRemarks', sql.NVarChar(sql.MAX), row.approvalRemarks).input('eolRemarks', sql.NVarChar(sql.MAX), row.eolRemarks).query('INSERT INTO dbo.ProductCustomerApprovals(productId,position,customerId,approvalDate,eolDate,approvalRemarks,eolRemarks) VALUES(@id,@position,@customerId,@approvalDate,@eolDate,@approvalRemarks,@eolRemarks)');
       }
     }
-    if (!current || Object.hasOwn(input, 'inventorySchedules') && input.inventorySchedules !== undefined) {
-      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductInventorySchedules WHERE productId=@id');
-      for (const [position, row] of product.inventorySchedules.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(sql.MAX), row.scheduleDate).input('month', sql.NVarChar(sql.MAX), row.month).query('INSERT INTO dbo.ProductInventorySchedules(productId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
-      }
-    }
     if (!current || Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductSupplies WHERE productId=@id');
       for (const [position, row] of product.linkedSupplies.entries()) {
@@ -1323,7 +1253,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
 SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
-SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
   const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
@@ -1331,7 +1260,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     processes: [],
     offices: [],
     customerApprovals: [],
-    inventorySchedules: [],
     linkedSupplies: []
   }]));
   for (const {
@@ -1349,11 +1277,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.["inventorySchedules"].push(productRow);
-  for (const {
-    productId: linkedProductId,
-    ...productRow
-  } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
   if (!recordRows.length) {
     const error = new Error('The product could not be found.');

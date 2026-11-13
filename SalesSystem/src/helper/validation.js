@@ -142,7 +142,7 @@ function validateProduct(input, current) {
     revision: '0', vatMode: 'customer', productHeaderId: null,
     price: 0, stock: 0, isActive: true,
     processes: [], offices: [], customerApprovals: [], linkedSupplies: [],
-    inventorySetup: '', inventorySchedules: [],
+    inventorySetup: '',
     ...(current || {}),
   };
   const creating = !current;
@@ -193,12 +193,6 @@ function validateProduct(input, current) {
       supplies.add(suppliesId);
       return { suppliesId, quantity: v.numeric(row, 'quantity', { min: 0.000001, places: 6 }), unit: v.text(row, 'unit', 30) };
     });
-  }
-  if (has(input, 'inventorySchedules')) {
-    result.inventorySchedules = rows(input.inventorySchedules, 'Inventory schedules', 100).map(row => ({
-      scheduleDate: optionalDate(row, 'scheduleDate'),
-      month: v.text(row, 'month', 40),
-    }));
   }
   return result;
 }
@@ -264,6 +258,7 @@ export function validateSalesRequest(path, options = {}) {
   if (/^\/customers(?:\/\d+)?$/.test(route)) { validateCustomer(input, method === 'PUT' ? {} : undefined); return; }
   if (/^\/products(?:\/\d+)?$/.test(route)) { validateProduct(input, method === 'PUT' ? {} : undefined); return; }
   if (/^\/sales-orders(?:\/\d+)?$/.test(route)) {
+    text(input, 'currency', 30, true);
     idValue(input.customerId, 'customer');
     date(input, 'orderDate');
     text(input, 'notes', 2000);
@@ -328,6 +323,16 @@ const CUSTOMER_FORM_FIELDS = {
   taxCode: { label: 'Tax Code', max: 80, tab: 'sales' },
 };
 
+export function validateOrderCurrency(currency, configuredCurrencies, productCurrencies = []) {
+  const selected = String(currency || '').trim().toUpperCase();
+  const configured = configuredCurrencies.some(option => option.isActive !== false && option.isActive !== 0 && String(option.code || '').trim().toUpperCase() === selected);
+  if (!selected || !configured) return 'Choose an active currency from Configuration before saving.';
+  const prices = [...new Set(productCurrencies.map(code => String(code || '').trim().toUpperCase()))];
+  if (prices.length > 1) return 'Use products with the same currency in one sales order.';
+  if (prices.length === 1 && prices[0] !== selected) return 'Order currency must match the selected product prices. No currency conversion is applied.';
+  return '';
+}
+
 export function validateCustomerForm(form) {
   const errors = {};
   for (const [key, definition] of Object.entries(CUSTOMER_FORM_FIELDS)) {
@@ -374,7 +379,7 @@ const PRODUCT_FORM_NUMBERS = {
   weight: { label: 'Weight', places: 6 },
 };
 
-const PRODUCT_FORM_ROW_LIMITS = { processes: 100, offices: 50, customerApprovals: 100, inventorySchedules: 100, linkedSupplies: 200 };
+const PRODUCT_FORM_ROW_LIMITS = { processes: 100, offices: 50, customerApprovals: 100, linkedSupplies: 200 };
 
 function dateIsValid(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -419,11 +424,6 @@ export function validateProductForm(form) {
   });
   form.offices.forEach((row, index) => {
     if (row.selected && (!row.name.trim() || row.name.trim().length > 150)) errors['offices.' + index + '.name'] = 'Enter an office name with up to 150 characters.';
-  });
-  form.inventorySchedules.forEach((row, index) => {
-    const key = 'inventorySchedules.' + index;
-    if (row.scheduleDate && !dateIsValid(row.scheduleDate)) errors[key + '.scheduleDate'] = 'Enter a valid Sched date.';
-    if ((row.month || '').length > 40) errors[key + '.month'] = 'Use 40 characters or fewer for Month.';
   });
   const seenSupplies = new Set();
   form.linkedSupplies.forEach((row, index) => {

@@ -23,7 +23,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     if (method === 'GET' && pathname === '/api/configuration') return { json: { modules: configurationMetadata() } };
     if (method === 'GET' && pathname === '/api/product-options') return { json: options };
     if (method === 'GET' && pathname === '/api/products') return { json: { records } };
-    if (method === 'GET' && /^\/api\/products\/\d+$/.test(pathname)) return { json: { record: records.find(record => record.id === Number(pathname.split('/').pop())) } };
+    if (method === 'GET' && /^\/api\/products\/\d+$/.test(pathname)) return { json: { record: { ...records.find(record => record.id === Number(pathname.split('/').pop())), inventorySchedules: [{ scheduleDate: '2026-11-13', month: 'Legacy editable schedule' }] } } };
     if (method === 'GET' && ['/api/customers', '/api/sales-orders', '/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [admin] : [] } };
     if ((method === 'POST' && pathname === '/api/products') || (method === 'PUT' && /^\/api\/products\/\d+$/.test(pathname))) {
       writes.push({ method, pathname, body });
@@ -52,8 +52,8 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   }
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   for (const tab of Object.values(tabs)) await expect(tab).toBeVisible();
-  for (const label of ['Product Id', 'Code *', 'Rev', 'Description', 'UOP *', 'UOP2', 'Qty per UOP2', 'MOQ', 'SPQ', 'Unit Cost', 'Selling Price', 'Currency *', 'Model', 'Category', 'Plan Type', 'Color', 'Divisor', 'Thickness', 'Weight', 'Product Header', 'Remarks', 'Tag Color']) await expect(field(label)).toBeVisible();
-  await expect(field('Product Id')).toHaveAttribute('readonly', '');
+  for (const label of ['Code *', 'Rev', 'Description', 'UOP *', 'UOP2', 'Qty per UOP2', 'MOQ', 'SPQ', 'Unit Cost', 'Selling Price', 'Currency *', 'Model', 'Category', 'Plan Type', 'Color', 'Divisor', 'Thickness', 'Weight', 'Product Header', 'Remarks', 'Tag Color']) await expect(field(label)).toBeVisible();
+  await expect(field('Product Id')).toHaveCount(0);
   await expect(field('Rev')).toHaveValue('0');
   await expect(panel('Basic Info').getByRole('radio', { name: 'Customer Setting', exact: true })).toBeChecked();
   await expect(dialog.getByLabel('Stock on hand *', { exact: true })).toHaveCount(0);
@@ -112,12 +112,19 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await panel('Customer').getByLabel('Customer Name 2', { exact: true }).selectOption('11');
   await screenshot('product-customers-mocked.png');
   await tabs['Inventory Sched'].click();
-  await panel('Inventory Sched').getByLabel('Inventory Setup', { exact: true }).selectOption('monthly');
-  for (const [index, row] of [{ date: '2026-11-13', month: 'November' }, { date: '', month: 'Quarter 1' }].entries()) {
-    await panel('Inventory Sched').getByRole('button', { name: 'Add schedule', exact: true }).click();
-    if (row.date) await panel('Inventory Sched').getByLabel('Sched ' + (index + 1), { exact: true }).fill(row.date);
-    await panel('Inventory Sched').getByLabel('Month ' + (index + 1), { exact: true }).fill(row.month);
-  }
+  const inventorySetup = panel('Inventory Sched').getByLabel('Inventory Setup', { exact: true });
+  const schedule = panel('Inventory Sched').getByRole('table', { name: 'Inventory schedule', exact: true });
+  const monthlyCells = ['Apr-30', 'April', 'Aug-31', 'August', 'Dec-31', 'December', 'Feb-28', 'February', 'Jan-31', 'January', 'Jul-31', 'July', 'Jun-30', 'June', 'Mar-31', 'March', 'May-31', 'May', 'Nov-30', 'November', 'Oct-31', 'October', 'Sep-30', 'September'];
+  await expect(panel('Inventory Sched').getByRole('button', { name: 'Add schedule', exact: true })).toHaveCount(0);
+  await expect(schedule.locator('input, select, button')).toHaveCount(0);
+  await inventorySetup.selectOption('monthly');
+  await expect(schedule.getByRole('cell')).toHaveText(monthlyCells);
+  await inventorySetup.selectOption('quarterly');
+  await expect(schedule.getByRole('cell')).toHaveText(['Dec-31', 'December', 'Jun-30', 'June', 'Mar-31', 'March', 'Sep-30', 'September']);
+  await screenshot('product-inventory-quarterly-mocked.png');
+  await inventorySetup.selectOption('');
+  await expect(schedule.getByRole('cell')).toHaveText(['Select Monthly or Quarterly to view the schedule.']);
+  await inventorySetup.selectOption('monthly');
   await screenshot('product-inventory-schedule-mocked.png');
   await tabs['Link Supplies'].click();
   await panel('Link Supplies').getByRole('button', { name: 'Add supply', exact: true }).click();
@@ -141,13 +148,14 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     quantityPerSecondaryUnit: 12.000001, moq: 100, spq: 10, unitCost: 5.123456, price: 12.34, divisor: 2.5, thickness: 0.25, weight: 3.000001,
     vatMode: 'inclusive', productHeaderId: 20, processes: [{ name: 'Printing' }, { name: 'Cutting' }], offices: [{ name: 'TLP COMPANY' }, { name: 'Branch A' }],
     customerApprovals: [{ customerId: 10, approvalDate: '2026-11-13', eolDate: '2026-12-31', approvalRemarks: 'Approved sample', eolRemarks: 'Review at year end' }, { customerId: 11, approvalDate: null, eolDate: null, approvalRemarks: '', eolRemarks: '' }],
-    inventorySetup: 'monthly', inventorySchedules: [{ scheduleDate: '2026-11-13', month: 'November' }, { scheduleDate: null, month: 'Quarter 1' }],
+    inventorySetup: 'monthly',
     linkedSupplies: [{ suppliesId: 30, quantity: 1.234567, unit: 'kg' }], isActive: true,
   };
   assert.equal(writes.length, 1);
   assert.equal(writes[0].body.isActive, true, 'New products are always active.');
   assert.deepEqual(writes[0].body, expected);
   assert.equal(Object.hasOwn(writes[0].body, 'stock'), false, 'Product metadata and raw-material links must not create finished-goods stock.');
+  assert.equal(Object.hasOwn(writes[0].body, 'inventorySchedules'), false, 'Static display schedules must never be submitted for persistence.');
   assert.equal(header.stock, 50);
   await page.reload();
   await page.getByRole('button', { name: 'Product', exact: true }).click();
@@ -156,13 +164,16 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await expect(activeProduct).toBeVisible();
   await expect(activeProduct).toBeChecked();
   await activeProduct.uncheck();
-  await expect(field('Product Id')).toHaveValue('101');
+  await expect(field('Product Id')).toHaveCount(0);
   await expect(field('Code *')).toHaveValue('MOCK-PRODUCT');
   await expect(field('Qty per UOP2')).toHaveValue('12.000001');
   await tabs.Customer.click();
   await expect(panel('Customer').getByLabel('Approval Remarks 1', { exact: true })).toHaveValue('Approved sample');
   await tabs['Inventory Sched'].click();
-  await expect(panel('Inventory Sched').getByLabel('Month 2', { exact: true })).toHaveValue('Quarter 1');
+  await expect(inventorySetup).toHaveValue('monthly');
+  await expect(schedule.getByRole('cell')).toHaveText(monthlyCells);
+  await expect(schedule.getByText('Legacy editable schedule', { exact: true })).toHaveCount(0);
+  await expect(schedule.locator('input, select, button')).toHaveCount(0);
   await tabs['Link Supplies'].click();
   await expect(panel('Link Supplies').getByLabel('Supply Qty 1', { exact: true })).toHaveValue('1.234567');
   await tabs['Basic Info'].click();
