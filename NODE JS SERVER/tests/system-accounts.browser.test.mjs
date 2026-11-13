@@ -10,7 +10,7 @@ const systems = [
   { project: 'WarehouseSystem', system: 'warehouse', title: 'Supplies Stock', manager: 'WarehouseUserLogin', label: 'Warehouse' },
   { project: 'ConfigurationSystem', system: 'configuration', title: 'ATC', manager: 'ConfigurationUserLogin', label: 'Configuration' },
 ];
-const password = 'Mock-Account-Password-123';
+const password = 'Mock12';
 
 for (const settings of systems) {
   test(`${settings.project} authenticates and manages only its own account roles`, { timeout: 60_000 }, async t => {
@@ -71,11 +71,19 @@ for (const settings of systems) {
       assert.deepEqual(await select.locator('option').evaluateAll(options => options.map(option => option.value).sort()), ['admin', settings.system].sort());
       await dialog.getByLabel('Full name *', { exact: true }).fill('New ' + role);
       await dialog.getByLabel(/^Username \*/).fill('new_' + role);
-      await dialog.getByLabel(/^Password \*/).fill(password);
       await select.selectOption(role);
+      if (role === 'admin') {
+        const previousWrites = writes.length;
+        await dialog.getByLabel(/^Password \*/).fill('Mock1');
+        await dialog.getByRole('button', { name: 'Save user', exact: true }).click();
+        await expect(dialog).toBeVisible();
+        assert.equal(writes.length, previousWrites, 'Five-character passwords must not submit an account.');
+      }
+      await dialog.getByLabel(/^Password \*/).fill(password);
       await dialog.getByRole('button', { name: 'Save user', exact: true }).click();
       await expect(dialog).toHaveCount(0);
       assert.equal(writes.at(-1).body.role, role);
+      assert.equal(writes.at(-1).body.password, password, 'Exactly six characters must be accepted for new accounts.');
     }
     await page.getByRole('row').filter({ hasText: 'Mock Local Worker' }).getByRole('button', { name: 'Edit', exact: true }).click();
     const edit = page.getByRole('dialog');
@@ -85,6 +93,14 @@ for (const settings of systems) {
     assert.equal(writes.at(-1).method, 'PUT');
     assert.equal(writes.at(-1).body.role, settings.system);
     assert.equal(Object.hasOwn(writes.at(-1).body, 'password'), false);
+
+    await page.getByRole('row').filter({ hasText: 'Edited Local Worker' }).getByRole('button', { name: 'Edit', exact: true }).click();
+    const reset = page.getByRole('dialog');
+    await reset.getByLabel(/^New password \(optional\)/).fill(password);
+    await reset.getByRole('button', { name: 'Save user', exact: true }).click();
+    await expect(reset).toHaveCount(0);
+    assert.equal(writes.at(-1).method, 'PUT');
+    assert.equal(writes.at(-1).body.password, password, 'Exactly six characters must be accepted when resetting passwords.');
 
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(signIn).toBeVisible();
@@ -97,7 +113,7 @@ for (const settings of systems) {
     await expect(profile.getByLabel('Role', { exact: true })).toBeDisabled();
     await profile.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(apiRequests.slice(workerStart).some(call => call.pathname === '/api/users'), false, 'Workers must not load the account manager.');
-    assert.equal(writes.length, 3);
+    assert.equal(writes.length, 4);
     assert.ok(apiRequests.every(call => call.system === settings.system && call.requestPathname.startsWith(`/api/${settings.system}/`)));
     assertSafe();
   });

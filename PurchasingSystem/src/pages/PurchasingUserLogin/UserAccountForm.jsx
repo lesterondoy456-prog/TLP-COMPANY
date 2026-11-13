@@ -48,7 +48,7 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
           <Field label="Mobile number"><input type="tel" maxLength={30} value={form.cpnumber || ''} onChange={event => set('cpnumber', event.target.value)} /></Field>
           <Field label="Email"><input type="email" maxLength={254} value={form.email || ''} onChange={event => set('email', event.target.value)} /></Field>
           <Field label="Role *"><select value={form.role} onChange={event => set('role', event.target.value)}><option value={APP.workerRole}>{APP.workerLabel}</option><option value="admin">Administrator</option></select></Field>
-          <Field label={record ? 'New password (optional)' : 'Password *'} hint={record ? 'Leave blank to keep the current password.' : 'Use at least 12 characters.'}><input type="password" minLength={12} maxLength={128} required={!record} autoComplete="new-password" value={form.password} onChange={event => set('password', event.target.value)} /></Field>
+          <Field label={record ? 'New password (optional)' : 'Password *'} hint={record ? 'Leave blank to keep the current password.' : 'Use at least 6 characters.'}><input type="password" minLength={6} maxLength={128} required={!record} autoComplete="new-password" value={form.password} onChange={event => set('password', event.target.value)} /></Field>
           <label className="checkbox span-2"><input type="checkbox" checked={Boolean(form.isActive)} onChange={event => set('isActive', event.target.checked)} />Account is active</label>
         </fieldset>
       </div>

@@ -58,7 +58,7 @@ function photo(input) {
 
 function password(input, required = true) {
   if (!required && (input.password === undefined || input.password === '')) return undefined;
-  if (typeof input.password !== 'string' || input.password.length < 12 || input.password.length > 128) throw new ApiError(400, 'Password must contain 12–128 characters.');
+  if (typeof input.password !== 'string' || input.password.length < 6 || input.password.length > 128) throw new ApiError(400, 'Password must contain 6-128 characters.');
   return input.password;
 }
 

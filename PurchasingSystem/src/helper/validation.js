@@ -176,7 +176,7 @@ export function validateAccount(form, { creating = false } = {}) {
   if (form.username && !/^[a-z0-9._-]{3,80}$/i.test(form.username.trim())) errors.username = 'Username must contain 3-80 letters, numbers, dots, underscores or hyphens.';
   if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errors.email = 'Enter a valid email address.';
   if (creating || form.password) {
-    if (typeof form.password !== 'string' || form.password.length < 12 || form.password.length > 128) errors.password = 'Password must contain 12-128 characters.';
+    if (typeof form.password !== 'string' || form.password.length < 6 || form.password.length > 128) errors.password = 'Password must contain 6-128 characters.';
   }
   if (form.photo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(form.photo)) {
     try { const url = new URL(form.photo); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }

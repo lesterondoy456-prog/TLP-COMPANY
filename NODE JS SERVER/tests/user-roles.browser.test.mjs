@@ -55,7 +55,7 @@ async function profileRole(page, actor, label) {
 async function fillNewAccount(dialog, suffix) {
   await dialog.getByLabel('Full name *', { exact: true }).fill('Mock New ' + suffix);
   await dialog.getByLabel(/^Username \*/).fill('mock_new_' + suffix);
-  await dialog.getByLabel(/^Password \*/).fill('Mock-Password-Only-123');
+  await dialog.getByLabel(/^Password \*/).fill('Mock12');
 }
 
 test('admin can create all three account roles and edit existing accounts', { timeout: 60_000 }, async t => {
@@ -71,11 +71,19 @@ test('admin can create all three account roles and edit existing accounts', { ti
     assert.deepEqual(await roleSelect.locator('option').evaluateAll(options => options.map(option => option.value).sort()), ['admin', 'sales', 'saleshead']);
     await fillNewAccount(dialog, role);
     await roleSelect.selectOption(role);
+    if (role === 'admin') {
+      await dialog.getByLabel(/^Password \*/).fill('Mock1');
+      await dialog.getByRole('button', { name: 'Save user', exact: true }).click();
+      await expect(dialog).toBeVisible();
+      assert.equal(writes.length, 0, 'Five-character passwords must not submit an account.');
+      await dialog.getByLabel(/^Password \*/).fill('Mock12');
+    }
     await dialog.getByRole('button', { name: 'Save user', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Refresh records', exact: true })).toBeEnabled();
     assert.equal(writes.at(-1).method, 'POST');
     assert.equal(writes.at(-1).body.role, role);
+    assert.equal(writes.at(-1).body.password, 'Mock12', 'Exactly six characters must be accepted for new accounts.');
   }
   await page.getByRole('row').filter({ hasText: 'Mock Sales User' }).getByRole('button', { name: 'Edit', exact: true }).click();
   const edit = page.getByRole('dialog');
@@ -88,6 +96,14 @@ test('admin can create all three account roles and edit existing accounts', { ti
   assert.equal(writes.at(-1).pathname, '/api/users/3');
   assert.equal(writes.at(-1).body.role, 'saleshead');
   assert.equal(Object.hasOwn(writes.at(-1).body, 'password'), false, 'Editing a profile must preserve a blank optional password.');
+  await page.getByRole('row').filter({ hasText: 'Edited Sales User' }).getByRole('button', { name: 'Edit', exact: true }).click();
+  const reset = page.getByRole('dialog');
+  await reset.getByLabel(/^New password \(optional\)/).fill('Mock12');
+  await reset.getByRole('button', { name: 'Save user', exact: true }).click();
+  await expect(reset).toHaveCount(0);
+  assert.equal(writes.length, 5);
+  assert.equal(writes.at(-1).method, 'PUT');
+  assert.equal(writes.at(-1).body.password, 'Mock12', 'Exactly six characters must be accepted when resetting passwords.');
   assertSafe();
 });
 
@@ -118,6 +134,7 @@ test('Sales Head sees Sales accounts and creates only Sales without edit control
   assert.equal(writes.length, 1);
   assert.equal(writes[0].method, 'POST');
   assert.equal(writes[0].body.role, 'sales');
+  assert.equal(writes[0].body.password, 'Mock12');
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   assertSafe();
 });

@@ -9,7 +9,7 @@ export function validateAccountForm(input, { create = false } = {}) {
   }
   if (!/^[a-z0-9._-]{3,80}$/i.test(input.username.trim())) throw new Error('Username must contain 3–80 letters, numbers, dots, underscores or hyphens.');
   if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) throw new Error('Enter a valid email address.');
-  if ((create || input.password) && (typeof input.password !== 'string' || input.password.length < 12 || input.password.length > 128)) throw new Error('Password must contain 12–128 characters.');
+  if ((create || input.password) && (typeof input.password !== 'string' || input.password.length < 6 || input.password.length > 128)) throw new Error('Password must contain 6-128 characters.');
   if (input.photo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(input.photo)) {
     let imageUrl;
     try { imageUrl = new URL(input.photo); } catch { throw new Error('Choose a valid profile photo.'); }

@@ -129,7 +129,7 @@ export function validateAccountForm(input, { existing = false, profile = false }
     body.role = input.role;
     body.isActive = input.isActive;
     if (!existing || input.password) {
-      if (typeof input.password !== 'string' || input.password.length < 12 || input.password.length > 128) invalid('password', 'Password must contain 12-128 characters.');
+      if (typeof input.password !== 'string' || input.password.length < 6 || input.password.length > 128) invalid('password', 'Password must contain 6-128 characters.');
       body.password = input.password;
     }
   }
