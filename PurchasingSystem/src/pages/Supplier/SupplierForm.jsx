@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api, dateInput } from '../../api.js';
-import { ErrorNotice, Modal, focusModalControl } from '../../components/UI.jsx';
+import { ErrorNotice, Modal, RequiredLabel, focusModalControl } from '../../components/UI.jsx';
 import { Icon } from '../../components/Icons.jsx';
 import { textValues, useMasterForm, FormTabs, MasterFooter } from '../../components/MasterControls.jsx';
 import { SUPPLIER_TEXT, SUPPLIES_TEXT, validateSupplier, validateSupplies } from '../../helper/validation.js';
@@ -72,7 +72,7 @@ export function SupplierForm({ record, options, onClose, onSaved }) {
                 {textField('cpnumber', { type: 'tel' })}{textField('faxNo', { type: 'tel' })}
               </div></section>
               <section className="purchase-section"><h3>PO</h3><div className="purchase-fields">
-                {[['decimalInPrice', 'Decimal in Price *'], ['decimalInTotalPrice', 'Decimal in Total Price *']].map(([key, label]) => <label className="field" key={key}><span>{label}</span><input {...props(key, label)} type="number" min={0} max={6} step={1} value={form[key]} onChange={event => set(key, event.target.value)} />{errorFor(key)}</label>)}
+                {[['decimalInPrice', 'Decimal in Price *'], ['decimalInTotalPrice', 'Decimal in Total Price *']].map(([key, label]) => <label className="field" key={key}><span><RequiredLabel>{label}</RequiredLabel></span><input {...props(key, label)} type="number" required aria-required="true" min={0} max={6} step={1} value={form[key]} onChange={event => set(key, event.target.value)} />{errorFor(key)}</label>)}
                 {choiceField('paymentTerm', paymentTerms, 'value', { wide: true, labelKey: 'label' })}
               </div></section>
               <section className="purchase-section"><h3>TAX</h3><div className="purchase-fields">

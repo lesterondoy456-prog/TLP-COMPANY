@@ -340,7 +340,7 @@ export function validateCustomerForm(form) {
     if (String(address).trim().length > 500) errors['deliveryAddresses.' + index] = 'Use 500 characters or fewer for this delivery address.';
   });
   for (const [key, label] of [['decimalInPrice', 'Decimal in Price'], ['decimalInTotalPrice', 'Decimal in Total Price']]) {
-    if (form[key] === '' || !Number.isInteger(Number(form[key])) || Number(form[key]) < 0 || Number(form[key]) > 6) errors[key] = label + ' must be a whole number from 0 to 6.';
+    if (String(form[key] ?? '').trim() === '' || !Number.isInteger(Number(form[key])) || Number(form[key]) < 0 || Number(form[key]) > 6) errors[key] = label + ' must be a whole number from 0 to 6.';
   }
   const discount = form.discount === '' ? 0 : Number(form.discount);
   if (!Number.isFinite(discount) || discount < 0 || discount > 1e9 || Math.abs(discount * 1e6 - Math.round(discount * 1e6)) > 0.00001) errors.discount = 'Enter a discount from 0 to 1,000,000,000 with up to 6 decimal places.';
@@ -384,7 +384,7 @@ function dateIsValid(value) {
 
 function numberIsValid(value, places, min = 0) {
   const number = Number(value);
-  return value !== '' && Number.isFinite(number) && number >= min && number <= 1e9
+  return String(value ?? '').trim() !== '' && Number.isFinite(number) && number >= min && number <= 1e9
     && Math.abs(number * 10 ** places - Math.round(number * 10 ** places)) <= 1e-5;
 }
 
@@ -394,7 +394,7 @@ export function validateProductForm(form) {
     if (form[key].length > limit) errors[key] = 'Use no more than ' + limit + ' rows.';
   }
   for (const [key, field] of Object.entries(PRODUCT_FORM_FIELDS)) {
-    const value = String(form[key]).trim();
+    const value = String(form[key] ?? '').trim();
     if (field.required && !value) errors[key] = field.label + ' is required.';
     else if (value.length > field.max) errors[key] = 'Use ' + field.max + ' characters or fewer.';
   }

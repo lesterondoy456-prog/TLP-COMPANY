@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { validateProductForm } from '../../helper/validation.js';
 import { api, dateInput } from '../../api.js';
 import { Icon } from '../../components/Icons.jsx';
-import { ErrorNotice, Modal, focusModalControl } from '../../components/UI.jsx';
+import { ErrorNotice, Modal, RequiredLabel, focusModalControl } from '../../components/UI.jsx';
 import '../../styles/product.css';
 
 const TABS = [
@@ -144,7 +144,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
     const field = TEXT_FIELDS[key];
     const label = field.label + (field.required ? ' *' : '');
     return <label className={'field ' + (wide ? 'product-span-2' : '')} htmlFor={fieldId(key)}>
-      <span>{label}</span>
+      <span><RequiredLabel>{label}</RequiredLabel></span>
       <input {...controlProps(key, label)} value={form[key]} maxLength={field.max} aria-required={field.required || undefined} onChange={event => set(key, event.target.value)} />
       {fieldError(key)}
     </label>;
@@ -164,7 +164,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
     const label = field.label + (field.required ? ' *' : '');
     const historical = form[key] && !rows.some(row => row[valueKey] === form[key]);
     return <label className="field" htmlFor={fieldId(key)}>
-      <span>{label}</span>
+      <span><RequiredLabel>{label}</RequiredLabel></span>
       <select {...controlProps(key, label)} value={form[key]} aria-required={field.required || undefined} onChange={event => set(key, event.target.value)}>
         <option value="">{loadingOptions ? 'Loading choices…' : optional ? 'None' : 'Select ' + field.label}</option>
         {historical && <option value={form[key]} disabled>{form[key]} (current)</option>}

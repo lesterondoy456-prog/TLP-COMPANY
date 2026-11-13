@@ -80,6 +80,9 @@ export function CreateReceivingReceiptForm({ record, orders, options, user, onCl
     event.preventDefault();
     if (editor.busy) return;
     const invalid = validateReceiving(form);
+    if (![order?.supplierName || record?.supplierName, currency, order?.vatCode || record?.vatCode].every(value => typeof value === 'string' && value.trim())) {
+      invalid.purchaseOrderId = 'Select a purchase order with Supplier, Currency, and VAT Code before saving.';
+    }
     const first = editor.reject(invalid);
     if (first) {
       setTab(first.includes('.allocations') ? 'summary' : 'info');

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Icon } from '../../components/Icons.jsx';
 import { APP } from '../../appSettings.js';
 import ThemeToggle from '../../components/ThemeToggle.jsx';
+import { RequiredLabel } from '../../components/UI.jsx';
 import { validateLoginForm } from '../../helper/validation.js';
 
 export default function Login({ onLogin, initialError }) {
@@ -44,8 +45,8 @@ export default function Login({ onLogin, initialError }) {
       <span className="eyebrow">WELCOME BACK</span><h2>Sign in to {APP.appName}</h2><p>Use your WarehouseSystem account.</p>
       <form onSubmit={submit}>
         {(error || initialError) && <div className="notice error" role="alert">{error || initialError}</div>}
-        <label className="field">Username<input name="username" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} disabled={busy} required maxLength={80} autoFocus /></label>
-        <label className="field">Password<div className="password-input"><input name="password" type={visible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} required maxLength={128} /><button type="button" className="icon-button" disabled={busy} aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(!visible)}><Icon name={visible ? 'eyeOff' : 'eye'} /></button></div></label>
+        <label className="field"><RequiredLabel required>Username</RequiredLabel><input aria-label="Username" name="username" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} disabled={busy} required maxLength={80} autoFocus /></label>
+        <label className="field"><RequiredLabel required>Password</RequiredLabel><div className="password-input"><input aria-label="Password" name="password" type={visible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} required maxLength={128} /><button type="button" className="icon-button" disabled={busy} aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(!visible)}><Icon name={visible ? 'eyeOff' : 'eye'} /></button></div></label>
         <label className="checkbox"><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} disabled={busy} />Keep me signed in for 7 days</label>
         <button className="button primary login-submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}<Icon name="arrowRight" size={18} /></button>
       </form>

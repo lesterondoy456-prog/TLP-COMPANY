@@ -1,3 +1,4 @@
+import { RequiredLabel } from './UI.jsx';
 import React, { useId, useRef, useState } from 'react';
 import { Icon } from './Icons.jsx';
 
@@ -43,9 +44,9 @@ export function useMasterForm(initial, fields) {
   function textField(key, { wide = false, multiline = false, type = 'text' } = {}) {
     const field = fields[key];
     const label = field.label + (field.required ? ' *' : '');
-    const shared = { ...props(key, label), value: form[key], maxLength: field.max, 'aria-required': field.required || undefined, onChange: event => set(key, event.target.value) };
+    const shared = { ...props(key, label), value: form[key], maxLength: field.max, required: field.required || undefined, 'aria-required': field.required || undefined, onChange: event => set(key, event.target.value) };
     return <label className={'field ' + (wide ? 'purchase-span-2' : '')}>
-      <span>{label}</span>
+      <span><RequiredLabel>{label}</RequiredLabel></span>
       {multiline ? <textarea {...shared} rows={3} /> : <input {...shared} type={type} />}
       {errorFor(key)}
     </label>;
@@ -57,8 +58,8 @@ export function useMasterForm(initial, fields) {
     const values = rows.map(row => ({ value: String(row[valueKey] || ''), label: row[labelKey] || row[valueKey] })).filter(row => row.value);
     const historical = form[key] && !values.some(row => row.value === form[key]);
     return <label className={'field ' + (wide ? 'purchase-span-2' : '')}>
-      <span>{label}</span>
-      <select {...props(key, label)} value={form[key]} aria-required={field.required || undefined} onChange={event => set(key, event.target.value)}>
+      <span><RequiredLabel>{label}</RequiredLabel></span>
+      <select {...props(key, label)} value={form[key]} required={field.required || undefined} aria-required={field.required || undefined} onChange={event => set(key, event.target.value)}>
         <option value="">{optional && !field.required ? 'None' : 'Select ' + field.label}</option>
         {historical && <option value={form[key]} disabled>{form[key]} (current)</option>}
         {values.map(row => <option key={row.value} value={row.value}>{row.label}</option>)}
@@ -69,7 +70,7 @@ export function useMasterForm(initial, fields) {
 
   function numberField(key, label, places = 6) {
     return <label className="field">
-      <span>{label}</span>
+      <span><RequiredLabel>{label}</RequiredLabel></span>
       <input {...props(key, label)} type="number" min={0} max={1e9} step={places === 5 ? '0.00001' : '0.000001'} value={form[key]} onChange={event => set(key, event.target.value)} />
       {errorFor(key)}
     </label>;

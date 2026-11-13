@@ -21,7 +21,12 @@ export function Avatar({ user, large = false }) {
   return <span className={'avatar ' + (large ? 'large' : '')}><span>{initials}</span>{user?.photo && <img src={user.photo} alt="" onError={e => { e.currentTarget.style.display = 'none'; }} />}</span>;
 }
 export function Badge({ children, value = children }) { return <span className={'badge badge-' + String(value).toLowerCase()}>{children}</span>; }
-export function Field({ label, children, wide = false, hint }) { return <label className={'field ' + (wide ? 'span-2' : '')}><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
+export function RequiredLabel({ children, required = false }) {
+  const marked = typeof children === 'string' && /\*\s*$/.test(children);
+  const label = marked ? children.replace(/\s*\*\s*$/, '') : children;
+  return <>{label}{(required || marked) && <span className="required-mark"> *</span>}</>;
+}
+export function Field({ label, children, wide = false, hint }) { return <label className={'field ' + (wide ? 'span-2' : '')}><span><RequiredLabel>{label}</RequiredLabel></span>{children}{hint && <small>{hint}</small>}</label>; }
 export function Modal({ title, subtitle, children, onClose, busy, wide = false, className = '' }) {
   const ref = useRef(null);
   const titleId = React.useId();

@@ -1,3 +1,4 @@
+import { RequiredLabel } from './UI.jsx';
 import React, { useId, useRef, useState } from 'react';
 import { Icon } from './Icons.jsx';
 import { currencyLabel } from './PurchasingDisplay.jsx';
@@ -47,9 +48,9 @@ export function useDocumentEditor(initial) {
 
   function input(key, label, { type = 'text', maxLength, required = false, list, min, max, step, wide = false, multiline = false } = {}) {
     const displayLabel = label + (required ? ' *' : '');
-    const shared = { ...props(key, displayLabel), value: form[key] ?? '', maxLength, 'aria-required': required || undefined, onChange: event => set(key, event.target.value) };
+    const shared = { ...props(key, displayLabel), value: form[key] ?? '', maxLength, required: required || undefined, 'aria-required': required || undefined, onChange: event => set(key, event.target.value) };
     return <label className={'field ' + (wide ? 'purchase-span-2' : '')}>
-      <span>{displayLabel}</span>
+      <span><RequiredLabel>{displayLabel}</RequiredLabel></span>
       {multiline ? <textarea {...shared} rows={3} /> : <input {...shared} type={type} list={list} min={min} max={max} step={step} />}
       {feedback(key)}
     </label>;
@@ -59,8 +60,8 @@ export function useDocumentEditor(initial) {
     const displayLabel = label + (required ? ' *' : '');
     const historical = form[key] && !rows.some(row => String(row.value) === String(form[key]));
     return <label className={'field ' + (wide ? 'purchase-span-2' : '')}>
-      <span>{displayLabel}</span>
-      <select {...props(key, displayLabel)} value={form[key]} aria-required={required || undefined} onChange={event => onChange ? onChange(event.target.value) : set(key, event.target.value)}>
+      <span><RequiredLabel>{displayLabel}</RequiredLabel></span>
+      <select {...props(key, displayLabel)} value={form[key]} required={required || undefined} aria-required={required || undefined} onChange={event => onChange ? onChange(event.target.value) : set(key, event.target.value)}>
         <option value="">Select {label}</option>
         {historical && <option value={form[key]} disabled>{form[key]} (current)</option>}
         {rows.map(row => <option key={row.value} value={row.value}>{row.label}</option>)}
@@ -84,7 +85,7 @@ export function useDocumentEditor(initial) {
 }
 
 export function ReadonlyField({ label, value, wide = false }) {
-  return <label className={'field ' + (wide ? 'purchase-span-2' : '')}><span>{label}</span><input value={value ?? ''} readOnly /></label>;
+  return <label className={'field ' + (wide ? 'purchase-span-2' : '')}><span><RequiredLabel>{label}</RequiredLabel></span><input value={value ?? ''} readOnly /></label>;
 }
 
 export function EntryFooter({ onClose, busy, label }) {
@@ -92,7 +93,7 @@ export function EntryFooter({ onClose, busy, label }) {
 }
 
 export function ActorField({ label, name }) {
-  return <label className="field"><span>{label}</span><select disabled value={name || ''}><option value={name || ''}>{name || ''}</option></select></label>;
+  return <label className="field"><span><RequiredLabel>{label}</RequiredLabel></span><select disabled value={name || ''}><option value={name || ''}>{name || ''}</option></select></label>;
 }
 
 export function Totals({ totals, currency, places = 2 }) {

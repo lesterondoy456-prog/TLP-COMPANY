@@ -1,6 +1,7 @@
 ﻿import React, { useState } from 'react';
 import { Icon } from '../../components/Icons.jsx';
 import ThemeToggle from '../../components/ThemeToggle.jsx';
+import { RequiredLabel } from '../../components/UI.jsx';
 
 export default function Login({ onLogin, initialError }) {
   const [username, setUsername] = useState('');
@@ -27,8 +28,8 @@ export default function Login({ onLogin, initialError }) {
     <section className="login-form-side"><div className="login-card"><span className="eyebrow">WELCOME BACK</span><h2>Sign in to your workspace</h2><p>Use the account provided by your administrator.</p>
       <form onSubmit={submit}>
         {(error || initialError) && <div className="notice error" role="alert">{error || initialError}</div>}
-        <label className="field">Username<input name="username" autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} required maxLength={80} autoFocus /></label>
-        <label className="field">Password<div className="password-input"><input name="password" type={visible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required maxLength={128} /><button type="button" className="icon-button" aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(!visible)}><Icon name={visible ? 'eyeOff' : 'eye'} /></button></div></label>
+        <label className="field"><RequiredLabel required>Username</RequiredLabel><input aria-label="Username" name="username" autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} required maxLength={80} autoFocus /></label>
+        <label className="field"><RequiredLabel required>Password</RequiredLabel><div className="password-input"><input aria-label="Password" name="password" type={visible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required maxLength={128} /><button type="button" className="icon-button" aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(!visible)}><Icon name={visible ? 'eyeOff' : 'eye'} /></button></div></label>
         <label className="checkbox"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />Keep me signed in for 7 days</label>
         <button className="button primary login-submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}<Icon name="arrowRight" size={18} /></button>
       </form><div className="login-help"><Icon name="lock" size={15} />Your records are saved to your company database.</div>

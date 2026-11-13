@@ -57,6 +57,14 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
     ? sales.getByRole('combobox', { name: label, exact: true })
     : sales.getByLabel(label, { exact: true });
 
+  await expect(dialog.locator('.required-mark')).toHaveCount(9);
+  await expect(dialog.locator('[aria-required="true"]')).toHaveCount(9);
+  for (const [theme, color] of [['dark', 'rgb(255, 113, 130)'], ['light', 'rgb(202, 36, 64)']]) {
+    await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    for (const marker of await dialog.locator('.required-mark').all()) await expect(marker).toHaveCSS('color', color);
+  }
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+
   await expect(basicTab).toHaveAttribute('aria-selected', 'true');
   await expect(salesTab).toHaveAttribute('aria-selected', 'false');
   for (const label of ['Sales In-charge', 'Name *', 'Short Name *', 'Business Style *', 'Office Address *', 'TIN', 'Contact Person', 'Email Address', 'Country Of Origin', 'Country', 'Fax No.', 'Phone No.', 'Category', 'Remarks']) {
@@ -96,13 +104,13 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await expect(drAddress.getByRole('radio', { name: 'Office Address', exact: true })).toBeChecked();
   assert.equal(customerWrites.length, 0);
 
-  async function invalidFromOtherTab(targetTab, field) {
+  async function invalidFromOtherTab(targetTab, field, expectedWriteCount = 0) {
     await (targetTab === basicTab ? salesTab : basicTab).click();
     await save.click();
     await expect(targetTab).toHaveAttribute('aria-selected', 'true');
     await expect(field).toBeFocused();
     await expect(dialog.getByRole('alert')).toBeVisible();
-    assert.equal(customerWrites.length, 0, 'Invalid or hidden required fields must prevent any API request.');
+    assert.equal(customerWrites.length, expectedWriteCount, 'Invalid or hidden required fields must prevent any API request.');
   }
   const basicRequired = [
     ['Name *', '  Mock CAS Customer  '],
@@ -112,13 +120,22 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   ];
   for (const [label, value] of basicRequired) {
     await invalidFromOtherTab(basicTab, basicField(label));
+    await basicField(label).fill('   ');
+    await invalidFromOtherTab(basicTab, basicField(label));
     await basicField(label).fill(value);
   }
   await salesTab.click();
   for (const label of ['Sales Name', 'DR Name', 'VAT Code *']) await salesField(label).fill('');
   for (const [label, value] of [['Sales Name', 'MOCK SALES NAME'], ['DR Name', 'MOCK DR NAME'], ['VAT Code *', 'VAT-MOCK']]) {
     await invalidFromOtherTab(salesTab, salesField(label));
+    await salesField(label).fill('   ');
+    await invalidFromOtherTab(salesTab, salesField(label));
     await salesField(label).fill(value);
+  }
+  for (const label of ['Decimal in Price *', 'Decimal in Total Price *']) {
+    await salesField(label).fill('');
+    await invalidFromOtherTab(salesTab, salesField(label));
+    await salesField(label).fill('2');
   }
 
   await basicTab.click();
@@ -218,6 +235,22 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await expect(drAddress.getByRole('radio', { name: 'Delivery Address', exact: true })).toBeChecked();
   await expect(sales.getByRole('checkbox', { name: 'Include P.O. in Invoice', exact: true })).toBeChecked();
   await expect(sales.getByRole('radio', { name: 'Inclusive', exact: true })).toBeChecked();
+  for (const [label] of basicRequired) {
+    await basicTab.click();
+    const control = basicField(label);
+    const savedValue = await control.inputValue();
+    await control.fill('');
+    await invalidFromOtherTab(basicTab, control, 1);
+    await control.fill(savedValue);
+  }
+  for (const label of ['Sales Name', 'DR Name', 'VAT Code *', 'Decimal in Price *', 'Decimal in Total Price *']) {
+    await salesTab.click();
+    const control = salesField(label);
+    const savedValue = await control.inputValue();
+    await control.fill('');
+    await invalidFromOtherTab(salesTab, control, 1);
+    await control.fill(savedValue);
+  }
   await basicTab.click();
   await basicField('Name *').fill('Edited mock customer');
   await salesTab.click();

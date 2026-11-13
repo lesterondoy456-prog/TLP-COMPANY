@@ -32,6 +32,24 @@ test('independent Purchasing and Warehouse apps share mocked receipt state witho
     await expect(dialog).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Refresh purchasing records', exact: true })).toBeEnabled();
   };
+  for (const master of [
+    { page: 'Supplier', action: 'New supplier', save: 'Save supplier', required: ['Name *', 'Short Name *', 'Business Style *', 'Office Address *', 'Decimal in Price *', 'Decimal in Total Price *', 'VAT Code *'] },
+    { page: 'Supplies', action: 'New supplies', save: 'Save supplies', required: ['Name *', 'Unit of Measure *'] },
+  ]) {
+    await navigate(master.page);
+    await page.getByRole('button', { name: master.action, exact: false }).click();
+    const emptyMaster = page.getByRole('dialog');
+    for (const label of master.required) await expect(emptyMaster.getByLabel(label, { exact: true })).toBeVisible();
+    await expect(emptyMaster.locator('.required-mark')).toHaveCount(master.required.length);
+    for (const marker of await emptyMaster.locator('.required-mark').all()) {
+      assert.equal(await marker.evaluate(element => getComputedStyle(element).color), 'rgb(255, 113, 130)', 'CAS-required master markers must be red in dark mode.');
+    }
+    await emptyMaster.getByRole('button', { name: master.save, exact: true }).click();
+    await expect(emptyMaster).toBeVisible();
+    await expect(emptyMaster.getByLabel('Name *', { exact: true })).toBeFocused();
+    assert.equal(purchasing.writes.length, 0, 'Missing CAS-required master fields must not send a save request.');
+    await emptyMaster.getByRole('button', { name: 'Cancel', exact: true }).click();
+  }
   await navigate('PR Monitoring');
   await page.getByRole('button', { name: 'New purchase request', exact: false }).click();
   let dialog = page.getByRole('dialog');
@@ -57,6 +75,11 @@ test('independent Purchasing and Warehouse apps share mocked receipt state witho
   await navigate('PO Monitoring');
   await page.getByRole('button', { name: 'New purchase order', exact: false }).click();
   dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.required-mark')).toHaveCount(9);
+  const writesBeforeEmptyOrder = purchasing.writes.length;
+  await dialog.getByRole('button', { name: 'Save purchase order', exact: true }).click();
+  await expect(dialog.getByLabel('Supplier *', { exact: true })).toBeFocused();
+  assert.equal(purchasing.writes.length, writesBeforeEmptyOrder, 'Missing required PO fields must block before sending a request.');
   await dialog.getByLabel('Supplier *', { exact: true }).selectOption('50');
   await dialog.getByLabel('PO Date *', { exact: true }).fill('2026-11-13');
   await dialog.getByLabel('Delivery Date *', { exact: true }).fill('2026-12-01');

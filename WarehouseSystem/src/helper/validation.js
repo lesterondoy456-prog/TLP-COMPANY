@@ -1,4 +1,5 @@
 export function validateAccountForm(input, { create = false } = {}) {
+  if ((create || Object.hasOwn(input, 'role')) && !['admin', 'warehouse'].includes(input.role)) throw new Error('Choose Administrator or Warehouse.');
   for (const [key, label, max, required] of [
     ['name', 'Full name', 150, true], ['username', 'Username', 80, true],
     ['cpnumber', 'Mobile number', 30, false], ['email', 'Email', 254, false],

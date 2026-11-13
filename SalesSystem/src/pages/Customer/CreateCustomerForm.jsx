@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { validateCustomerForm, validateCustomerAssignment } from '../../helper/validation.js';
 import { api } from '../../api.js';
 import { Icon } from '../../components/Icons.jsx';
-import { ErrorNotice, Modal, focusModalControl } from '../../components/UI.jsx';
+import { ErrorNotice, Modal, RequiredLabel, focusModalControl } from '../../components/UI.jsx';
 
 const TEXT_FIELDS = {
   name: { label: 'Name', max: 180, required: true, tab: 'basic' },
@@ -122,13 +122,13 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
   function textField(key, visibleLabel, options = {}) {
     const definition = TEXT_FIELDS[key];
     const label = visibleLabel || definition.label + (definition.required ? ' *' : '');
-    return <label className={'field ' + (options.wide ? 'customer-span-2' : '')} htmlFor={fieldId(key)}><span>{label}</span><input {...controlProps(key, options.accessibleLabel || label)} value={form[key]} onChange={event => set(key, event.target.value)} maxLength={definition.max} aria-required={definition.required || undefined} type={options.type || 'text'} list={options.list} autoComplete={options.autoComplete || 'off'} />{fieldError(key)}</label>;
+    return <label className={'field ' + (options.wide ? 'customer-span-2' : '')} htmlFor={fieldId(key)}><span><RequiredLabel>{label}</RequiredLabel></span><input {...controlProps(key, options.accessibleLabel || label)} value={form[key]} onChange={event => set(key, event.target.value)} maxLength={definition.max} aria-required={definition.required || undefined} type={options.type || 'text'} list={options.list} autoComplete={options.autoComplete || 'off'} />{fieldError(key)}</label>;
   }
   function textareaField(key, label, rows = 2) {
-    return <label className="field customer-span-2" htmlFor={fieldId(key)}><span>{label}</span><textarea {...controlProps(key, label)} value={form[key]} onChange={event => set(key, event.target.value)} rows={rows} maxLength={TEXT_FIELDS[key].max} aria-required={TEXT_FIELDS[key].required || undefined} />{fieldError(key)}</label>;
+    return <label className="field customer-span-2" htmlFor={fieldId(key)}><span><RequiredLabel>{label}</RequiredLabel></span><textarea {...controlProps(key, label)} value={form[key]} onChange={event => set(key, event.target.value)} rows={rows} maxLength={TEXT_FIELDS[key].max} aria-required={TEXT_FIELDS[key].required || undefined} />{fieldError(key)}</label>;
   }
   function decimalField(key, label) {
-    return <label className="field" htmlFor={fieldId(key)}><span>{label} *</span><input {...controlProps(key, label + ' *')} type="number" min={0} max={6} step={1} value={form[key]} onChange={event => set(key, event.target.value)} aria-required="true" />{fieldError(key)}</label>;
+    return <label className="field" htmlFor={fieldId(key)}><span><RequiredLabel required>{label}</RequiredLabel></span><input {...controlProps(key, label + ' *')} type="number" min={0} max={6} step={1} value={form[key]} onChange={event => set(key, event.target.value)} aria-required="true" />{fieldError(key)}</label>;
   }
   function addressRadios(key, legend) {
     return <fieldset className="customer-radio-group customer-span-2" aria-label={legend}><legend>Address</legend>{[['office', 'Office Address'], ['delivery', 'Delivery Address']].map(([value, label]) => <label className="customer-radio" key={value}><input type="radio" name={key} value={value} checked={form[key] === value} onChange={() => set(key, value)} />{label}</label>)}</fieldset>;

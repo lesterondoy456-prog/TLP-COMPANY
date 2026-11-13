@@ -175,6 +175,7 @@ export function validateAccount(form, { creating = false } = {}) {
   }
   if (form.username && !/^[a-z0-9._-]{3,80}$/i.test(form.username.trim())) errors.username = 'Username must contain 3-80 letters, numbers, dots, underscores or hyphens.';
   if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errors.email = 'Enter a valid email address.';
+  if (Object.hasOwn(form, 'role') && !['admin', 'purchasing'].includes(form.role)) errors.role = 'Choose Administrator or Purchasing.';
   if (creating || form.password) {
     if (typeof form.password !== 'string' || form.password.length < 6 || form.password.length > 128) errors.password = 'Password must contain 6-128 characters.';
   }

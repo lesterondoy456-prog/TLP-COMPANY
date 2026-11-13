@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { api, money, unitMoney, today, dateInput, dateLabel } from '../../api.js';
 import { salesLineTotal as lineTotal, salesTotal } from '../../salesPricing.mjs';
 import { Icon } from '../../components/Icons.jsx';
-import { Modal, Field, FormFooter, ErrorNotice, Badge, PhotoField, roleLabel } from '../../components/UI.jsx';
+import { Modal, Field, RequiredLabel, FormFooter, ErrorNotice, Badge, PhotoField, roleLabel } from '../../components/UI.jsx';
 import useSave from '../../hooks/useSave.js';
 
 export default function CreateOrderForm({
@@ -29,6 +29,7 @@ export default function CreateOrderForm({
   const currency = currencies[0] || record?.currency || 'PHP';
   function submit(event) {
     event.preventDefault(); setValidation('');
+    if (items.some(item => String(item.quantity ?? '').trim() === '' || String(item.unitPrice ?? '').trim() === '')) { setValidation('Enter a quantity and unit price for every order item.'); return; }
     if (!items.length || items.some(item => !item.productId || Number(item.quantity) <= 0 || Number(item.unitPrice) < 0)) { setValidation('Add at least one product with a positive quantity and valid price.'); return; }
     if (new Set(items.map(item => String(item.productId))).size !== items.length) { setValidation('Use one line per product. Combine quantities for repeated products.'); return; }
     if (currencies.length > 1) { setValidation('Use products with the same currency in one sales order.'); return; }
@@ -43,7 +44,7 @@ export default function CreateOrderForm({
         <Field label="Currency"><input value={currency} readOnly /></Field>
       </div>
       <div className="section-label"><h3>Order items</h3><span>Prices in {currency}</span></div>
-      <div className="order-lines"><div className="order-line line-head"><span>Product</span><span>Quantity</span><span>Unit price</span><span>Amount</span><span /></div>
+      <div className="order-lines"><div className="order-line line-head"><span><RequiredLabel required>Product</RequiredLabel></span><span><RequiredLabel required>Quantity</RequiredLabel></span><span><RequiredLabel required>Unit price</RequiredLabel></span><span>Amount</span><span /></div>
         {items.map((item, i) => <div className="order-line" key={i}>
           <select aria-label={'Product ' + (i + 1)} required value={item.productId} onChange={e => update(i, 'productId', e.target.value)}><option value="">Select product</option>{products.filter(p => p.isActive || p.id === item.productId).map(p => <option key={p.id} value={p.id} disabled={items.some((line, index) => index !== i && String(line.productId) === String(p.id))}>{p.sku} · {p.name} ({p.stock} {p.unit})</option>)}</select>
           <input aria-label={'Quantity ' + (i + 1)} type="number" required min="0.001" max="1000000" step="0.001" value={item.quantity} onChange={e => update(i, 'quantity', e.target.value)} />

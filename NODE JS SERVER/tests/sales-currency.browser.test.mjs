@@ -22,6 +22,10 @@ test('USD sales preserves micro-prices, rejects mixed currencies, and displays U
     if (method === 'GET' && pathname === '/api/sales-invoices') return { json: { records: invoice() ? [invoice()] : [] } };
     if (method === 'GET' && pathname === '/api/sales-invoices/1') return { json: { record: invoice() } };
     if (method === 'GET' && ['/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [actor] : [] } };
+    if (method === 'PATCH' && pathname === '/api/sales-invoices/1/payment') {
+      writes.push({ method, pathname, body });
+      return { json: { record: { ...invoice(), paidAmount: body.paidAmount } } };
+    }
     if (method === 'POST' && pathname === '/api/sales-orders') {
       writes.push({ method, pathname, body });
       const record = { ...body, id: 1, number: 'SO-MOCK-USD', customerName: customer.name, currency: 'USD', total: '207.54', invoiced: true, delivered: false, items: [{ productId: 10, productName: 'USD Micro Product', sku: 'USD-MICRO', unit: 'pcs', quantity: 1800, unitPrice: '0.115300', lineTotal: '207.54' }] };
@@ -50,6 +54,14 @@ test('USD sales preserves micro-prices, rejects mixed currencies, and displays U
   await expect(dialog.getByRole('alert')).toContainText('same currency');
   assert.equal(writes.length, 0, 'Mixed currency must be rejected before submitting an order.');
   await dialog.getByRole('button', { name: 'Remove product 2', exact: true }).click();
+  await expect(dialog.locator('.line-head .required-mark')).toHaveCount(3);
+  await dialog.getByLabel('Unit price 1', { exact: true }).fill('');
+  await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await expect(dialog.getByRole('alert')).toContainText('Enter a quantity and unit price');
+  assert.equal(writes.length, 0, 'A blank unit price must be rejected before numeric conversion or a request.');
+  await dialog.getByLabel('Unit price 1', { exact: true }).fill('0');
+  assert.equal(await dialog.getByLabel('Unit price 1', { exact: true }).evaluate(input => input.checkValidity()), true, 'A numeric zero price remains valid.');
+  await dialog.getByLabel('Unit price 1', { exact: true }).fill('0.115300');
   await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   assert.equal(writes.length, 1);
@@ -68,6 +80,15 @@ test('USD sales preserves micro-prices, rejects mixed currencies, and displays U
   await expect(dialog.getByLabel(/^Total received to date \(USD\)/)).toBeVisible();
   await expect(dialog.locator('.document-summary')).toContainText(usdTotal);
   assert.equal((await dialog.innerText()).includes('₱'), false);
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const received = dialog.getByLabel(/^Total received to date \(USD\)/);
+  await received.fill('');
+  await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await expect(dialog.getByRole('alert')).toContainText('Total received to date is required.');
+  assert.equal(writes.length, 1, 'A blank payment must not be converted to zero and submitted.');
+  await received.fill('0');
+  await dialog.getByRole('button', { name: 'Save payment', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(writes.at(-1).pathname, '/api/sales-invoices/1/payment');
+  assert.equal(writes.at(-1).body.paidAmount, 0, 'An explicit numeric zero remains valid.');
   assertSafe();
 });

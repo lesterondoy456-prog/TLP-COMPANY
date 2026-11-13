@@ -5,7 +5,7 @@ import { expect } from '@playwright/test';
 const { configurationMetadata } = loadApi('configuration');
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
-test('CAS Product tabs validate and preserve all scalar and child fields using mocked APIs only', { timeout: 90_000 }, async t => {
+test('CAS Product tabs validate and preserve all scalar and child fields using mocked APIs only', { timeout: 120_000 }, async t => {
   const admin = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
   const header = { id: 20, sku: 'HEADER', name: 'Existing Header', unit: 'pcs', price: 0, stock: 50, isActive: true };
   const records = [header];
@@ -44,6 +44,13 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   const panel = name => dialog.getByRole('tabpanel', { name, exact: true });
   const field = name => panel('Basic Info').getByLabel(name, { exact: true });
   const save = dialog.getByRole('button', { name: 'Save product', exact: true });
+  await expect(dialog.locator('.required-mark')).toHaveCount(3);
+  await expect(dialog.locator('[aria-required="true"]')).toHaveCount(3);
+  for (const [theme, color] of [['dark', 'rgb(255, 113, 130)'], ['light', 'rgb(202, 36, 64)']]) {
+    await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    for (const marker of await dialog.locator('.required-mark').all()) await expect(marker).toHaveCSS('color', color);
+  }
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   for (const tab of Object.values(tabs)) await expect(tab).toBeVisible();
   for (const label of ['Product Id', 'Code *', 'Rev', 'Description', 'UOP *', 'UOP2', 'Qty per UOP2', 'MOQ', 'SPQ', 'Unit Cost', 'Selling Price', 'Currency *', 'Model', 'Category', 'Plan Type', 'Color', 'Divisor', 'Thickness', 'Weight', 'Product Header', 'Remarks', 'Tag Color']) await expect(field(label)).toBeVisible();
   await expect(field('Product Id')).toHaveAttribute('readonly', '');
@@ -51,17 +58,25 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await expect(panel('Basic Info').getByRole('radio', { name: 'Customer Setting', exact: true })).toBeChecked();
   await expect(dialog.getByLabel('Stock on hand *', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('searchbox', { name: 'Search sales modules', exact: true })).toHaveCount(0);
-  await tabs['Link Supplies'].click();
-  await save.click();
-  await expect(tabs['Basic Info']).toHaveAttribute('aria-selected', 'true');
-  await expect(field('Code *')).toBeFocused();
-  assert.equal(writes.length, 0);
+  async function invalidFromOtherTab(label, expectedWriteCount = 0) {
+    await tabs['Link Supplies'].click();
+    await save.click();
+    await expect(tabs['Basic Info']).toHaveAttribute('aria-selected', 'true');
+    await expect(field(label)).toBeFocused();
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    assert.equal(writes.length, expectedWriteCount, 'A blank required field must prevent any API request, including when its tab is hidden.');
+  }
+  await invalidFromOtherTab('Code *');
+  await field('Code *').fill('   ');
+  await invalidFromOtherTab('Code *');
   await field('Code *').fill(' MOCK-PRODUCT ');
   await field('Rev').fill('1');
   await field('Description').fill(' Mock Product Description ');
+  await invalidFromOtherTab('UOP *');
   await field('UOP *').selectOption('pcs');
-  await field('UOP2').selectOption('box');
+  await invalidFromOtherTab('Currency *');
   await field('Currency *').selectOption('PHP');
+  await field('UOP2').selectOption('box');
   await tabs['Inventory Sched'].click();
   await save.click();
   await expect(tabs['Basic Info']).toHaveAttribute('aria-selected', 'true');
@@ -151,6 +166,13 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await tabs['Link Supplies'].click();
   await expect(panel('Link Supplies').getByLabel('Supply Qty 1', { exact: true })).toHaveValue('1.234567');
   await tabs['Basic Info'].click();
+  for (const [label, value] of [['Code *', 'MOCK-PRODUCT'], ['UOP *', 'pcs'], ['Currency *', 'PHP']]) {
+    if (label === 'Code *') await field(label).fill('');
+    else await field(label).selectOption('');
+    await invalidFromOtherTab(label, 1);
+    if (label === 'Code *') await field(label).fill(value);
+    else await field(label).selectOption(value);
+  }
   await field('Rev').fill('2');
   await save.click();
   await expect(dialog).toHaveCount(0);
