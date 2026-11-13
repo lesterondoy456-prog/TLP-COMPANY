@@ -2,7 +2,7 @@ import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import React, { useEffect, useRef, useState } from 'react';
 import { api, SYSTEM } from '../../api.js';
 import { APP } from '../../appSettings.js';
-import { Avatar, Badge, ErrorNotice, roleLabel } from '../../components/UI.jsx';
+import { LoadingSkeleton, Avatar, Badge, ErrorNotice, roleLabel } from '../../components/UI.jsx';
 import { Icon } from '../../components/Icons.jsx';
 import UserAccountForm from './UserAccountForm.jsx';
 
@@ -62,7 +62,7 @@ export default function PurchasingUserLogin({ user, onUser, onNotice }) {
     <ErrorNotice message={error} />
     <section className="records-card" aria-label={APP.userTable + ' accounts'}>
       <div className="records-toolbar"><div className="records-title"><h2>User accounts</h2><span>{records.length}</span></div><div className="records-tools"><label className="search-input"><Icon name="search" size={17} /><input type="search" aria-label="Search user accounts" placeholder="Search accounts…" value={query} onChange={event => { setQuery(event.target.value); setPage(1); }} /></label><button className="icon-button refresh-button" aria-label="Refresh accounts" disabled={loading} onClick={load}><Icon name="refresh" size={17} /></button></div></div>
-      {loading && !records.length ? <div className="loading-state" role="status"><span className="spinner" />Loading accounts…</div> : <div className="table-scroll"><table className="records-table"><thead><tr><th>Team member</th><th>Username</th><th>Mobile number</th><th>Role</th><th>Status</th><th className="actions-heading">Actions</th></tr></thead><tbody>
+      {loading && !hasLoaded.current ? <LoadingSkeleton label="Loading accounts…" /> : <div className="table-scroll"><table className="records-table"><thead><tr><th>Team member</th><th>Username</th><th>Mobile number</th><th>Role</th><th>Status</th><th className="actions-heading">Actions</th></tr></thead><tbody>
         {visible.map(record => <tr key={record.system + '-' + record.id}><td><div className="entity-cell"><Avatar user={record} /><div><strong>{record.name}{record.system === user.system && record.id === user.id && <span className="you-label">you</span>}</strong><small>{record.email || '—'}</small></div></div></td><td>{record.username}</td><td>{record.cpnumber || '—'}</td><td><Badge value={record.role}>{roleLabel(record.role)}</Badge></td><td><Badge value={record.isActive ? 'active' : 'inactive'}>{record.isActive ? 'Active' : 'Inactive'}</Badge></td><td><div className="row-actions"><button className="text-button" onClick={() => setDialog({ record })}>Edit</button></div></td></tr>)}
         {!visible.length && <tr><td colSpan={6} style={{ padding: '35px', textAlign: 'center' }}>No matching accounts.</td></tr>}
       </tbody></table></div>}

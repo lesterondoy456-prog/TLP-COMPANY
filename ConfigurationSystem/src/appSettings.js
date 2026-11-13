@@ -22,7 +22,6 @@ export const APP = {
       "label": "Warehouses"
     }
   ],
-  "footer": "Company configuration and audit history",
   "system": "configuration",
   "workerRole": "configuration",
   "workerLabel": "Configuration",

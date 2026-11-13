@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { api, dateLabel } from '../../api.js';
-import { Empty, ErrorNotice } from '../../components/UI.jsx';
+import { Empty, ErrorNotice, LoadingSkeleton } from '../../components/UI.jsx';
 import { Icon } from '../../components/Icons.jsx';
 import '../../warehouse.css';
 import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
@@ -119,14 +119,15 @@ export default function SuppliesStock() {
   const search = query.trim().toLowerCase();
   const visible = grouped.filter(row => [row.code, row.name, row.description, row.category, ...row.lots.flatMap(lot => [lot.imLot, lot.warehouseCode, lot.locationCode])].some(value => String(value || '').toLowerCase().includes(search)));
   const belowMinimum = grouped.filter(row => scaled(row.totalStock) < scaled(row.minimumStock)).length;
+  const firstLoad = loading && !records.length;
 
   return <section className="warehouse-workspace">
     <div className="page-heading"><div><span className="eyebrow">WAREHOUSE WORKSPACE</span><h1>Supplies Stock</h1><p>View available supplies by warehouse, location, and lot. Posted receiving receipts update these balances.</p></div><button className="button secondary" disabled={loading} onClick={reload}><Icon name="refresh" size={16} />Refresh stock</button></div>
     <ErrorNotice message={error} />
     <div className="warehouse-overview">
-      <div><span>Tracked supplies</span><strong>{grouped.length}</strong></div>
-      <div><span>Warehouse / location lots</span><strong>{selectedRecords.length}</strong></div>
-      <div><span>Below minimum stock</span><strong>{belowMinimum}</strong></div>
+      <div><span>Tracked supplies</span><strong>{firstLoad ? <span className="skeleton-bar" aria-hidden="true" /> : grouped.length}</strong></div>
+      <div><span>Warehouse / location lots</span><strong>{firstLoad ? <span className="skeleton-bar" aria-hidden="true" /> : selectedRecords.length}</strong></div>
+      <div><span>Below minimum stock</span><strong>{firstLoad ? <span className="skeleton-bar" aria-hidden="true" /> : belowMinimum}</strong></div>
     </div>
     <section className="records-card" aria-label="Supplies stock records">
       <div className="records-toolbar warehouse-toolbar"><div className="records-title"><h2>Supplies stock</h2><span>{visible.length}</span></div><div className="warehouse-filters">
@@ -134,7 +135,7 @@ export default function SuppliesStock() {
         <label className="sr-only" htmlFor="warehouse-category-filter">Category</label><select id="warehouse-category-filter" value={category} onChange={event => setCategory(event.target.value)}><option value="">All categories</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select>
         <label className="sr-only" htmlFor="warehouse-filter">Warehouse</label><select id="warehouse-filter" value={warehouse} onChange={event => setWarehouse(event.target.value)}><option value="">All warehouses</option>{warehouses.map(row => <option key={row.id} value={row.id}>{row.code}{row.description ? ' · ' + row.description : ''}</option>)}</select>
       </div></div>
-      {loading && !records.length ? <div className="loading-state" role="status"><span className="spinner" />Loading supplies stock…</div> : !visible.length ? <Empty icon="box" title={query || category || warehouse ? 'No matching stock' : 'No supplies stock yet'} detail={query || category || warehouse ? 'Try another search or filter.' : 'Stock appears after a receiving receipt with warehouse allocations is posted.'} /> : <div className="table-scroll"><table className="records-table warehouse-summary-table"><thead><tr><th>Category</th><th>Supplies Name</th><th>Description</th><th>UOP</th><th className="numeric">Total Stock</th><th className="actions-heading">Details</th></tr></thead><tbody>
+      {loading && !records.length ? <LoadingSkeleton label="Loading supplies stock" /> : !visible.length ? <Empty icon="box" title={query || category || warehouse ? 'No matching stock' : 'No supplies stock yet'} detail={query || category || warehouse ? 'Try another search or filter.' : 'Stock appears after a receiving receipt with warehouse allocations is posted.'} /> : <div className="table-scroll"><table className="records-table warehouse-summary-table"><thead><tr><th>Category</th><th>Supplies Name</th><th>Description</th><th>UOP</th><th className="numeric">Total Stock</th><th className="actions-heading">Details</th></tr></thead><tbody>
         {visible.map(row => <Fragment key={row.suppliesId}>
           <tr><td>{row.category || '—'}</td><td><strong>{row.name}</strong><small>{row.code}</small></td><td>{row.description || '—'}</td><td>{row.unit}</td><td className="numeric">{quantity(row.totalStock)}</td><td className="numeric"><button className="text-button" aria-expanded={expanded === row.suppliesId} onClick={() => toggle(row.suppliesId)}>{expanded === row.suppliesId ? 'Hide stock' : 'View stock'}</button></td></tr>
           {expanded === row.suppliesId && <tr className="warehouse-expanded-row"><td colSpan={6}><div className="warehouse-details">
@@ -142,7 +143,7 @@ export default function SuppliesStock() {
             <div className="table-scroll"><table className="warehouse-detail-table"><thead><tr><th>Warehouse</th><th>Location</th><th>IM Lot #</th><th>QC Status</th><th>Exp Date</th><th>MFG Date</th><th className="numeric">Available Qty</th></tr></thead><tbody>{row.lots.map(lot => <tr key={lot.id}><td>{lot.warehouseCode || '—'}</td><td>{lot.locationCode || '—'}</td><td>{lot.imLot || '—'}</td><td>{lot.qcStatus || '—'}</td><td>{dateLabel(lot.expiryDate)}</td><td>{dateLabel(lot.mfgDate)}</td><td className="numeric">{quantity(lot.quantity)}</td></tr>)}</tbody></table></div>
             <div className="warehouse-detail-heading"><h3>Receipt movements</h3><button className="text-button" disabled={movementBusy} onClick={() => loadMovements(row.suppliesId)}>Refresh movements</button></div>
             <ErrorNotice message={movementError} />
-            {movementBusy ? <p className="warehouse-inline-status" role="status">Loading movements…</p> : <div className="table-scroll"><table className="warehouse-detail-table"><thead><tr><th>Form</th><th>Branch</th><th>Ref No.</th><th>Received Date</th><th>Warehouse</th><th>Location</th><th>IM Lot #</th><th className="numeric">Qty</th></tr></thead><tbody>{(movements[row.suppliesId] || []).filter(movement => !warehouse || row.lots.some(lot => String(lot.warehouseId) === warehouse && lot.warehouseCode === movement.warehouseCode)).map(movement => <tr key={movement.id}><td>{Number(movement.quantity) < 0 ? 'Receipt cancellation' : 'Receiving Receipt'}</td><td>TLP COMPANY</td><td>{movement.receiptNumber}</td><td>{dateLabel(movement.receivedDate || movement.createdAt)}</td><td>{movement.warehouseCode || '—'}</td><td>{movement.locationCode || '—'}</td><td>{movement.imLot || '—'}</td><td className="numeric">{quantity(movement.quantity)}</td></tr>)}{!(movements[row.suppliesId] || []).length && <tr><td colSpan={8} className="warehouse-no-movements">No receipt movements found.</td></tr>}</tbody></table></div>}
+            {movementBusy ? <LoadingSkeleton label="Loading receipt movements" rows={3} /> : <div className="table-scroll"><table className="warehouse-detail-table"><thead><tr><th>Form</th><th>Branch</th><th>Ref No.</th><th>Received Date</th><th>Warehouse</th><th>Location</th><th>IM Lot #</th><th className="numeric">Qty</th></tr></thead><tbody>{(movements[row.suppliesId] || []).filter(movement => !warehouse || row.lots.some(lot => String(lot.warehouseId) === warehouse && lot.warehouseCode === movement.warehouseCode)).map(movement => <tr key={movement.id}><td>{Number(movement.quantity) < 0 ? 'Receipt cancellation' : 'Receiving Receipt'}</td><td>TLP COMPANY</td><td>{movement.receiptNumber}</td><td>{dateLabel(movement.receivedDate || movement.createdAt)}</td><td>{movement.warehouseCode || '—'}</td><td>{movement.locationCode || '—'}</td><td>{movement.imLot || '—'}</td><td className="numeric">{quantity(movement.quantity)}</td></tr>)}{!(movements[row.suppliesId] || []).length && <tr><td colSpan={8} className="warehouse-no-movements">No receipt movements found.</td></tr>}</tbody></table></div>}
           </div></td></tr>}
         </Fragment>)}
       </tbody></table></div>}

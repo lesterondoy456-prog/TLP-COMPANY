@@ -1,5 +1,6 @@
 ﻿import React, { useState } from 'react';
 import { Icon } from '../../components/Icons.jsx';
+import ThemeToggle from '../../components/ThemeToggle.jsx';
 
 export default function Login({ onLogin, initialError }) {
   const [username, setUsername] = useState('');
@@ -15,6 +16,7 @@ export default function Login({ onLogin, initialError }) {
     finally { setBusy(false); }
   }
   return <main className="login-page">
+    <ThemeToggle />
     <section className="login-story">
       <div className="brand"><div className="brand-mark">T</div><div><strong>TLP COMPANY</strong><span>SalesSystem</span></div></div>
       <div className="login-story-body"><span className="eyebrow">YOUR SALES, CONNECTED</span><h1>Every sale.<br />One clear view.</h1><p>Manage customers, products, orders, invoices, and deliveries in your sales workspace.</p>

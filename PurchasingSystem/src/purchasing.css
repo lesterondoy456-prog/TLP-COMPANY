@@ -9,7 +9,7 @@
   padding: 0 26px;
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfd;
+  background: var(--surface-muted);
 }
 
 .purchase-form-tabs [role=tab] {
@@ -19,7 +19,7 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
-  color: #8a99a5;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 600;
 }
@@ -33,7 +33,7 @@
 .purchase-document-modal .purchase-form-body {
   max-height: calc(100dvh - 260px);
   padding: 23px 25px;
-  background: #f8fafb;
+  background: var(--surface-muted);
 }
 
 .purchase-document-modal .purchase-form-body {
@@ -66,10 +66,10 @@
 
 .purchase-section {
   min-width: 0;
-  border: 1px solid #e1e9ee;
+  border: 1px solid var(--line);
   border-radius: 9px;
   padding: 20px;
-  background: white;
+  background: var(--surface);
 }
 
 .purchase-form-body > fieldset > .purchase-section,
@@ -84,7 +84,7 @@
 .purchase-section > h3,
 .purchase-section-heading h3 {
   margin: 0;
-  color: #4b6678;
+  color: var(--text-strong);
   font-size: 12px;
   font-weight: 750;
 }
@@ -92,7 +92,7 @@
 .purchase-section > h3 {
   margin-bottom: 18px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #eaf0f3;
+  border-bottom: 1px solid var(--line);
 }
 
 .purchase-section-heading {
@@ -117,19 +117,19 @@
 }
 
 .purchase-form-body input[readonly] {
-  background: #f5f8fa;
-  color: #8294a0;
+  background: var(--surface-muted);
+  color: var(--muted);
 }
 
 .purchase-form-body [aria-invalid=true] {
-  border-color: #d37d76;
-  background: #fffafa;
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .purchase-field-error {
   display: block;
   margin-top: 3px;
-  color: #b44c47;
+  color: var(--danger);
   font-size: 10px;
   line-height: 1.5;
 }
@@ -145,7 +145,7 @@
 }
 
 .purchase-form-footer > .checkbox {
-  color: #8b9ba5;
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -168,7 +168,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #718593;
+  color: var(--text);
   font-size: 11px;
 }
 
@@ -186,9 +186,9 @@
 }
 
 .purchase-entry-table {
-  border: 1px solid #e1e9ee;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
 }
 
 .purchase-entry-table table {
@@ -198,9 +198,9 @@
 
 .purchase-entry-table th {
   padding: 11px 12px;
-  border-bottom: 1px solid #e4ebef;
-  background: #f6f9fa;
-  color: #8c9ca7;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
   font-size: 10px;
   font-weight: 500;
   white-space: nowrap;
@@ -208,8 +208,8 @@
 
 .purchase-entry-table td {
   padding: 12px;
-  border-bottom: 1px solid #eaf0f3;
-  color: #6c8391;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
   vertical-align: top;
 }
 
@@ -245,7 +245,7 @@
 
 .purchase-empty-rows {
   padding: 26px 15px !important;
-  color: #9aa8b2 !important;
+  color: var(--muted) !important;
   text-align: center;
   font-size: 11px;
 }
@@ -264,7 +264,7 @@
   gap: 14px;
   padding-top: 18px;
   margin-bottom: 20px;
-  border-top: 1px solid #edf1f4;
+  border-top: 1px solid var(--line);
 }
 
 .purchase-totals input {
@@ -273,27 +273,27 @@
 }
 
 .purchase-totals .field:last-child input {
-  color: #34826e;
-  background: #f3faf6;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .purchase-source-picker {
   padding: 17px;
   margin-bottom: 20px;
-  border: 1px solid #d9eae2;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f6fbf8;
+  background: var(--surface-muted);
 }
 
 .purchase-source-picker h4 {
   margin: 0 0 13px;
-  color: #5a7d6d;
+  color: var(--text-strong);
   font-size: 12px;
 }
 
 .purchase-source-picker p {
   margin: 0;
-  color: #94a79e;
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -303,16 +303,16 @@
 
 .purchase-source-picker th {
   padding: 10px;
-  border-bottom: 1px solid #dceae3;
-  color: #8ba194;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
   font-size: 10px;
   font-weight: 500;
 }
 
 .purchase-source-picker td {
   padding: 12px 10px;
-  border-bottom: 1px solid #e4eee8;
-  color: #6b8376;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
 }
 
 .purchase-source-picker > .button {
@@ -323,13 +323,13 @@
   display: block;
   margin-top: 7px;
   font-size: 9px;
-  color: #9aa8b1;
+  color: var(--muted);
   white-space: nowrap;
 }
 
 .purchase-allocation-help,
 .purchase-action-description {
-  color: #8195a1;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.8;
 }
@@ -365,7 +365,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #98a6b0;
+  color: var(--muted);
   font-size: 9px;
 }
 
@@ -392,7 +392,7 @@
 
 .purchase-print-allocations > h3 {
   margin: 0 0 12px;
-  color: #8296a3;
+  color: var(--text);
   font-size: 12px;
 }
 
@@ -406,7 +406,7 @@
 .purchase-print-signatures > div {
   flex: 1;
   min-width: 120px;
-  color: #98a7b1;
+  color: var(--muted);
   font-size: 10px;
 }
 
@@ -414,7 +414,7 @@
   display: block;
   margin-top: 10px;
   font-size: 12px;
-  color: #6f8898;
+  color: var(--text-strong);
 }
 
 @media (max-width: 950px) {
@@ -489,6 +489,9 @@
 }
 
 @media print {
+  .purchase-print-sheet { background: white !important; color: black !important; }
+  .purchase-print-sheet * { color: black !important; background-color: transparent !important; border-color: #ddd !important; }
+
   .purchase-print-sheet {
     max-height: none !important;
     overflow: visible !important;

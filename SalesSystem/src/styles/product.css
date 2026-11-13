@@ -8,7 +8,7 @@
   padding: 0 26px;
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfd;
+  background: var(--surface-muted);
 }
 
 .product-tabs [role=tab] {
@@ -18,20 +18,20 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
-  color: #8a99a5;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 600;
 }
 
 .product-tabs [aria-selected=true] {
-  color: var(--teal);
-  border-bottom-color: var(--teal);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .product-modal .product-form-body {
   max-height: calc(100dvh - 270px);
   padding: 23px 26px;
-  background: #f8fafb;
+  background: var(--surface-muted);
 }
 
 .product-basic-layout,
@@ -44,16 +44,16 @@
 
 .product-section {
   min-width: 0;
-  border: 1px solid #e1e9ee;
+  border: 1px solid var(--line);
   border-radius: 9px;
   padding: 20px;
-  background: white;
+  background: var(--surface);
 }
 
 .product-section > h3,
 .product-section-heading h3 {
   margin: 0;
-  color: #4b6678;
+  color: var(--text-strong);
   font-size: 12px;
   font-weight: 750;
 }
@@ -61,7 +61,7 @@
 .product-section > h3 {
   margin-bottom: 18px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #eaf0f3;
+  border-bottom: 1px solid var(--line);
 }
 
 .product-fields {
@@ -92,19 +92,19 @@
 }
 
 .product-form input[readonly] {
-  background: #f5f8fa;
-  color: #8294a0;
+  background: var(--surface-raised);
+  color: var(--muted);
 }
 
 .product-form [aria-invalid=true] {
-  border-color: #d37d76;
-  background: #fffafa;
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .product-field-error {
   display: block;
   margin-top: 3px;
-  color: #b44c47;
+  color: var(--danger);
   font-size: 10px;
   line-height: 1.5;
 }
@@ -120,13 +120,13 @@
 
 .product-tab-heading h3 {
   margin: 0 0 7px;
-  color: #4b6678;
+  color: var(--text-strong);
   font-size: 14px;
 }
 
 .product-tab-heading p {
   margin: 0;
-  color: #91a0ab;
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -148,7 +148,7 @@
 .product-empty-rows {
   margin: 0;
   padding: 18px 10px;
-  color: #9aa8b2;
+  color: var(--muted);
   text-align: center;
   font-size: 11px;
 }
@@ -156,9 +156,9 @@
 .product-empty-panel {
   grid-column: 1 / -1;
   padding: 65px 20px;
-  border: 1px dashed #dce6eb;
+  border: 1px dashed var(--line);
   border-radius: 9px;
-  color: #9aa8b2;
+  color: var(--muted);
   text-align: center;
   font-size: 12px;
 }
@@ -181,7 +181,7 @@
   align-items: center;
   gap: 7px;
   font-size: 11px;
-  color: #718593;
+  color: var(--text);
 }
 
 .product-radio input[type=radio] {
@@ -189,7 +189,7 @@
   height: 14px;
   padding: 0;
   margin: 0;
-  accent-color: var(--teal);
+  accent-color: var(--accent);
 }
 
 .product-office-grid {
@@ -199,7 +199,7 @@
 }
 
 .product-office-grid .checkbox {
-  color: #6b8392;
+  color: var(--text);
   font-size: 11px;
 }
 .product-office-grid input[type=checkbox] {
@@ -207,9 +207,9 @@
 }
 
 .product-line-table {
-  border: 1px solid #e1e9ee;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
 }
 
 .product-line-table table {
@@ -218,18 +218,18 @@
 
 .product-line-table th {
   padding: 11px 13px;
-  border-bottom: 1px solid #e4ebef;
-  background: #f6f9fa;
-  color: #8c9ca7;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
   font-size: 10px;
   font-weight: 500;
 }
 
 .product-line-table td {
   padding: 12px;
-  border-bottom: 1px solid #eaf0f3;
+  border-bottom: 1px solid var(--line);
   font-size: 11px;
-  color: #6c8391;
+  color: var(--text);
   vertical-align: top;
 }
 
@@ -265,7 +265,7 @@
 }
 
 .product-form-footer > .checkbox {
-  color: #8b9ba5;
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -303,7 +303,7 @@
   .product-form-body input,
   .product-form-body select,
   .product-form-body textarea {
-    font-size: 14px;
+    font-size: 16px;
   }
 
   .product-form-footer {
@@ -311,12 +311,12 @@
   }
 
   .product-form-footer > .checkbox {
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .product-form-footer .button {
-    min-height: 37px;
+    min-height: 42px;
     padding: 10px 11px;
-    font-size: 10px;
+    font-size: 11px;
   }
 }

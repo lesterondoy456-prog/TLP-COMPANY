@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Avatar, ErrorNotice, roleLabel } from './UI.jsx';
 import { Icon } from './Icons.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 
 export default function Layout({ user, onUser, onLogout, app, tabs, pages, AccountPage, ProfilePage }) {
   const [tab, setTab] = useState(tabs[0].id);
+  const content = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
@@ -23,6 +25,12 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
   useEffect(() => {
     if (tab === 'users' && !administrator) setTab(tabs[0].id);
   }, [tab, administrator, tabs]);
+
+  useLayoutEffect(() => {
+    if (typeof content.current?.animate !== 'function' || window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.querySelector('dialog[open]')) return;
+    const animation = content.current?.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 220, easing: 'cubic-bezier(.2,.7,.2,1)' });
+    return () => animation?.cancel();
+  }, [tab]);
 
   function navigate(id) {
     setTab(id);
@@ -48,7 +56,7 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
 
   return <div className="app-shell">
     {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
-    <aside className={'sidebar ' + (menuOpen ? 'open' : '')}>
+    <aside id="warehouse-sidebar" className={'sidebar ' + (menuOpen ? 'open' : '')}>
       <div className="brand"><div className="brand-mark">T</div><div><strong>TLP COMPANY</strong><span>{app.appName}</span></div></div>
       <p className="nav-label">{app.label.toUpperCase()}</p>
       <nav aria-label={app.navLabel}>
@@ -61,14 +69,13 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
     </aside>
     <div className="main-shell">
       <header className="topbar">
-        <div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>{app.appName}</span><Icon name="chevronRight" size={13} /><strong>{current.title}</strong></div>
-        <div className="topbar-right"><span className="today-label">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())}</span><button className="signout-button" disabled={logoutBusy} onClick={logout}><Icon name="logout" size={17} /><span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span></button></div>
+        <div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" aria-controls="warehouse-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>{app.appName}</span><Icon name="chevronRight" size={13} /><strong>{current.title}</strong></div>
+        <div className="topbar-right"><ThemeToggle /><span className="today-label">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())}</span><button className="signout-button" disabled={logoutBusy} onClick={logout}><Icon name="logout" size={17} /><span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span></button></div>
       </header>
       <main className="workspace-content">
         <ErrorNotice message={error} />
         {notice && <div className="toast" role="status"><Icon name="check" size={18} />{notice}<button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><Icon name="x" size={16} /></button></div>}
-        {tab === 'users' && administrator ? <AccountPage user={user} onUser={onUser} onNotice={setNotice} /> : <Page key={tab} user={user} onNotice={setNotice} />}
-        <footer className="workspace-footer"><span>TLP Company · {app.appName}</span><span>{app.footer}</span></footer>
+        <div ref={content} className="page-transition">{tab === 'users' && administrator ? <AccountPage user={user} onUser={onUser} onNotice={setNotice} /> : <Page key={tab} user={user} onNotice={setNotice} />}</div>
       </main>
     </div>
     {profileOpen && <ProfilePage user={user} onClose={() => setProfileOpen(false)} onSaved={saveProfile} />}

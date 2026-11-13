@@ -1,7 +1,11 @@
-.configuration-workspace .configuration-filter select { border: 1px solid var(--border, #dce4eb); border-radius: 9px; padding: 9px 12px; background: var(--surface, #fff); color: inherit; font: inherit; }
+.configuration-workspace .configuration-filter select { border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; background: var(--surface); color: inherit; font: inherit; }
 .configuration-workspace .configuration-table { min-width: 650px; }
 .configuration-workspace .configuration-table td { max-width: 320px; white-space: normal; overflow-wrap: anywhere; }
-.configuration-checkbox { display: flex; align-items: center; gap: 9px; min-height: 42px; font-size: 13px; color: var(--text, #283849); }
-.configuration-checkbox input { width: 16px; height: 16px; accent-color: #15756c; }
+.configuration-checkbox { display: flex; align-items: center; gap: 9px; min-height: 42px; font-size: 13px; color: var(--text); }
+.configuration-checkbox input { width: 16px; height: 16px; accent-color: var(--accent); }
 .configuration-modal textarea { resize: vertical; }
 @media (max-width: 760px) { .configuration-workspace .records-tools { flex-wrap: wrap; } .configuration-workspace .search-input { min-width: 150px; } }
+
+.configuration-workspace .configuration-table td:first-child { min-width: 100px; white-space: nowrap; overflow-wrap: normal; }
+
+.configuration-workspace .configuration-table td:nth-child(2) { min-width: 200px; }

@@ -1,7 +1,7 @@
 import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, dateLabel } from '../../api.js';
-import { Badge, Empty, ErrorNotice, Modal } from '../../components/UI.jsx';
+import { LoadingSkeleton, Badge, Empty, ErrorNotice, Modal } from '../../components/UI.jsx';
 import { Icon } from '../../components/Icons.jsx';
 import { PurchasingDocumentView, currencyLabel, quantityLabel, statusLabel, documentTitle } from '../../components/PurchasingDisplay.jsx';
 import { receivingPostingIssue } from '../../helper/validation.js';
@@ -141,7 +141,7 @@ export default function POMonitoring({ user, onNotice }) {
         {!master && <><label className="purchase-filter-date">From<input type="date" aria-label="Covered Date from" value={from} onChange={event => { setFrom(event.target.value); setPage(1); }} /></label><label className="purchase-filter-date">To<input type="date" aria-label="Covered Date to" value={to} min={from || undefined} onChange={event => { setTo(event.target.value); setPage(1); }} /></label></>}
         <button className={'icon-button refresh-button ' + (loading ? 'spinning' : '')} aria-label="Refresh purchasing records" title="Refresh records" disabled={loading} onClick={reload}><Icon name="refresh" size={18} /></button>
       </div></div>
-      {loading && !loaded ? <div className="loading-state" role="status"><span className="spinner" />Loading purchasing records…</div> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <div className="table-scroll"><table className="records-table purchasing-monitor-table"><thead><tr>
+      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <div className="table-scroll"><table className="records-table purchasing-monitor-table"><thead><tr>
         <><th>Branch</th><th>PO #</th><th>Supplier</th><th>PO Date</th><th>Delivery Date</th><th>Supplies Name</th><th>Description</th><th>UOP</th><th className="numeric">Qty</th><th className="numeric">Bal</th><th className="numeric">Price</th><th>Curr</th><th className="numeric">Gross Amount</th><th className="numeric">Disc Amount</th><th className="numeric">VAT Amount</th><th className="numeric">Amount</th><th>PR No.</th></>
         <th>Status</th><th className="actions-heading">Actions</th>
       </tr></thead><tbody>{visible.map(({ record, item }, index) => <tr key={record.id + '-' + (item?.id ?? index)}>

@@ -22,7 +22,6 @@ export const APP = {
       "label": "History"
     }
   ],
-  "footer": "Read-only supplies inventory",
   "system": "warehouse",
   "workerRole": "warehouse",
   "workerLabel": "Warehouse",

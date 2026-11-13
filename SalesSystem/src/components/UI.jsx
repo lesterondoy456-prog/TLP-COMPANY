@@ -48,3 +48,16 @@ export function PhotoField({ value, onChange, name }) {
   }
   return <div className="photo-field span-2"><Avatar large user={{ name, photo: value }} /><div><strong>Profile photo</strong><p>JPG, PNG, or WebP · up to 250 KB</p><div className="photo-actions"><button type="button" className="button secondary small" onClick={() => fileRef.current.click()}>Choose photo</button>{value && <button type="button" className="text-button" onClick={() => { onChange(''); if (fileRef.current) fileRef.current.value = ''; }}>Remove</button>}</div><input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Profile photo" className="sr-only" onChange={load} />{error && <small className="error-text" role="alert">{error}</small>}</div></div>;
 }
+
+
+export function LoadingSkeleton({ label = 'Loading records', rows = 5 }) {
+  return <div className="loading-skeleton" role="status" aria-live="polite">
+    <span className="sr-only">{label}</span>
+    <div aria-hidden="true">
+      <div className="skeleton-heading"><span className="skeleton-bar" /><span className="skeleton-bar" /></div>
+      {Array.from({ length: rows }, (_, row) => <div className="skeleton-row" key={row}>
+        {Array.from({ length: 4 }, (_, cell) => <span className="skeleton-bar" key={cell} />)}
+      </div>)}
+    </div>
+  </div>;
+}

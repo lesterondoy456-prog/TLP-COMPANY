@@ -102,6 +102,10 @@ A relative Sales route such as `/customers` is available at `/api/sales/customer
 
 All SQL files and database/schema checking live under `migration/`: `schema.sql`, `system-accounts.sql`, `configuration-schema.sql`, `erp-schema.sql`, `text-max.sql`, and `run.js`. Backend startup applies these idempotent migrations before listening. Run `npm run migrate` to apply migrations without starting HTTP. Migrations only manage the database schema; they do not create administrator accounts or business records. A new installation needs its department accounts provisioned in the database before users can sign in. Backend startup uses the same migration runner. The backend contains the actual local `.env`; no `.env.example` is required.
 
+## Appearance
+
+All four apps have matte navy and light themes with blue navigation accents. Use the sun/moon button on the login page or top bar to switch; each app remembers the preference in the browser. Sidebar modules are direct buttons without expandable groups. Page changes use a short transition, initial record loads use animated skeletons, and new table rows fade into place. Realtime refreshes retain loaded records and open drafts. Reduced-motion browser preferences disable these animations. Printed documents remain white with dark text.
+
 ## Realtime updates
 
 Each signed-in frontend maintains its own Socket.IO connection. The existing JWT-protected API issues a short-lived, single-use connection ticket; sockets join only their authenticated system room. Tickets and connection state stay in memory, with no extra database records.

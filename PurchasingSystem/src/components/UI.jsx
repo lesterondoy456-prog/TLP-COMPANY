@@ -31,6 +31,15 @@ export function Modal({ title, subtitle, children, onClose, busy, wide = false, 
   </dialog>;
 }
 export function FormFooter({ onClose, busy, disabled = false, label = 'Save record' }) { return <div className="modal-footer"><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancel</button><button className="button primary" disabled={busy || disabled}>{busy ? 'Saving…' : label}<Icon name="check" size={17} /></button></div>; }
+export function LoadingSkeleton({ label = 'Loading records…' }) {
+  return <div className="loading-skeleton" role="status">
+    <span className="sr-only">{label}</span>
+    <div aria-hidden="true">
+      <div className="skeleton-heading"><span className="skeleton-bar" /><span className="skeleton-bar" /></div>
+      {Array.from({ length: 4 }, (_, index) => <div className="skeleton-row" key={index}><span className="skeleton-bar" /><span className="skeleton-bar" /><span className="skeleton-bar" /><span className="skeleton-bar" /></div>)}
+    </div>
+  </div>;
+}
 export function Empty({ icon = 'file', title, detail }) { return <div className="empty-state"><div><Icon name={icon} size={28} /></div><h3>{title}</h3><p>{detail}</p></div>; }
 export function ErrorNotice({ message }) { return message ? <div className="notice error" role="alert">{message}</div> : null; }
 export function PhotoField({ value, onChange, name }) {

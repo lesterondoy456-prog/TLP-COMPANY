@@ -22,7 +22,6 @@ export const APP = {
       "label": "Receiving"
     }
   ],
-  "footer": "Supplies procurement and receiving",
   "system": "purchasing",
   "workerRole": "purchasing",
   "workerLabel": "Purchasing",

@@ -1,3 +1,4 @@
+import ThemeToggle from '../../components/ThemeToggle.jsx';
 import React, { useState } from 'react';
 import { Icon } from '../../components/Icons.jsx';
 import { APP } from '../../appSettings.js';
@@ -29,6 +30,7 @@ export default function Login({ onLogin, initialError }) {
   }
 
   return <main className="login-page">
+    <ThemeToggle />
     <section className="login-story">
       <div className="brand"><div className="brand-mark">T</div><div><strong>TLP COMPANY</strong><span>{APP.appName}</span></div></div>
       <div className="login-story-body">
