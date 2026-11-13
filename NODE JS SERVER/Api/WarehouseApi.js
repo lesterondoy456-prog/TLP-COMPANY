@@ -1,53 +1,39 @@
-import { validateCredentials, issueSession, requireUser, requireAdmin, requireAccountManager, sessionCookie, expiredCookie } from '../components/auth.js';
-import * as accounts from '../accounts.js';
-import { idValue } from '../components/validation.js';
-import { listInventory, listStockMovements } from '../inventory.js';
-import { json, readJson, methodNotAllowed } from './common.js';
+const express = require('express');
+const router = express.Router();
+const { request, sql } = require('../db');
 
-export async function handleWarehouseApi(request, context) {
-  const { env } = context;
-  const url = new URL(request.url);
-  const prefix = '/api/warehouse';
-  if (url.pathname !== prefix && !url.pathname.startsWith(prefix + '/')) return null;
-  const pathname = '/api' + url.pathname.slice(prefix.length).replace(/\/$/, '');
-  const system = 'warehouse';
+router.get('/inventory', async (req, res) => {
+  const suppliesId = req.query.suppliesId;
 
-  if (pathname === '/api/auth/login') {
-    if (request.method !== 'POST') return methodNotAllowed(['POST']);
-    const input = await readJson(request);
-    const user = await validateCredentials(input, request, system);
-    const { token, lifetime } = issueSession(env, user, input.remember === true);
-    return json({ user }, 200, { 'Set-Cookie': sessionCookie(request, token, lifetime, input.remember === true, system) });
-  }
-  if (pathname === '/api/auth/logout') {
-    if (request.method !== 'POST') return methodNotAllowed(['POST']);
-    return json({ success: true }, 200, { 'Set-Cookie': expiredCookie(request, system) });
-  }
-  const user = await requireUser(request, env, system);
-  if (pathname === '/api/auth/session') {
-    if (request.method !== 'GET') return methodNotAllowed(['GET']);
-    return json({ user });
-  }
-  if (pathname === '/api/auth/profile') {
-    if (request.method !== 'PUT') return methodNotAllowed(['PUT']);
-    return json({ user: await accounts.saveUser(await readJson(request), user, user.id, true) });
-  }
-  const users = pathname.match(/^\/api\/users(?:\/(\d+))?$/);
-  if (users) {
-    requireAccountManager(user);
-    const id = users[1] ? idValue(users[1]) : undefined;
-    if (request.method === 'GET') return json(id ? { record: await accounts.getUser(id, user) } : { records: await accounts.listUsers(user) });
-    if (request.method === 'POST' && !id) return json({ record: await accounts.saveUser(await readJson(request), user) }, 201);
-    if (request.method === 'PUT' && id) {
-      requireAdmin(user);
-      return json({ record: await accounts.saveUser(await readJson(request), user, id) });
-    }
-    return methodNotAllowed(id ? ['GET', 'PUT'] : ['GET', 'POST']);
-  }
-  if (pathname === '/api/inventory' || pathname === '/api/inventory/movements') {
-    if (request.method !== 'GET') return methodNotAllowed(['GET']);
-    const suppliesId = url.searchParams.get('suppliesId');
-    return json({ records: await (pathname.endsWith('/movements') ? listStockMovements(suppliesId) : listInventory(suppliesId)) });
-  }
-  return null;
-}
+  const query = request();
+  if (suppliesId) query.input('suppliesId', sql.Int, Number(suppliesId));
+  const result = await query.query(`SELECT i.id,i.suppliesId,s.code,s.name,s.description,s.category,s.unit,CONVERT(varchar(60),s.minimumStock) AS minimumStock,
+    CONVERT(varchar(60),i.quantity) AS quantity,i.warehouseId,w.code AS warehouseCode,w.description AS warehouseDescription,
+    i.locationId,l.code AS locationCode,l.description AS locationDescription,i.imLot,i.qcStatus,
+    CONVERT(varchar(10),i.expiryDate,23) AS expiryDate,CONVERT(varchar(10),i.mfgDate,23) AS mfgDate,i.updatedAt
+    FROM dbo.SupplyInventory i JOIN dbo.Supplies s ON s.id=i.suppliesId JOIN dbo.ConfigWarehouses w ON w.id=i.warehouseId JOIN dbo.ConfigLocations l ON l.id=i.locationId
+    ${suppliesId ? 'WHERE i.suppliesId=@suppliesId' : ''} ORDER BY s.name,w.code,l.code,i.imLot,i.id`);
+  res.json({ records: result.recordset });
+
+});
+
+router.get('/inventory/movements', async (req, res) => {
+  const suppliesId = req.query.suppliesId;
+
+  const query = request();
+  if (suppliesId) query.input('suppliesId', sql.Int, Number(suppliesId));
+  const result = await query.query(`SELECT TOP(1000) m.id,m.receiptId,r.number AS receiptNumber,m.receiptItemId,m.allocationId,m.inventoryId,
+    i.suppliesId,s.code,s.name,s.unit,w.code AS warehouseCode,l.code AS locationCode,i.imLot,CONVERT(varchar(60),m.quantity) AS quantity,
+    u.name AS createdBy,m.createdAt,CONVERT(varchar(10),r.srrDate,23) AS receivedDate,o.branch
+    FROM dbo.SupplyStockMovements m JOIN dbo.SupplyInventory i ON i.id=m.inventoryId JOIN dbo.Supplies s ON s.id=i.suppliesId
+    JOIN dbo.SuppliesReceipts r ON r.id=m.receiptId JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId
+    JOIN dbo.ConfigWarehouses w ON w.id=i.warehouseId JOIN dbo.ConfigLocations l ON l.id=i.locationId JOIN dbo.PurchasingUserLogin u ON u.id=m.createdById
+    ${suppliesId ? 'WHERE i.suppliesId=@suppliesId' : ''} ORDER BY m.id DESC`);
+  res.json({ records: result.recordset });
+
+});
+
+router.all('/inventory', (req, res) => res.set('Allow', 'GET').status(405).json({ message: 'This HTTP method is not supported.' }));
+router.all('/inventory/movements', (req, res) => res.set('Allow', 'GET').status(405).json({ message: 'This HTTP method is not supported.' }));
+
+module.exports = router;

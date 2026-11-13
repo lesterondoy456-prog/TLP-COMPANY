@@ -1,7 +1,30 @@
-import { configurationMetadata } from '../../configuration.js';
-import { validatePurchaseRequest, validatePurchaseOrder, validateReceiving } from '../../components/purchasing-validation.js';
-import { calculatePurchaseTotals, createReceivingWorkflow, decimalString, decimalUnits } from '../../components/purchasing-workflow.js';
-import { memoryReceivingRepository } from './receiving-memory-repository.mjs';
+import { loadApi } from './load-api.mjs';
+const { configurationMetadata } = loadApi('configuration');
+import { calculateTotals as fixtureTotals, decimalString, decimalUnits } from '../../../PurchasingSystem/src/purchaseMath.js';
+import { memoryReceivingRepository, receivingRouteWorkflow } from './receiving-memory-repository.mjs';
+
+function calculatePurchaseTotals(items, settings = {}) {
+  const totals = fixtureTotals(items, settings);
+  return {
+    ...totals,
+    items: items.map((item, index) => ({
+      ...item, ...totals.items[index], quantity: decimalString(decimalUnits(item.quantity, 6), 6),
+      discountRate: decimalString(decimalUnits(item.discountRate || 0, 6), 6),
+      vatRate: decimalString(decimalUnits(settings.vatRate || 0, 6), 6),
+    })),
+  };
+}
+
+function storedBody(body) {
+  const values = structuredClone(body);
+  for (const key of ['supplierId', 'purchaseOrderId']) if (values[key] !== undefined) values[key] = Number(values[key]);
+  values.items = values.items.map(item => {
+    for (const key of ['suppliesId', 'requestItemId', 'orderItemId']) if (item[key] !== undefined) item[key] = Number(item[key]);
+    if (item.allocations) item.allocations = item.allocations.map(row => ({ ...row, warehouseId: Number(row.warehouseId), locationId: Number(row.locationId) }));
+    return item;
+  });
+  return values;
+}
 
 export function mockPurchasing(actor, warehouseActor) {
   const supplier = { id: 50, code: 'SUP-MOCK', name: 'Mock Supplier', shortName: 'Mock', businessStyle: 'Wholesale', address: 'Supplier Office', contactPerson: 'Supplier Contact', paymentTerm: '30 DAYS', vatCode: 'VS', vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, isActive: true };
@@ -54,18 +77,18 @@ export function mockPurchasing(actor, warehouseActor) {
           }
           if (kind === 'receivings') {
             if (failNextReceivingPost) { failNextReceivingPost = false; return { status: 503, json: { message: 'Mock receiving temporarily unavailable.' } }; }
-            return { json: await createReceivingWorkflow(memory.repository).post(id, actor) };
+            return { json: await receivingRouteWorkflow(memory.repository).post(id, actor) };
           }
           return { json: { record: lists[kind]().find(record => record.id === id) } };
         }
         if (kind === 'purchase-requests' && method === 'POST' && !rawId) {
-          const values = validatePurchaseRequest(body);
+          const values = storedBody(body);
           const record = { ...values, id: 1, number: 'PR-MOCK-001', branch: 'TLP COMPANY', status: 'draft', preparedBy: actor.name, preparedById: actor.id, items: values.items.map((item, index) => ({ ...item, id: 100 + index, requestId: 1, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit })) };
           requests.push(record);
           return { status: 201, json: { record: requestRows()[0] } };
         }
         if (kind === 'purchase-orders' && method === 'POST' && !rawId) {
-          const values = validatePurchaseOrder(body);
+          const values = storedBody(body);
           const items = values.items.map(item => {
             const source = requestRows().flatMap(record => record.items.map(row => ({ ...row, requestNumber: record.number }))).find(row => row.id === item.requestItemId);
             return { ...item, suppliesId: source.suppliesId, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit, requestNumber: source.requestNumber, requestId: 1 };
@@ -78,7 +101,7 @@ export function mockPurchasing(actor, warehouseActor) {
         if (kind === 'receivings' && ['POST', 'PUT'].includes(method)) {
           const previous = memory?.snapshot();
           const current = previous?.receipts.find(record => record.id === id);
-          const values = validateReceiving(body, current);
+          const values = storedBody(body);
           const order = orderRows().find(record => record.id === values.purchaseOrderId);
           const priced = values.items.map(item => {
             const source = order.items.find(row => row.id === item.orderItemId);

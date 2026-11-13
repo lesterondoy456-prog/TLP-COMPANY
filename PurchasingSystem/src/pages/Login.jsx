@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Icon } from '../components/Icons.jsx';
 import { APP } from '../appSettings.js';
+import { validateLogin } from '../helper/validation.js';
 
 export default function Login({ onLogin, initialError }) {
   const [username, setUsername] = useState('');
@@ -13,6 +14,8 @@ export default function Login({ onLogin, initialError }) {
   async function submit(event) {
     event.preventDefault();
     if (busy) return;
+    const invalid = validateLogin({ username, password });
+    if (Object.keys(invalid).length) { setError(Object.values(invalid)[0]); return; }
     setBusy(true);
     setError('');
     try {

@@ -22,13 +22,21 @@ npm run build
 npm start
 ```
 
-`npm start` serves `dist` with Vite preview on the same port. Development and preview both proxy `/api` to `API_PROXY_TARGET`, which defaults to `http://localhost:5189`. Docker runs the built Vite app in its own Node container and sets the target to `http://nodejs-server:5189`.
+`npm start` serves `dist` with Vite preview on the same port. The React plugin is configured in `vite.config.js`. Development and preview both proxy `/api`, `/Uploads`, and `/socket.io` with `changeOrigin: true` to `API_PROXY_TARGET`, which defaults to `http://localhost:5189`. Docker runs the built Vite app in its own Node container and sets the target to `http://nodejs-server:5189`.
+
+The upload and Socket.IO entries forward requests only; the backend has no upload-storage or Socket.IO service yet. Allowed frontend URLs are configured in the backend `.env` as `FRONTEND_ORIGINS`.
 
 ## Accounts and API
 
 Sign in with this app's account from **SalesUserLogin**. Its API namespace is `/api/sales`, with separate login, session, profile, and user endpoints. Its session does not sign in to another system. Administrators manage Admin, Sales Head, and Sales accounts. Sales Heads can view Sales accounts and create Sales accounts. Sales users edit their own profiles.
 
+`src/api.js` makes ordinary same-origin `fetch` requests under `/api/sales`, such as `/api/sales/customers`. The Node server mounts the CommonJS Express router exported by `Api/SalesApi.js` at that prefix; frontend components call HTTP endpoints through the local API helper.
+
+Form validation is organized in `src/helper/validation.js` and runs before fetch. The shared backend `LoginApiSystem.js` handles JWT login, profile and account endpoints while preserving this system's own table and cookie.
+
 ## Workflow
+
+Each sidebar item has a named page under `src/pages`. Its forms live inside that page folder or beside the page file. `src/components` contains shared layout and UI. API calls use the full `/api/sales/...` endpoint in the page; `src/api.js` handles HTTP credentials, JSON and errors without adding a hidden URL prefix.
 
 1. Add a customer and product. Product has Basic Info, Customer, Inventory Sched, and Link Supplies tabs.
 2. Create and confirm a Sales Order.

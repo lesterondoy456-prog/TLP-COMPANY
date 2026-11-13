@@ -1,7 +1,13 @@
+import { loadRouterWithDatabase, invokeRoute } from './helpers/load-api.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { expect } from '@playwright/test';
-import { configurationMetadata, validateConfiguration } from '../configuration.js';
+const forbiddenDatabase = () => { throw new Error('Mock metadata must not access SQL.'); };
+const metadataRouter = loadRouterWithDatabase('configuration', { request: forbiddenDatabase, sql: {}, transaction: forbiddenDatabase });
+const formMetadata = (await invokeRoute(metadataRouter, 'GET', '/masters', {})).body.modules;
+const configurationMetadata = () => structuredClone(formMetadata);
+import { validateConfiguration as validateForm } from '../../ConfigurationSystem/src/helper/validation.js';
+const validateConfiguration = (kind, input, current) => validateForm(configurationMetadata().find(module => module.kind === kind), input, current);
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
 async function configurationPage(t, role) {

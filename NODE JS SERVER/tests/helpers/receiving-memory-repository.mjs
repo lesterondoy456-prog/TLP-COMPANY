@@ -1,3 +1,4 @@
+import { loadRouterWithDatabase, invokeRoute } from './load-api.mjs';
 import assert from 'node:assert/strict';
 
 const micro = value => BigInt(Math.round(Number(value) * 1_000_000));
@@ -20,7 +21,7 @@ export function receivingFixture() {
 }
 
 // Repository semantics only; all validation, replay handling and effect ordering
-// come from the production receiving coordinator under test.
+// come from the actual production receiving route under test.
 export function memoryReceivingRepository(initial = receivingFixture(), { failStockCall = 0, failAudit = false } = {}) {
   let state = structuredClone(initial);
   let queue = Promise.resolve();
@@ -83,5 +84,68 @@ export function memoryReceivingRepository(initial = receivingFixture(), { failSt
     },
     async getReceipt(scope, id) { return structuredClone(scoped(scope).receipts.find(row => row.id === id)); },
   };
-  return { repository, snapshot: () => structuredClone(state), events, stockCalls: () => stockCalls };
+
+  const database = {
+    sql: new Proxy({}, { get: (_object, type) => type === 'MAX' ? -1 : (...args) => ({ type, args }) }),
+    transaction: work => repository.transaction(work),
+    request(scope) {
+      const params = {};
+      return {
+        input(name, _type, value) { params[name] = value; return this; },
+        async query(statement) {
+          const draft = scoped(scope);
+          const text = statement.trim();
+          if (/^SELECT r\.id/.test(text) && text.includes('FROM dbo.SuppliesReceipts r')) {
+            const receipt = text.includes('WITH (UPDLOCK,HOLDLOCK)')
+              ? await repository.getReceiptForUpdate(scope, params.id) : await repository.getReceipt(scope, params.id);
+            if (!receipt) return { recordsets: [[], [], []] };
+            const { items, ...header } = structuredClone(receipt);
+            return { recordsets: [[header], items.map(({ allocations, ...item }) => ({ ...item, receiptId: header.id })), items.flatMap(item => item.allocations.map(allocation => ({ ...allocation, receiptItemId: item.id })))] };
+          }
+          if (/^SELECT o\.id/.test(text) && text.includes('FROM dbo.PurchaseOrders o')) {
+            const order = await repository.getOrderForUpdate(scope, params.id);
+            if (!order) return { recordsets: [[], []] };
+            const { items, ...header } = structuredClone(order);
+            return { recordsets: [[header], items.map(item => ({ ...item, orderId: header.id }))] };
+          }
+          if (text.startsWith('SELECT w.id FROM dbo.ConfigWarehouses')) return { recordset: await repository.validateDestination(scope, { warehouseId: params.warehouse, locationId: params.location }) ? [{ id: params.warehouse }] : [] };
+          const stockKey = () => [params.suppliesId, params.warehouseId, params.locationId, params.imLot, params.qcStatus, params.expiryDate || '', params.mfgDate || ''].join('|');
+          scope.inventoryRows ||= new Map();
+          if (text.startsWith('SELECT id FROM dbo.SupplyInventory')) {
+            const index = Object.keys(draft.inventory).indexOf(stockKey());
+            if (index < 0) return { recordset: [] };
+            scope.inventoryRows.set(index + 1, { ...params });
+            return { recordset: [{ id: index + 1 }] };
+          }
+          if (text.startsWith('INSERT INTO dbo.SupplyInventory')) {
+            const id = Object.keys(draft.inventory).length + 1;
+            scope.inventoryRows.set(id, { ...params });
+            return { recordset: [{ id }] };
+          }
+          if (text.startsWith('UPDATE dbo.SupplyInventory')) {
+            scope.inventoryRows.set(params.id, { ...params });
+            return { recordset: [{ id: params.id }] };
+          }
+          if (text.startsWith('INSERT INTO dbo.SupplyStockMovements')) {
+            await repository.addStock(scope, { ...scope.inventoryRows.get(params.inventoryId), ...params });
+            return { recordset: [] };
+          }
+          if (text.startsWith('UPDATE dbo.SuppliesReceipts')) { await repository.markReceiptPosted(scope, params.id); return { recordset: [] }; }
+          if (text.startsWith('UPDATE o SET status=CASE')) { await repository.refreshPurchaseOrderStatus(scope, params.id); return { recordset: [] }; }
+          if (text.startsWith('INSERT INTO dbo.AuditTrail')) {
+            await repository.recordAudit(scope, { id: params.userId }, params.module, params.action, Number(params.recordId));
+            return { recordset: [] };
+          }
+          throw new Error('Unexpected SQL in receiving route test: ' + text.slice(0, 100));
+        },
+      };
+    },
+  };
+  repository.database = database;
+  return { repository, database, snapshot: () => structuredClone(state), events, stockCalls: () => stockCalls };
+}
+
+export function receivingRouteWorkflow(repository) {
+  const router = loadRouterWithDatabase('purchasing', repository.database);
+  return { post: async (id, user) => (await invokeRoute(router, 'POST', '/receivings/:id/post', { params: { id }, purchasingUser: { ...user, system: 'purchasing' } })).body };
 }

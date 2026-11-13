@@ -1,93 +1,2412 @@
-import { validateCredentials, issueSession, requireUser, requireAdmin, requireAccountManager, sessionCookie, expiredCookie } from '../components/auth.js';
-import * as accounts from '../accounts.js';
-import { idValue } from '../components/validation.js';
-import * as purchasingMasters from '../purchasing-masters.js';
-import * as purchasing from '../purchasing.js';
-import * as receiving from '../receiving.js';
-import { json, readJson, methodNotAllowed } from './common.js';
+const express = require("express");
+const router = express.Router();
+const { request, sql, transaction } = require("../db");
 
-export async function handlePurchasingApi(request, context) {
-  const { env } = context;
-  const url = new URL(request.url);
-  const prefix = '/api/purchasing';
-  if (url.pathname !== prefix && !url.pathname.startsWith(prefix + '/')) return null;
-  const pathname = '/api' + url.pathname.slice(prefix.length).replace(/\/$/, '');
-  const system = 'purchasing';
+// SQL is written directly in each endpoint. React forms validate input formats.
+const SYSTEM = 'purchasing';
 
-  if (pathname === '/api/auth/login') {
-    if (request.method !== 'POST') return methodNotAllowed(['POST']);
-    const input = await readJson(request);
-    const user = await validateCredentials(input, request, system);
-    const { token, lifetime } = issueSession(env, user, input.remember === true);
-    return json({ user }, 200, { 'Set-Cookie': sessionCookie(request, token, lifetime, input.remember === true, system) });
-  }
-  if (pathname === '/api/auth/logout') {
-    if (request.method !== 'POST') return methodNotAllowed(['POST']);
-    return json({ success: true }, 200, { 'Set-Cookie': expiredCookie(request, system) });
-  }
-  const user = await requireUser(request, env, system);
-  if (pathname === '/api/auth/session') {
-    if (request.method !== 'GET') return methodNotAllowed(['GET']);
-    return json({ user });
-  }
-  if (pathname === '/api/auth/profile') {
-    if (request.method !== 'PUT') return methodNotAllowed(['PUT']);
-    return json({ user: await accounts.saveUser(await readJson(request), user, user.id, true) });
-  }
-  const users = pathname.match(/^\/api\/users(?:\/(\d+))?$/);
-  if (users) {
-    requireAccountManager(user);
-    const id = users[1] ? idValue(users[1]) : undefined;
-    if (request.method === 'GET') return json(id ? { record: await accounts.getUser(id, user) } : { records: await accounts.listUsers(user) });
-    if (request.method === 'POST' && !id) return json({ record: await accounts.saveUser(await readJson(request), user) }, 201);
-    if (request.method === 'PUT' && id) {
-      requireAdmin(user);
-      return json({ record: await accounts.saveUser(await readJson(request), user, id) });
+const SUPPLIER_TEXT = Object.freeze({
+  name: 180, shortName: 80, businessStyle: 180, address: 500, remarks: 2000, tin: 50,
+  contactPerson: 150, email: 254, countryOfOrigin: 100, country: 100, cpnumber: 30,
+  faxNo: 30, paymentTerm: 100, vatCode: 80, taxCode: 80,
+});
+const SUPPLIES_TEXT = Object.freeze({ maker: 150, name: 180, description: 1000, remarks: 2000, color: 80, unit: 30, weightUnit: 30, category: 100 });
+const SUPPLIES_NUMBERS = ['minimumStock', 'thickness', 'netWeight'];
+
+router.get('/suppliers', async (req, res) => {
+  const scope = undefined;
+  const data = await request().query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers ORDER BY name,id`);
+  res.json({ records: data.recordset });
+});
+
+router.get('/suppliers/:id', async (req, res) => {
+  const scope = undefined;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const data = await request().input('id', sql.Int, id).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
+  if (!data.recordset.length) throw Object.assign(new Error('Supplier could not be found.'), { status: 404 });
+  res.json({ record: data.recordset[0] });
+});
+
+router.post('/suppliers', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const value = { decimalInPrice: 2, decimalInTotalPrice: 2, vatInclusive: false, isActive: true, ...input };
+    for (const [key, maximum] of Object.entries(SUPPLIER_TEXT)) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
     }
-    return methodNotAllowed(id ? ['GET', 'PUT'] : ['GET', 'POST']);
-  }
-  if (pathname === '/api/purchasing-options' || pathname === '/api/options') {
-    if (request.method !== 'GET') return methodNotAllowed(['GET']);
-    return json(await purchasingMasters.purchasingOptions());
-  }
-  const purchasingMaster = pathname.match(/^\/api\/(suppliers|supplies)(?:\/(\d+))?$/);
-  if (purchasingMaster) {
-    const [, kind, rawId] = purchasingMaster;
-    const id = rawId ? idValue(rawId) : undefined;
-    const supplier = kind === 'suppliers';
-    if (request.method === 'GET') {
-      return json(id ? { record: await (supplier ? purchasingMasters.getSupplier(id) : purchasingMasters.getSupplies(id)) }
-        : { records: await (supplier ? purchasingMasters.listSuppliers() : purchasingMasters.listSupplies()) });
+    const vat = await request(scope).input('code', sql.NVarChar(80), value.vatCode).query('SELECT id FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
+    if (!vat.recordset.length) throw Object.assign(new Error('Select an active configured Supplier VAT Code.'), { status: 400 });
+    if (value.paymentTerm) {
+      const term = await request(scope).input('term', sql.NVarChar(100), value.paymentTerm).query('SELECT id FROM dbo.ConfigPaymentTerms WHERE description=@term AND isActive=1 AND forSupplier=1');
+      if (!term.recordset.length) throw Object.assign(new Error('Select an active Supplier Payment Term.'), { status: 400 });
     }
-    if (request.method === 'POST' && !id) return json({ record: await (supplier ? purchasingMasters.saveSupplier(await readJson(request), undefined, user) : purchasingMasters.saveSupplies(await readJson(request), undefined, user)) }, 201);
-    if (request.method === 'PUT' && id) return json({ record: await (supplier ? purchasingMasters.saveSupplier(await readJson(request), id, user) : purchasingMasters.saveSupplies(await readJson(request), id, user)) });
-    if (request.method === 'DELETE' && id) { await purchasingMasters.deactivatePurchasingMaster(kind, id, user); return json({ success: true }); }
-    return methodNotAllowed(id ? ['GET', 'PUT', 'DELETE'] : ['GET', 'POST']);
-  }
+    const write = request(scope);
+    for (const [key, maximum] of Object.entries(SUPPLIER_TEXT)) write.input(key, sql.NVarChar(maximum), value[key]);
+    for (const key of ['decimalInPrice', 'decimalInTotalPrice']) {
+      if (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 6) throw Object.assign(new Error('Supplier price precision must be from 0 to 6.'), { status: 400 });
+      write.input(key, sql.Int, value[key]);
+    }
+    for (const key of ['vatInclusive', 'isActive']) {
+      if (typeof value[key] !== 'boolean') throw Object.assign(new Error(`${key} must be a boolean.`), { status: 400 });
+      write.input(key, sql.Bit, value[key]);
+    }
+    const inserted = await write.query(`INSERT INTO dbo.Suppliers([name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive]) OUTPUT INSERTED.id VALUES(@name,@shortName,@businessStyle,@address,@remarks,@tin,@contactPerson,@email,@countryOfOrigin,@country,@cpnumber,@faxNo,@paymentTerm,@vatCode,@taxCode,@decimalInPrice,@decimalInTotalPrice,@vatInclusive,@isActive)`);
+    const savedId = inserted.recordset[0].id;
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'suppliers')
+      .input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(savedId))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const saved = await request(scope).input('id', sql.Int, savedId).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
+    return saved.recordset[0];
+  });
+  res.status(201).json({ record });
+});
 
-  const purchasingDocument = pathname.match(/^\/api\/(purchase-requests|purchase-orders|receivings)(?:\/(\d+))?(?:\/(post|cancel))?$/);
-  if (purchasingDocument) {
-    const [, kind, rawId, action] = purchasingDocument;
-    const id = rawId ? idValue(rawId) : undefined;
-    const handlers = {
-      'purchase-requests': { list: purchasing.listPurchaseRequests, get: purchasing.getPurchaseRequest, save: purchasing.savePurchaseRequest, post: purchasing.postPurchaseRequest },
-      'purchase-orders': { list: purchasing.listPurchaseOrders, get: purchasing.getPurchaseOrder, save: purchasing.savePurchaseOrder, post: purchasing.postPurchaseOrder },
-      receivings: { list: receiving.listReceivings, get: receiving.getReceiving, save: receiving.saveReceiving, post: receiving.postReceiving },
-    };
-    const handler = handlers[kind];
-    if (action) {
-      if (!id) return json({ message: 'Select a saved document.' }, 404);
-      if (request.method !== 'POST') return methodNotAllowed(['POST']);
-      if (action === 'post') {
-        const result = await handler.post(id, user);
-        return json(kind === 'receivings' ? result : { record: result });
+router.put('/suppliers/:id', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const record = await transaction(async scope => {
+    const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`);
+    const current = currentData.recordset[0];
+    if (!current) throw Object.assign(new Error('Supplier could not be found.'), { status: 404 });
+    const value = { decimalInPrice: 2, decimalInTotalPrice: 2, vatInclusive: false, isActive: true, ...current, ...input };
+    for (const [key, maximum] of Object.entries(SUPPLIER_TEXT)) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    if (value.vatCode !== current.vatCode) {
+      const vat = await request(scope).input('code', sql.NVarChar(80), value.vatCode).query('SELECT id FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
+      if (!vat.recordset.length) throw Object.assign(new Error('Select an active configured Supplier VAT Code.'), { status: 400 });
+    }
+    if (value.paymentTerm && value.paymentTerm !== current.paymentTerm) {
+      const term = await request(scope).input('term', sql.NVarChar(100), value.paymentTerm).query('SELECT id FROM dbo.ConfigPaymentTerms WHERE description=@term AND isActive=1 AND forSupplier=1');
+      if (!term.recordset.length) throw Object.assign(new Error('Select an active Supplier Payment Term.'), { status: 400 });
+    }
+    const write = request(scope);
+    for (const [key, maximum] of Object.entries(SUPPLIER_TEXT)) write.input(key, sql.NVarChar(maximum), value[key]);
+    for (const key of ['decimalInPrice', 'decimalInTotalPrice']) {
+      if (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 6) throw Object.assign(new Error('Supplier price precision must be from 0 to 6.'), { status: 400 });
+      write.input(key, sql.Int, value[key]);
+    }
+    for (const key of ['vatInclusive', 'isActive']) {
+      if (typeof value[key] !== 'boolean') throw Object.assign(new Error(`${key} must be a boolean.`), { status: 400 });
+      write.input(key, sql.Bit, value[key]);
+    }
+    await write.input('id', sql.Int, id).query(`UPDATE dbo.Suppliers SET [name]=@name,[shortName]=@shortName,[businessStyle]=@businessStyle,[address]=@address,[remarks]=@remarks,[tin]=@tin,[contactPerson]=@contactPerson,[email]=@email,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[cpnumber]=@cpnumber,[faxNo]=@faxNo,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[vatInclusive]=@vatInclusive,[isActive]=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    const savedId = id;
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'suppliers')
+      .input('action', sql.NVarChar(50), 'update').input('recordId', sql.NVarChar(100), String(savedId))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const saved = await request(scope).input('id', sql.Int, savedId).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
+    return saved.recordset[0];
+  });
+  res.json({ record });
+});
+
+router.delete('/suppliers/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const user = req.purchasingUser;
+  await transaction(async scope => {
+    const result = await request(scope).input('id', sql.Int, id).query('UPDATE dbo.Suppliers SET isActive=0,updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id');
+    if (!result.recordset.length) throw Object.assign(new Error('The master record could not be found.'), { status: 404 });
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'suppliers')
+      .input('action', sql.NVarChar(50), 'deactivate').input('recordId', sql.NVarChar(100), String(id))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+  });
+  res.json({ success: true });
+});
+
+router.get('/supplies', async (req, res) => {
+  const scope = undefined;
+  const recordsData = await request(scope).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
+      FROM dbo.Supplies s   ORDER BY s.name,s.id;
+      SELECT suppliesId,name FROM dbo.SupplyOffices  ORDER BY suppliesId,position;
+      SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules  ORDER BY suppliesId,position;
+      SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
+      FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId  ORDER BY l.suppliesId,l.position;`);
+  const recordsRows = new Map(recordsData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
+  ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+    for (const { suppliesId, ...row } of recordsData.recordsets[index + 1]) recordsRows.get(suppliesId)?.[key].push(row);
+  });
+  const records = [...recordsRows.values()];
+  res.json({ records });
+});
+
+router.get('/supplies/:id', async (req, res) => {
+  const scope = undefined;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
+      FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
+      SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
+      SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id ORDER BY suppliesId,position;
+      SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
+      FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId WHERE l.suppliesId=@id ORDER BY l.suppliesId,l.position;`);
+  const recordRows = new Map(recordData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
+  ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+    for (const { suppliesId, ...row } of recordData.recordsets[index + 1]) recordRows.get(suppliesId)?.[key].push(row);
+  });
+  const record = [...recordRows.values()][0];
+  if (!record) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+  res.json({ record });
+});
+
+router.post('/supplies', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    if (Object.hasOwn(input, 'stock') || Object.hasOwn(input, 'openingStock')) throw Object.assign(new Error('Supplies stock changes only when a receiving receipt is posted.'), { status: 400 });
+    const value = { productId: null, inventorySetup: '', offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: 0, thickness: 0, netWeight: 0, ...input };
+    for (const [key, maximum] of Object.entries(SUPPLIES_TEXT)) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    for (const [key, places, positive, maximum] of SUPPLIES_NUMBERS.map(key => [key, 6, false, 1000000000])) {
+      const entered = value[key];
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      const source = String(entered).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      const [whole, rawFraction = ''] = source.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+      const factor = 10n ** BigInt(places);
+      const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+      if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+      value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+    }
+    value.productId = value.productId == null ? null : Number(value.productId);
+    if (value.productId !== null && (!Number.isSafeInteger(value.productId) || value.productId <= 0 || value.productId > 2147483647)) throw Object.assign(new Error('Enter a valid product id.'), { status: 400 });
+    const unit = await request(scope).input('unit', sql.NVarChar(30), value.unit).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@unit AND isActive=1 AND forSupplies=1');
+    if (!unit.recordset.length) throw Object.assign(new Error('Select an active Unit marked For Supplies.'), { status: 400 });
+    if (value.weightUnit) {
+      const reference = await request(scope).input('value', sql.NVarChar(200), value.weightUnit).query('SELECT id FROM dbo.ConfigUnits WHERE [shortName]=@value AND isActive=1');
+      if (!reference.recordset.length) throw Object.assign(new Error('Select an active Weight Unit.'), { status: 400 });
+    }
+    if (value.category) {
+      const reference = await request(scope).input('value', sql.NVarChar(200), value.category).query('SELECT id FROM dbo.ConfigSuppliesCategories WHERE [name]=@value AND isActive=1');
+      if (!reference.recordset.length) throw Object.assign(new Error('Select an active Supplies Category.'), { status: 400 });
+    }
+    if (value.productId) {
+      const product = await request(scope).input('id', sql.Int, value.productId).query('SELECT id FROM dbo.Products WHERE id=@id AND isActive=1');
+      if (!product.recordset.length) throw Object.assign(new Error('Select an active Product Link.'), { status: 400 });
+    }
+    for (const key of ['offices', 'inventorySchedules', 'suppliers']) {
+      if (!Array.isArray(value[key]) || value[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send master detail rows as objects.'), { status: 400 });
+    }
+    const supplierIds = new Set();
+    for (const row of value.suppliers) {
+      row.supplierId = Number(row.supplierId);
+    if (!Number.isSafeInteger(row.supplierId) || row.supplierId <= 0 || row.supplierId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+      if (supplierIds.has(row.supplierId)) throw Object.assign(new Error('A supplier can appear only once per Supplies.'), { status: 400 });
+      supplierIds.add(row.supplierId);
+      const supplier = await request(scope).input('id', sql.Int, row.supplierId).query('SELECT id,isActive FROM dbo.Suppliers WHERE id=@id');
+      if (!supplier.recordset.length || (!supplier.recordset[0].isActive)) throw Object.assign(new Error('Select an active Supplier.'), { status: 400 });
+      if (row.currency) {
+        const currency = await request(scope).input('code', sql.NVarChar(30), row.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
+        if (!currency.recordset.length) throw Object.assign(new Error('Select an active Supplier Currency.'), { status: 400 });
       }
-      return json({ record: await (kind === 'receivings' ? receiving.cancelReceiving(id, user) : purchasing.cancelPurchaseDocument(kind, id, user)) });
     }
-    if (request.method === 'GET') return json(id ? { record: await handler.get(id) } : { records: await handler.list() });
-    if (request.method === 'POST' && !id) return json({ record: await handler.save(await readJson(request), undefined, user) }, 201);
-    if (request.method === 'PUT' && id) return json({ record: await handler.save(await readJson(request), id, user) });
-    return methodNotAllowed(id ? ['GET', 'PUT'] : ['GET', 'POST']);
+    const write = request(scope);
+    for (const [key, maximum] of Object.entries(SUPPLIES_TEXT)) write.input(key, sql.NVarChar(maximum), value[key]);
+    for (const key of SUPPLIES_NUMBERS) write.input(key, sql.VarChar(60), value[key]);
+    for (const [key, maximum] of Object.entries({ inventorySetup: 20 })) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    if (typeof value.isActive !== 'boolean') throw Object.assign(new Error('isActive must be a boolean.'), { status: 400 });
+    write.input('productId', sql.Int, value.productId).input('inventorySetup', sql.NVarChar(20), value.inventorySetup).input('isActive', sql.Bit, value.isActive);
+    const inserted = await write.query(`INSERT INTO dbo.Supplies([maker],[name],[description],[remarks],[color],[unit],[weightUnit],[category],[minimumStock],[thickness],[netWeight],[productId],[inventorySetup],[isActive]) OUTPUT INSERTED.id VALUES(@maker,@name,@description,@remarks,@color,@unit,@weightUnit,@category,@minimumStock,@thickness,@netWeight,@productId,@inventorySetup,@isActive)`);
+    const savedId = inserted.recordset[0].id;
+    await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyOffices WHERE suppliesId=@id');
+    for (const [position, row] of value.offices.entries()) {
+      for (const [key, maximum] of Object.entries({ name: 150 })) {
+        const entered = row[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        row[key] = entered.trim();
+      }
+      await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.SupplyOffices(suppliesId,position,name) VALUES(@id,@position,@name)');
+    }
+    await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id');
+    for (const [position, row] of value.inventorySchedules.entries()) {
+      for (const [key, maximum] of Object.entries({ month: 40 })) {
+        const entered = row[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        row[key] = entered.trim();
+      }
+      await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(10), row.scheduleDate || null).input('month', sql.NVarChar(40), row.month).query('INSERT INTO dbo.SupplyInventorySchedules(suppliesId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
+    }
+    await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplySuppliers WHERE suppliesId=@id');
+    for (const [position, row] of value.suppliers.entries()) {
+      for (const [key, maximum] of Object.entries({ currency: 30, remarks: 2000 })) {
+        const entered = row[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        row[key] = entered.trim();
+      }
+      row.moq = row.moq ?? 0;
+      row.price = row.price ?? 0;
+      for (const [key, places, positive, maximum] of [['moq', 6, false, 1000000000], ['price', 6, false, 1000000000]]) {
+        const entered = row[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        row[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+      await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('supplierId', sql.Int, row.supplierId)
+        .input('moq', sql.VarChar(60), row.moq).input('price', sql.VarChar(60), row.price)
+        .input('currency', sql.NVarChar(30), row.currency).input('remarks', sql.NVarChar(2000), row.remarks)
+        .query('INSERT INTO dbo.SupplySuppliers(suppliesId,position,supplierId,moq,price,currency,remarks) VALUES(@id,@position,@supplierId,@moq,@price,@currency,@remarks)');
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'supplies')
+      .input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(savedId))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedData = await request(scope).input('id', sql.Int, savedId).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
+        FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
+        SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
+        SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id ORDER BY suppliesId,position;
+        SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
+        FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId WHERE l.suppliesId=@id ORDER BY l.suppliesId,l.position;`);
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
+    ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+      for (const { suppliesId, ...row } of savedData.recordsets[index + 1]) savedRows.get(suppliesId)?.[key].push(row);
+    });
+    const saved = [...savedRows.values()][0];
+    if (!saved) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+    return saved;
+  });
+  res.status(201).json({ record });
+});
+
+router.put('/supplies/:id', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const record = await transaction(async scope => {
+    const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
+        FROM dbo.Supplies s WITH (UPDLOCK,HOLDLOCK) WHERE s.id=@id ORDER BY s.name,s.id;
+        SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
+        SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id ORDER BY suppliesId,position;
+        SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
+        FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId WHERE l.suppliesId=@id ORDER BY l.suppliesId,l.position;`);
+    const currentRows = new Map(currentData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
+    ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+      for (const { suppliesId, ...row } of currentData.recordsets[index + 1]) currentRows.get(suppliesId)?.[key].push(row);
+    });
+    const current = [...currentRows.values()][0];
+    if (!current) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+    if (Object.hasOwn(input, 'stock') || Object.hasOwn(input, 'openingStock')) throw Object.assign(new Error('Supplies stock changes only when a receiving receipt is posted.'), { status: 400 });
+    const value = { productId: null, inventorySetup: '', offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: 0, thickness: 0, netWeight: 0, ...current, ...input };
+    for (const [key, maximum] of Object.entries(SUPPLIES_TEXT)) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    for (const [key, places, positive, maximum] of SUPPLIES_NUMBERS.map(key => [key, 6, false, 1000000000])) {
+      const entered = value[key];
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      const source = String(entered).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      const [whole, rawFraction = ''] = source.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+      const factor = 10n ** BigInt(places);
+      const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+      if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+      value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+    }
+    value.productId = value.productId == null ? null : Number(value.productId);
+    if (value.productId !== null && (!Number.isSafeInteger(value.productId) || value.productId <= 0 || value.productId > 2147483647)) throw Object.assign(new Error('Enter a valid product id.'), { status: 400 });
+    if (value.unit !== current.unit) {
+      const unit = await request(scope).input('unit', sql.NVarChar(30), value.unit).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@unit AND isActive=1 AND forSupplies=1');
+      if (!unit.recordset.length) throw Object.assign(new Error('Select an active Unit marked For Supplies.'), { status: 400 });
+      const history = await request(scope).input('id', sql.Int, id).query('SELECT TOP(1) suppliesId FROM (SELECT suppliesId FROM dbo.PurchaseRequestItems WHERE suppliesId=@id UNION ALL SELECT suppliesId FROM dbo.ProductSupplies WHERE suppliesId=@id UNION ALL SELECT suppliesId FROM dbo.SupplyInventory WHERE suppliesId=@id) history');
+      if (history.recordset.length) throw Object.assign(new Error('Supplies UOM cannot change after purchasing history exists.'), { status: 409 });
+    }
+    if (value.weightUnit && value.weightUnit !== current.weightUnit) {
+      const reference = await request(scope).input('value', sql.NVarChar(200), value.weightUnit).query('SELECT id FROM dbo.ConfigUnits WHERE [shortName]=@value AND isActive=1');
+      if (!reference.recordset.length) throw Object.assign(new Error('Select an active Weight Unit.'), { status: 400 });
+    }
+    if (value.category && value.category !== current.category) {
+      const reference = await request(scope).input('value', sql.NVarChar(200), value.category).query('SELECT id FROM dbo.ConfigSuppliesCategories WHERE [name]=@value AND isActive=1');
+      if (!reference.recordset.length) throw Object.assign(new Error('Select an active Supplies Category.'), { status: 400 });
+    }
+    if (value.productId && value.productId !== current.productId) {
+      const product = await request(scope).input('id', sql.Int, value.productId).query('SELECT id FROM dbo.Products WHERE id=@id AND isActive=1');
+      if (!product.recordset.length) throw Object.assign(new Error('Select an active Product Link.'), { status: 400 });
+    }
+    for (const key of ['offices', 'inventorySchedules', 'suppliers']) {
+      if (!Array.isArray(value[key]) || value[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send master detail rows as objects.'), { status: 400 });
+    }
+    const supplierIds = new Set();
+    for (const row of value.suppliers) {
+      row.supplierId = Number(row.supplierId);
+    if (!Number.isSafeInteger(row.supplierId) || row.supplierId <= 0 || row.supplierId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+      if (supplierIds.has(row.supplierId)) throw Object.assign(new Error('A supplier can appear only once per Supplies.'), { status: 400 });
+      supplierIds.add(row.supplierId);
+      const supplier = await request(scope).input('id', sql.Int, row.supplierId).query('SELECT id,isActive FROM dbo.Suppliers WHERE id=@id');
+      if (!supplier.recordset.length || (!supplier.recordset[0].isActive && !current.suppliers.some(item => item.supplierId === row.supplierId))) throw Object.assign(new Error('Select an active Supplier.'), { status: 400 });
+      if (row.currency) {
+        const currency = await request(scope).input('code', sql.NVarChar(30), row.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
+        if (!currency.recordset.length) throw Object.assign(new Error('Select an active Supplier Currency.'), { status: 400 });
+      }
+    }
+    const write = request(scope);
+    for (const [key, maximum] of Object.entries(SUPPLIES_TEXT)) write.input(key, sql.NVarChar(maximum), value[key]);
+    for (const key of SUPPLIES_NUMBERS) write.input(key, sql.VarChar(60), value[key]);
+    for (const [key, maximum] of Object.entries({ inventorySetup: 20 })) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    if (typeof value.isActive !== 'boolean') throw Object.assign(new Error('isActive must be a boolean.'), { status: 400 });
+    write.input('productId', sql.Int, value.productId).input('inventorySetup', sql.NVarChar(20), value.inventorySetup).input('isActive', sql.Bit, value.isActive);
+    await write.input('id', sql.Int, id).query(`UPDATE dbo.Supplies SET [maker]=@maker,[name]=@name,[description]=@description,[remarks]=@remarks,[color]=@color,[unit]=@unit,[weightUnit]=@weightUnit,[category]=@category,[minimumStock]=@minimumStock,[thickness]=@thickness,[netWeight]=@netWeight,[productId]=@productId,[inventorySetup]=@inventorySetup,[isActive]=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    const savedId = id;
+    if (Object.hasOwn(input, 'offices')) {
+      await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyOffices WHERE suppliesId=@id');
+      for (const [position, row] of value.offices.entries()) {
+        for (const [key, maximum] of Object.entries({ name: 150 })) {
+          const entered = row[key] ?? '';
+          if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+          row[key] = entered.trim();
+        }
+        await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.SupplyOffices(suppliesId,position,name) VALUES(@id,@position,@name)');
+      }
+    }
+    if (Object.hasOwn(input, 'inventorySchedules')) {
+      await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id');
+      for (const [position, row] of value.inventorySchedules.entries()) {
+        for (const [key, maximum] of Object.entries({ month: 40 })) {
+          const entered = row[key] ?? '';
+          if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+          row[key] = entered.trim();
+        }
+        await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(10), row.scheduleDate || null).input('month', sql.NVarChar(40), row.month).query('INSERT INTO dbo.SupplyInventorySchedules(suppliesId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
+      }
+    }
+    if (Object.hasOwn(input, 'suppliers')) {
+      await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplySuppliers WHERE suppliesId=@id');
+      for (const [position, row] of value.suppliers.entries()) {
+        for (const [key, maximum] of Object.entries({ currency: 30, remarks: 2000 })) {
+          const entered = row[key] ?? '';
+          if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+          row[key] = entered.trim();
+        }
+        row.moq = row.moq ?? 0;
+        row.price = row.price ?? 0;
+        for (const [key, places, positive, maximum] of [['moq', 6, false, 1000000000], ['price', 6, false, 1000000000]]) {
+          const entered = row[key];
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          const source = String(entered).trim();
+          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          const [whole, rawFraction = ''] = source.split('.');
+          const fraction = rawFraction.replace(/0+$/, '');
+          if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+          const factor = 10n ** BigInt(places);
+          const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+          if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+          row[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+        }
+        await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('supplierId', sql.Int, row.supplierId)
+          .input('moq', sql.VarChar(60), row.moq).input('price', sql.VarChar(60), row.price)
+          .input('currency', sql.NVarChar(30), row.currency).input('remarks', sql.NVarChar(2000), row.remarks)
+          .query('INSERT INTO dbo.SupplySuppliers(suppliesId,position,supplierId,moq,price,currency,remarks) VALUES(@id,@position,@supplierId,@moq,@price,@currency,@remarks)');
+      }
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'supplies')
+      .input('action', sql.NVarChar(50), 'update').input('recordId', sql.NVarChar(100), String(savedId))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedData = await request(scope).input('id', sql.Int, savedId).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
+        FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
+        SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
+        SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id ORDER BY suppliesId,position;
+        SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
+        FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId WHERE l.suppliesId=@id ORDER BY l.suppliesId,l.position;`);
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
+    ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+      for (const { suppliesId, ...row } of savedData.recordsets[index + 1]) savedRows.get(suppliesId)?.[key].push(row);
+    });
+    const saved = [...savedRows.values()][0];
+    if (!saved) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+    return saved;
+  });
+  res.json({ record });
+});
+
+router.delete('/supplies/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const user = req.purchasingUser;
+  await transaction(async scope => {
+    const result = await request(scope).input('id', sql.Int, id).query('UPDATE dbo.Supplies SET isActive=0,updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id');
+    if (!result.recordset.length) throw Object.assign(new Error('The master record could not be found.'), { status: 404 });
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'supplies')
+      .input('action', sql.NVarChar(50), 'deactivate').input('recordId', sql.NVarChar(100), String(id))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+  });
+  res.json({ success: true });
+});
+
+router.get('/options', async (req, res) => {
+  const scope = undefined;
+  const supplierData = await request().query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers ORDER BY name,id`);
+  const suppliesData = await request(scope).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
+      FROM dbo.Supplies s   ORDER BY s.name,s.id;
+      SELECT suppliesId,name FROM dbo.SupplyOffices  ORDER BY suppliesId,position;
+      SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules  ORDER BY suppliesId,position;
+      SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
+      FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId  ORDER BY l.suppliesId,l.position;`);
+  const suppliesRows = new Map(suppliesData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
+  ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+    for (const { suppliesId, ...row } of suppliesData.recordsets[index + 1]) suppliesRows.get(suppliesId)?.[key].push(row);
+  });
+  const supplies = [...suppliesRows.values()];
+  const reference = await request().query(`SELECT id,description,shortName,forProduct,forSupplies,[decimal],shortName AS name,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigUnits ORDER BY id DESC;
+  SELECT id,name,shortName,checkName,symbol,isDefault,shortName AS code,name AS description,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigCurrencies ORDER BY id DESC;
+  SELECT id,description,days,month,dateOfMonth,dayOfMonth,dueDateEom,forCustomer,forSupplier,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigPaymentTerms ORDER BY id DESC;
+  SELECT id,code,description,type,class,rate,prodVatInd,accountCode,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigVatCodes ORDER BY id DESC;
+  SELECT id,code,description,rate,accountCode,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigAtc ORDER BY id DESC;
+  SELECT id,name,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigCountries ORDER BY id DESC;
+  SELECT id,name,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigSuppliesCategories ORDER BY id DESC;
+  SELECT id,code,description,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigWarehouses ORDER BY id DESC;
+  SELECT id,code,description,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigLocations ORDER BY id DESC;
+  SELECT id,name,username,role FROM dbo.PurchasingUserLogin WHERE isActive=1 ORDER BY name,username;
+  SELECT id,sku,name,description FROM dbo.Products WHERE isActive=1 ORDER BY sku;`);
+  const [units, currencies, terms, vatCodes, taxCodes, countries, categories, warehouses, locations, users, products] = reference.recordsets;
+
+  res.json({
+    suppliers: supplierData.recordset.filter(row => row.isActive), supplies: supplies.filter(row => row.isActive), products, users,
+    units: units.filter(row => row.isActive).filter(row => row.forSupplies).map(row => ({ ...row, name: row.shortName })),
+    currencies: currencies.filter(row => row.isActive).map(row => ({ ...row, code: row.shortName, description: row.name })),
+    paymentTerms: terms.filter(row => row.isActive).filter(row => row.forSupplier), vatCodes: vatCodes.filter(row => row.isActive), taxCodes: taxCodes.filter(row => row.isActive),
+    countries: countries.filter(row => row.isActive), suppliesCategories: categories.filter(row => row.isActive), warehouses: warehouses.filter(row => row.isActive), locations: locations.filter(row => row.isActive),
+    shipments: ['By Air', 'By Land', 'By Boat', 'N/A'], offices: [process.env.COMPANY_NAME || 'TLP COMPANY'],
+  });
+});
+
+router.get('/purchasing-options', async (req, res) => {
+  const scope = undefined;
+  const supplierData = await request().query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers ORDER BY name,id`);
+  const suppliesData = await request(scope).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
+      FROM dbo.Supplies s   ORDER BY s.name,s.id;
+      SELECT suppliesId,name FROM dbo.SupplyOffices  ORDER BY suppliesId,position;
+      SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules  ORDER BY suppliesId,position;
+      SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
+      FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId  ORDER BY l.suppliesId,l.position;`);
+  const suppliesRows = new Map(suppliesData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
+  ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+    for (const { suppliesId, ...row } of suppliesData.recordsets[index + 1]) suppliesRows.get(suppliesId)?.[key].push(row);
+  });
+  const supplies = [...suppliesRows.values()];
+  const reference = await request().query(`SELECT id,description,shortName,forProduct,forSupplies,[decimal],shortName AS name,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigUnits ORDER BY id DESC;
+  SELECT id,name,shortName,checkName,symbol,isDefault,shortName AS code,name AS description,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigCurrencies ORDER BY id DESC;
+  SELECT id,description,days,month,dateOfMonth,dayOfMonth,dueDateEom,forCustomer,forSupplier,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigPaymentTerms ORDER BY id DESC;
+  SELECT id,code,description,type,class,rate,prodVatInd,accountCode,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigVatCodes ORDER BY id DESC;
+  SELECT id,code,description,rate,accountCode,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigAtc ORDER BY id DESC;
+  SELECT id,name,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigCountries ORDER BY id DESC;
+  SELECT id,name,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigSuppliesCategories ORDER BY id DESC;
+  SELECT id,code,description,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigWarehouses ORDER BY id DESC;
+  SELECT id,code,description,isActive,deletedDate,createdAt,updatedAt FROM dbo.ConfigLocations ORDER BY id DESC;
+  SELECT id,name,username,role FROM dbo.PurchasingUserLogin WHERE isActive=1 ORDER BY name,username;
+  SELECT id,sku,name,description FROM dbo.Products WHERE isActive=1 ORDER BY sku;`);
+  const [units, currencies, terms, vatCodes, taxCodes, countries, categories, warehouses, locations, users, products] = reference.recordsets;
+
+  res.json({
+    suppliers: supplierData.recordset.filter(row => row.isActive), supplies: supplies.filter(row => row.isActive), products, users,
+    units: units.filter(row => row.isActive).filter(row => row.forSupplies).map(row => ({ ...row, name: row.shortName })),
+    currencies: currencies.filter(row => row.isActive).map(row => ({ ...row, code: row.shortName, description: row.name })),
+    paymentTerms: terms.filter(row => row.isActive).filter(row => row.forSupplier), vatCodes: vatCodes.filter(row => row.isActive), taxCodes: taxCodes.filter(row => row.isActive),
+    countries: countries.filter(row => row.isActive), suppliesCategories: categories.filter(row => row.isActive), warehouses: warehouses.filter(row => row.isActive), locations: locations.filter(row => row.isActive),
+    shipments: ['By Air', 'By Land', 'By Boat', 'N/A'], offices: [process.env.COMPANY_NAME || 'TLP COMPANY'],
+  });
+});
+
+router.get('/purchase-requests', async (req, res) => {
+  const scope = undefined;
+  const recordsData = await request(scope).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+      r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+      FROM dbo.PurchaseRequests r   ORDER BY r.id DESC;
+      SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+      CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+      CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+      FROM dbo.PurchaseRequestItems d OUTER APPLY (
+        SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+        FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+        WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+      ) a  ORDER BY d.requestId,d.position;`);
+  const recordsRows = new Map(recordsData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+  for (const { requestId, ...item } of recordsData.recordsets[1]) recordsRows.get(requestId)?.items.push(item);
+  const records = [...recordsRows.values()];
+  res.json({ records });
+});
+
+router.get('/purchase-requests/:id', async (req, res) => {
+  const scope = undefined;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+      r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+      FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
+      SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+      CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+      CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+      FROM dbo.PurchaseRequestItems d OUTER APPLY (
+        SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+        FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+        WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+      ) a WHERE d.requestId=@id ORDER BY d.requestId,d.position;`);
+  const recordRows = new Map(recordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+  for (const { requestId, ...item } of recordData.recordsets[1]) recordRows.get(requestId)?.items.push(item);
+  const record = [...recordRows.values()][0];
+  if (!record) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+  res.json({ record });
+});
+
+router.get('/purchase-orders', async (req, res) => {
+  const scope = undefined;
+  const recordsData = await request(scope).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+      CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+      o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+      o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+      FROM dbo.PurchaseOrders o   ORDER BY o.id DESC;
+      SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+      CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+      CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+      CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+      FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+      OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+       ORDER BY d.orderId,d.position;`);
+  const recordsRows = new Map(recordsData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+  for (const { orderId, ...item } of recordsData.recordsets[1]) recordsRows.get(orderId)?.items.push(item);
+  const records = [...recordsRows.values()];
+  res.json({ records });
+});
+
+router.get('/purchase-orders/:id', async (req, res) => {
+  const scope = undefined;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+      CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+      o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+      o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+      FROM dbo.PurchaseOrders o  WHERE o.id=@id ORDER BY o.id DESC;
+      SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+      CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+      CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+      CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+      FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+      OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+      WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+  const recordRows = new Map(recordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+  for (const { orderId, ...item } of recordData.recordsets[1]) recordRows.get(orderId)?.items.push(item);
+  const record = [...recordRows.values()][0];
+  if (!record) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+  res.json({ record });
+});
+
+router.get('/receivings', async (req, res) => {
+  const scope = undefined;
+  const recordsData = await request(scope).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+      CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+      o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+      r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+      FROM dbo.SuppliesReceipts r  JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId  ORDER BY r.id DESC;
+      SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+      CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+      CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+      CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+      CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+      CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+      FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+      OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+      OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+       ORDER BY d.receiptId,d.position;
+      SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+      CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+      FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+      LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+       ORDER BY a.receiptItemId,a.position;`);
+  const recordsRows = new Map(recordsData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+  const recordsItems = new Map();
+  for (const { receiptId, ...row } of recordsData.recordsets[1]) {
+    const item = { ...row, allocations: [] };
+    recordsItems.set(row.id, item);
+    recordsRows.get(receiptId)?.items.push(item);
   }
-  return null;
-}
+  for (const { receiptItemId, ...allocation } of recordsData.recordsets[2]) recordsItems.get(receiptItemId)?.allocations.push(allocation);
+  const records = [...recordsRows.values()];
+  res.json({ records });
+});
+
+router.get('/receivings/:id', async (req, res) => {
+  const scope = undefined;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+      CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+      o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+      r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+      FROM dbo.SuppliesReceipts r  JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId WHERE r.id=@id ORDER BY r.id DESC;
+      SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+      CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+      CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+      CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+      CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+      CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+      FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+      OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+      OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+      WHERE d.receiptId=@id ORDER BY d.receiptId,d.position;
+      SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+      CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+      FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+      LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+      WHERE d.receiptId=@id ORDER BY a.receiptItemId,a.position;`);
+  const recordRows = new Map(recordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+  const recordItems = new Map();
+  for (const { receiptId, ...row } of recordData.recordsets[1]) {
+    const item = { ...row, allocations: [] };
+    recordItems.set(row.id, item);
+    recordRows.get(receiptId)?.items.push(item);
+  }
+  for (const { receiptItemId, ...allocation } of recordData.recordsets[2]) recordItems.get(receiptItemId)?.allocations.push(allocation);
+  const record = [...recordRows.values()][0];
+  if (!record) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+  res.json({ record });
+});
+
+router.post('/purchase-requests', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const value = { ...input };
+    for (const [key, maximum] of Object.entries({ number: 40, requestedBy: 150, requestedDept: 150, checkedBy: 150, approvedBy: 150, approvedBy2: 150, remarks: 2000 })) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    value.items = value.items.map(row => {
+      const line = { ...row, suppliesId: Number(row.suppliesId), neededDate: row.neededDate || value.neededDate };
+      if (!Number.isSafeInteger(line.suppliesId) || line.suppliesId <= 0 || line.suppliesId > 2147483647) throw Object.assign(new Error('Enter a valid supplies id.'), { status: 400 });
+      for (const [key, maximum] of Object.entries({ unit: 30, remarks: 2000 })) {
+        const entered = line[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        line[key] = entered.trim();
+      }
+      for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
+        const entered = line[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+      return line;
+    });
+    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 supplies lines.'), { status: 400 });
+    const snapshots = [];
+    for (const item of value.items) {
+      const suppliesData = await request(scope).input('id', sql.Int, item.suppliesId).query('SELECT id,code,name,description,unit,isActive FROM dbo.Supplies WHERE id=@id');
+      const supplies = suppliesData.recordset[0];
+      if (!supplies) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+      if (!supplies.isActive) throw Object.assign(new Error('Select active Supplies for every PR line.'), { status: 400 });
+      if (item.unit && item.unit !== supplies.unit) throw Object.assign(new Error('PR UOM must match the Supplies master.'), { status: 400 });
+      snapshots.push({ ...item, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit });
+    }
+    let number = value.number;
+    if (!number) {
+      await request(scope).query('SELECT COUNT_BIG(*) AS total FROM dbo.PurchaseRequests WITH (TABLOCKX,HOLDLOCK)');
+        const next = await request(scope).query(`SELECT COALESCE(CONVERT(bigint,last_value)+CONVERT(bigint,increment_value),CONVERT(bigint,seed_value)) AS nextId
+          FROM sys.identity_columns WHERE object_id=OBJECT_ID(N'dbo.PurchaseRequests') AND name=N'id'`);
+        const base = `PR-${String(next.recordset[0].nextId).padStart(8, '0')}`;
+        let candidate = base;
+        let suffix = 0;
+        while ((await request(scope).input('number', sql.NVarChar(40), candidate).query('SELECT id FROM dbo.PurchaseRequests WHERE number=@number')).recordset.length) candidate = `${base}-${++suffix}`;
+        number = candidate;
+    }
+
+    const req = request(scope).input('number', sql.NVarChar(40), number).input('prDate', sql.VarChar(10), value.prDate).input('neededDate', sql.VarChar(10), value.neededDate);
+    for (const field of ['requestedBy', 'requestedDept', 'checkedBy', 'approvedBy', 'approvedBy2']) req.input(field, sql.NVarChar(150), value[field]);
+    req.input('remarks', sql.NVarChar(2000), value.remarks);
+    let saved;
+    const result = await req.input('branch', sql.NVarChar(150), process.env.COMPANY_NAME || 'TLP COMPANY').input('preparedById', sql.Int, user.id).input('preparedBy', sql.NVarChar(150), user.name)
+      .query(`INSERT INTO dbo.PurchaseRequests(number,prDate,neededDate,requestedBy,requestedDept,checkedBy,approvedBy,approvedBy2,remarks,branch,preparedById,preparedBy) OUTPUT INSERTED.id
+        VALUES(@number,@prDate,@neededDate,@requestedBy,@requestedDept,@checkedBy,@approvedBy,@approvedBy2,@remarks,@branch,@preparedById,@preparedBy)`);
+    saved = result.recordset[0].id;
+    for (const [position, item] of snapshots.entries()) {
+      await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, item.suppliesId)
+        .input('suppliesCode', sql.NVarChar(40), item.suppliesCode).input('suppliesName', sql.NVarChar(180), item.suppliesName).input('description', sql.NVarChar(1000), item.description)
+        .input('quantity', sql.VarChar(60), item.quantity).input('unit', sql.NVarChar(30), item.unit).input('neededDate', sql.VarChar(10), item.neededDate).input('remarks', sql.NVarChar(2000), item.remarks)
+        .query(`INSERT INTO dbo.PurchaseRequestItems(requestId,position,suppliesId,suppliesCode,suppliesName,description,quantity,unit,neededDate,remarks)
+          VALUES(@id,@position,@suppliesId,@suppliesCode,@suppliesName,@description,@quantity,@unit,@neededDate,@remarks)`);
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'purchase-requests')
+      .input('action', sql.NVarChar(50), 'create-draft').input('recordId', sql.NVarChar(100), String(saved))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+        r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+        FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+        CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+        CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+        FROM dbo.PurchaseRequestItems d OUTER APPLY (
+          SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+          FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+          WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+        ) a WHERE d.requestId=@id ORDER BY d.requestId,d.position;`);
+    const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { requestId, ...item } of savedRecordData.recordsets[1]) savedRecordRows.get(requestId)?.items.push(item);
+    const savedRecord = [...savedRecordRows.values()][0];
+    if (!savedRecord) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    return savedRecord;
+  });
+  res.status(201).json({ record });
+});
+
+router.put('/purchase-requests/:id', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const record = await transaction(async scope => {
+    const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+        r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+        FROM dbo.PurchaseRequests r WITH (UPDLOCK,HOLDLOCK) WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+        CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+        CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+        FROM dbo.PurchaseRequestItems d OUTER APPLY (
+          SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+          FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+          WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+        ) a WHERE d.requestId=@id ORDER BY d.requestId,d.position;`);
+    const currentRows = new Map(currentData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { requestId, ...item } of currentData.recordsets[1]) currentRows.get(requestId)?.items.push(item);
+    const current = [...currentRows.values()][0];
+    if (!current) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (current && current.status !== 'draft') throw Object.assign(new Error('Only an unposted Purchase Request can be edited.'), { status: 409 });
+    const value = { ...current, ...input };
+    for (const [key, maximum] of Object.entries({ number: 40, requestedBy: 150, requestedDept: 150, checkedBy: 150, approvedBy: 150, approvedBy2: 150, remarks: 2000 })) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    value.items = value.items.map(row => {
+      const line = { ...row, suppliesId: Number(row.suppliesId), neededDate: row.neededDate || value.neededDate };
+      if (!Number.isSafeInteger(line.suppliesId) || line.suppliesId <= 0 || line.suppliesId > 2147483647) throw Object.assign(new Error('Enter a valid supplies id.'), { status: 400 });
+      for (const [key, maximum] of Object.entries({ unit: 30, remarks: 2000 })) {
+        const entered = line[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        line[key] = entered.trim();
+      }
+      for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
+        const entered = line[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+      return line;
+    });
+    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 supplies lines.'), { status: 400 });
+    const snapshots = [];
+    for (const item of value.items) {
+      const suppliesData = await request(scope).input('id', sql.Int, item.suppliesId).query('SELECT id,code,name,description,unit,isActive FROM dbo.Supplies WHERE id=@id');
+      const supplies = suppliesData.recordset[0];
+      if (!supplies) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+      if (!supplies.isActive) throw Object.assign(new Error('Select active Supplies for every PR line.'), { status: 400 });
+      if (item.unit && item.unit !== supplies.unit) throw Object.assign(new Error('PR UOM must match the Supplies master.'), { status: 400 });
+      snapshots.push({ ...item, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit });
+    }
+    let number = value.number || current?.number;
+    if (!number) {
+      await request(scope).query('SELECT COUNT_BIG(*) AS total FROM dbo.PurchaseRequests WITH (TABLOCKX,HOLDLOCK)');
+        const next = await request(scope).query(`SELECT COALESCE(CONVERT(bigint,last_value)+CONVERT(bigint,increment_value),CONVERT(bigint,seed_value)) AS nextId
+          FROM sys.identity_columns WHERE object_id=OBJECT_ID(N'dbo.PurchaseRequests') AND name=N'id'`);
+        const base = `PR-${String(next.recordset[0].nextId).padStart(8, '0')}`;
+        let candidate = base;
+        let suffix = 0;
+        while ((await request(scope).input('number', sql.NVarChar(40), candidate).query('SELECT id FROM dbo.PurchaseRequests WHERE number=@number')).recordset.length) candidate = `${base}-${++suffix}`;
+        number = candidate;
+    }
+
+    const req = request(scope).input('number', sql.NVarChar(40), number).input('prDate', sql.VarChar(10), value.prDate).input('neededDate', sql.VarChar(10), value.neededDate);
+    for (const field of ['requestedBy', 'requestedDept', 'checkedBy', 'approvedBy', 'approvedBy2']) req.input(field, sql.NVarChar(150), value[field]);
+    req.input('remarks', sql.NVarChar(2000), value.remarks);
+    const saved = id;
+    await req.input('id', sql.Int, id).query(`UPDATE dbo.PurchaseRequests SET [number]=@number,[prDate]=@prDate,[neededDate]=@neededDate,[requestedBy]=@requestedBy,[requestedDept]=@requestedDept,[checkedBy]=@checkedBy,[approvedBy]=@approvedBy,[approvedBy2]=@approvedBy2,[remarks]=@remarks,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    await request(scope).input('id', sql.Int, id).query('DELETE FROM dbo.PurchaseRequestItems WHERE requestId=@id');
+    for (const [position, item] of snapshots.entries()) {
+      await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, item.suppliesId)
+        .input('suppliesCode', sql.NVarChar(40), item.suppliesCode).input('suppliesName', sql.NVarChar(180), item.suppliesName).input('description', sql.NVarChar(1000), item.description)
+        .input('quantity', sql.VarChar(60), item.quantity).input('unit', sql.NVarChar(30), item.unit).input('neededDate', sql.VarChar(10), item.neededDate).input('remarks', sql.NVarChar(2000), item.remarks)
+        .query(`INSERT INTO dbo.PurchaseRequestItems(requestId,position,suppliesId,suppliesCode,suppliesName,description,quantity,unit,neededDate,remarks)
+          VALUES(@id,@position,@suppliesId,@suppliesCode,@suppliesName,@description,@quantity,@unit,@neededDate,@remarks)`);
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'purchase-requests')
+      .input('action', sql.NVarChar(50), 'update-draft').input('recordId', sql.NVarChar(100), String(saved))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+        r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+        FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+        CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+        CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+        FROM dbo.PurchaseRequestItems d OUTER APPLY (
+          SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+          FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+          WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+        ) a WHERE d.requestId=@id ORDER BY d.requestId,d.position;`);
+    const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { requestId, ...item } of savedRecordData.recordsets[1]) savedRecordRows.get(requestId)?.items.push(item);
+    const savedRecord = [...savedRecordRows.values()][0];
+    if (!savedRecord) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    return savedRecord;
+  });
+  res.json({ record });
+});
+
+router.post('/purchase-orders', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const value = { ...input };
+    value.supplierId = Number(value.supplierId);
+    if (!Number.isSafeInteger(value.supplierId) || value.supplierId <= 0 || value.supplierId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+    for (const [key, maximum] of Object.entries({ currency: 30, paymentTerm: 100, shipment: 20, suppliesCategory: 100, vatCode: 80, deliveryAddress: 500, remarks: 2000 })) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    value.rate = value.rate ?? 1;
+    for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
+      const entered = value[key];
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      const source = String(entered).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      const [whole, rawFraction = ''] = source.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+      const factor = 10n ** BigInt(places);
+      const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+      if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+      value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+    }
+    const requestItems = new Set();
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    value.items = value.items.map(row => {
+      const requestItemId = Number(row.requestItemId);
+      if (!Number.isSafeInteger(requestItemId) || requestItemId <= 0 || requestItemId > 2147483647) throw Object.assign(new Error('Enter a valid source item id.'), { status: 400 });
+      if (requestItems.has(requestItemId)) throw Object.assign(new Error('A PR line can appear only once in a purchase order.'), { status: 400 });
+      requestItems.add(requestItemId);
+      if (row.currency && row.currency !== value.currency) throw Object.assign(new Error('PO line currency must match the header currency.'), { status: 400 });
+      const line = { ...row, requestItemId, currency: value.currency, discountRate: row.discountRate ?? 0 };
+      for (const [key, maximum] of Object.entries({ remarks: 2000, unit: 30 })) {
+        const entered = line[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        line[key] = entered.trim();
+      }
+      for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000], ['unitPrice', 6, false, 1000000000], ['discountRate', 6, false, 100]]) {
+        const entered = line[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+      return line;
+    });
+    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 PR lines.'), { status: 400 });
+    const supplierData = await request(scope).input('id', sql.Int, value.supplierId).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
+    const supplier = supplierData.recordset[0];
+    if (!supplier) throw Object.assign(new Error('Supplier could not be found.'), { status: 404 });
+    if (!supplier.isActive) throw Object.assign(new Error('Select an active Supplier.'), { status: 400 });
+    const vat = await request(scope).input('code', sql.NVarChar(80), value.vatCode).query('SELECT rate FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
+    if (!vat.recordset.length) throw Object.assign(new Error('Select an active VAT Code.'), { status: 400 });
+    const currency = await request(scope).input('code', sql.NVarChar(30), value.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
+    if (!currency.recordset.length) throw Object.assign(new Error('Select an active Currency.'), { status: 400 });
+    const term = await request(scope).input('term', sql.NVarChar(100), value.paymentTerm).query('SELECT id FROM dbo.ConfigPaymentTerms WHERE description=@term AND isActive=1 AND forSupplier=1');
+    if (!term.recordset.length) throw Object.assign(new Error('Select an active Supplier Payment Term.'), { status: 400 });
+    if (value.suppliesCategory) {
+      const category = await request(scope).input('name', sql.NVarChar(100), value.suppliesCategory).query('SELECT id FROM dbo.ConfigSuppliesCategories WHERE name=@name AND isActive=1');
+      if (!category.recordset.length) throw Object.assign(new Error('Select an active Supplies Category.'), { status: 400 });
+    }
+    const snapshots = [];
+    for (const item of value.items) {
+      const sourceData = await request(scope).input('id', sql.Int, item.requestItemId).query(`SELECT d.*,r.status AS requestStatus,r.number AS requestNumber,
+        CONVERT(varchar(60),d.quantity) AS requestedQuantity,CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.PurchaseOrderItems i
+        JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')),0)) AS orderedQuantity
+        FROM dbo.PurchaseRequestItems d JOIN dbo.PurchaseRequests r ON r.id=d.requestId WHERE d.id=@id`);
+      if (!sourceData.recordset.length) throw Object.assign(new Error('Select a valid posted PR line.'), { status: 400 });
+      const source = sourceData.recordset[0];
+      if (!['posted', 'closed'].includes(source.requestStatus)) throw Object.assign(new Error('Purchase Orders can only use posted PR lines.'), { status: 409 });
+      const balances = { requested: source.requestedQuantity, ordered: source.orderedQuantity, quantity: item.quantity };
+      for (const [key, entered] of Object.entries(balances)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        balances[key] = units;
+      }
+      const remaining = balances.requested - balances.ordered;
+      if (balances.quantity > remaining) throw Object.assign(new Error('PO quantity exceeds the remaining Purchase Request balance.'), { status: 409 });
+      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('PO UOM must match the source PR line.'), { status: 400 });
+      snapshots.push({ ...item, suppliesId: source.suppliesId, suppliesCode: source.suppliesCode, suppliesName: source.suppliesName, description: source.description, unit: source.unit });
+    }
+    const settings = { vatRate: vat.recordset[0].rate, vatInclusive: supplier.vatInclusive, decimalInPrice: supplier.decimalInPrice, decimalInTotalPrice: supplier.decimalInTotalPrice };
+    const { vatRate = 0, vatInclusive = false, decimalInPrice = 6, decimalInTotalPrice = 2 } = settings;
+    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) throw Object.assign(new Error('Supplier price precision is outside the supported range.'), { status: 400 });
+    const totalFactor = 10n ** BigInt(decimalInTotalPrice);
+    const vatUnits = { rate: vatRate };
+    for (const [key, entered] of Object.entries(vatUnits)) {
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      const source = String(entered).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      const [whole, rawFraction = ''] = source.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+      const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+      if (units > 100n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+      vatUnits[key] = units;
+    }
+    const taxRateUnits = vatUnits.rate;
+    const percentages = 100000000n;
+    const totals = { items: [], grossAmount: 0n, discountAmount: 0n, netAmount: 0n, vatAmount: 0n, amount: 0n };
+    for (const item of snapshots) {
+      const lineUnits = { quantity: item.quantity, unitPrice: item.unitPrice, discountRate: item.discountRate ?? 0 };
+      for (const [key, entered] of Object.entries(lineUnits)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        lineUnits[key] = units;
+      }
+      const quantity = lineUnits.quantity;
+      if (!quantity) throw Object.assign(new Error('Quantity must be greater than zero.'), { status: 400 });
+      const step = 10n ** BigInt(6 - decimalInPrice);
+      const price = ((lineUnits.unitPrice + step / 2n) / step) * step;
+      const discount = lineUnits.discountRate;
+      if (discount > percentages) throw Object.assign(new Error('Discount rate is too large.'), { status: 400 });
+      const grossAmount = (quantity * price * totalFactor + 500000000000n) / 1000000000000n;
+      const discountAmount = (grossAmount * discount + percentages / 2n) / percentages;
+      const afterDiscount = grossAmount - discountAmount;
+      const vatAmount = vatInclusive ? (afterDiscount * taxRateUnits + (percentages + taxRateUnits) / 2n) / (percentages + taxRateUnits) : (afterDiscount * taxRateUnits + percentages / 2n) / percentages;
+      const netAmount = vatInclusive ? afterDiscount - vatAmount : afterDiscount;
+      const values = { grossAmount, discountAmount, netAmount, vatAmount, amount: netAmount + vatAmount };
+      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
+      for (const [key, amount] of Object.entries(values)) {
+        totals[key] += amount;
+        if (totals[key] > 1000000000000n * totalFactor) throw Object.assign(new Error('The document total exceeds the supported amount.'), { status: 400 });
+        calculated[key] = `${amount / totalFactor}${decimalInTotalPrice ? '.' + String(amount % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
+      }
+      totals.items.push(calculated);
+    }
+    for (const key of ['grossAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) totals[key] = `${totals[key] / totalFactor}${decimalInTotalPrice ? '.' + String(totals[key] % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
+
+    const req = request(scope);
+    req.input('grossAmount', sql.VarChar(60), totals.grossAmount);
+    req.input('discountAmount', sql.VarChar(60), totals.discountAmount);
+    req.input('netAmount', sql.VarChar(60), totals.netAmount);
+    req.input('vatAmount', sql.VarChar(60), totals.vatAmount);
+    req.input('amount', sql.VarChar(60), totals.amount);
+    req.input('supplierId', sql.Int, supplier.id).input('supplierName', sql.NVarChar(180), supplier.name)
+      .input('supplierAddress', sql.NVarChar(500), supplier.address).input('supplierContactPerson', sql.NVarChar(150), supplier.contactPerson)
+      .input('poDate', sql.VarChar(10), value.poDate).input('deliveryDate', sql.VarChar(10), value.deliveryDate).input('currency', sql.NVarChar(30), value.currency)
+      .input('rate', sql.VarChar(60), value.rate).input('paymentTerm', sql.NVarChar(100), value.paymentTerm).input('shipment', sql.NVarChar(20), value.shipment)
+      .input('suppliesCategory', sql.NVarChar(100), value.suppliesCategory).input('vatCode', sql.NVarChar(80), value.vatCode).input('vatRate', sql.VarChar(60), String(settings.vatRate))
+      .input('vatInclusive', sql.Bit, settings.vatInclusive).input('decimalInPrice', sql.Int, supplier.decimalInPrice).input('decimalInTotalPrice', sql.Int, supplier.decimalInTotalPrice)
+      .input('deliveryAddress', sql.NVarChar(500), value.deliveryAddress).input('remarks', sql.NVarChar(2000), value.remarks);
+    let saved;
+    const result = await req.input('branch', sql.NVarChar(150), process.env.COMPANY_NAME || 'TLP COMPANY').input('preparedById', sql.Int, user.id).input('preparedBy', sql.NVarChar(150), user.name)
+      .query(`INSERT INTO dbo.PurchaseOrders(supplierId,supplierName,supplierAddress,supplierContactPerson,poDate,deliveryDate,currency,rate,paymentTerm,shipment,suppliesCategory,vatCode,vatRate,vatInclusive,decimalInPrice,decimalInTotalPrice,deliveryAddress,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount,branch,preparedById,preparedBy) OUTPUT INSERTED.id VALUES(@supplierId,@supplierName,@supplierAddress,@supplierContactPerson,@poDate,@deliveryDate,@currency,@rate,@paymentTerm,@shipment,@suppliesCategory,@vatCode,@vatRate,@vatInclusive,@decimalInPrice,@decimalInTotalPrice,@deliveryAddress,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@branch,@preparedById,@preparedBy)`);
+    saved = result.recordset[0].id;
+    for (const [position, item] of totals.items.entries()) {
+      const lineWrite = request(scope);
+      lineWrite.input('grossAmount', sql.VarChar(60), item.grossAmount);
+    lineWrite.input('discountAmount', sql.VarChar(60), item.discountAmount);
+    lineWrite.input('netAmount', sql.VarChar(60), item.netAmount);
+    lineWrite.input('vatAmount', sql.VarChar(60), item.vatAmount);
+    lineWrite.input('amount', sql.VarChar(60), item.amount);
+      await lineWrite.input('id', sql.Int, saved).input('position', sql.Int, position).input('requestItemId', sql.Int, item.requestItemId)
+        .input('suppliesId', sql.Int, item.suppliesId).input('suppliesCode', sql.NVarChar(40), item.suppliesCode).input('suppliesName', sql.NVarChar(180), item.suppliesName)
+        .input('description', sql.NVarChar(1000), item.description).input('unit', sql.NVarChar(30), item.unit).input('quantity', sql.VarChar(60), item.quantity)
+        .input('unitPrice', sql.VarChar(60), item.unitPrice).input('currency', sql.NVarChar(30), item.currency).input('discountRate', sql.VarChar(60), item.discountRate)
+        .input('vatRate', sql.VarChar(60), item.vatRate).input('remarks', sql.NVarChar(2000), item.remarks)
+        .query(`INSERT INTO dbo.PurchaseOrderItems(orderId,position,requestItemId,suppliesId,suppliesCode,suppliesName,description,unit,quantity,unitPrice,currency,discountRate,vatRate,grossAmount,discountAmount,netAmount,vatAmount,amount,remarks)
+          VALUES(@id,@position,@requestItemId,@suppliesId,@suppliesCode,@suppliesName,@description,@unit,@quantity,@unitPrice,@currency,@discountRate,@vatRate,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@remarks)`);
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'purchase-orders')
+      .input('action', sql.NVarChar(50), 'create-draft').input('recordId', sql.NVarChar(100), String(saved))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o  WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of savedRecordData.recordsets[1]) savedRecordRows.get(orderId)?.items.push(item);
+    const savedRecord = [...savedRecordRows.values()][0];
+    if (!savedRecord) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    return savedRecord;
+  });
+  res.status(201).json({ record });
+});
+
+router.put('/purchase-orders/:id', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const record = await transaction(async scope => {
+    const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const currentRows = new Map(currentData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of currentData.recordsets[1]) currentRows.get(orderId)?.items.push(item);
+    const current = [...currentRows.values()][0];
+    if (!current) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (current && current.status !== 'draft') throw Object.assign(new Error('Only an unposted Purchase Order can be edited.'), { status: 409 });
+    const value = { ...current, ...input };
+    value.supplierId = Number(value.supplierId);
+    if (!Number.isSafeInteger(value.supplierId) || value.supplierId <= 0 || value.supplierId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+    for (const [key, maximum] of Object.entries({ currency: 30, paymentTerm: 100, shipment: 20, suppliesCategory: 100, vatCode: 80, deliveryAddress: 500, remarks: 2000 })) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    value.rate = value.rate ?? 1;
+    for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
+      const entered = value[key];
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      const source = String(entered).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      const [whole, rawFraction = ''] = source.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+      const factor = 10n ** BigInt(places);
+      const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+      if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+      value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+    }
+    const requestItems = new Set();
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    value.items = value.items.map(row => {
+      const requestItemId = Number(row.requestItemId);
+      if (!Number.isSafeInteger(requestItemId) || requestItemId <= 0 || requestItemId > 2147483647) throw Object.assign(new Error('Enter a valid source item id.'), { status: 400 });
+      if (requestItems.has(requestItemId)) throw Object.assign(new Error('A PR line can appear only once in a purchase order.'), { status: 400 });
+      requestItems.add(requestItemId);
+      if (row.currency && row.currency !== value.currency) throw Object.assign(new Error('PO line currency must match the header currency.'), { status: 400 });
+      const line = { ...row, requestItemId, currency: value.currency, discountRate: row.discountRate ?? 0 };
+      for (const [key, maximum] of Object.entries({ remarks: 2000, unit: 30 })) {
+        const entered = line[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        line[key] = entered.trim();
+      }
+      for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000], ['unitPrice', 6, false, 1000000000], ['discountRate', 6, false, 100]]) {
+        const entered = line[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+      return line;
+    });
+    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 PR lines.'), { status: 400 });
+    const supplierData = await request(scope).input('id', sql.Int, value.supplierId).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
+    const supplier = supplierData.recordset[0];
+    if (!supplier) throw Object.assign(new Error('Supplier could not be found.'), { status: 404 });
+    if (!supplier.isActive) throw Object.assign(new Error('Select an active Supplier.'), { status: 400 });
+    const vat = await request(scope).input('code', sql.NVarChar(80), value.vatCode).query('SELECT rate FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
+    if (!vat.recordset.length) throw Object.assign(new Error('Select an active VAT Code.'), { status: 400 });
+    const currency = await request(scope).input('code', sql.NVarChar(30), value.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
+    if (!currency.recordset.length) throw Object.assign(new Error('Select an active Currency.'), { status: 400 });
+    const term = await request(scope).input('term', sql.NVarChar(100), value.paymentTerm).query('SELECT id FROM dbo.ConfigPaymentTerms WHERE description=@term AND isActive=1 AND forSupplier=1');
+    if (!term.recordset.length) throw Object.assign(new Error('Select an active Supplier Payment Term.'), { status: 400 });
+    if (value.suppliesCategory) {
+      const category = await request(scope).input('name', sql.NVarChar(100), value.suppliesCategory).query('SELECT id FROM dbo.ConfigSuppliesCategories WHERE name=@name AND isActive=1');
+      if (!category.recordset.length) throw Object.assign(new Error('Select an active Supplies Category.'), { status: 400 });
+    }
+    const snapshots = [];
+    for (const item of value.items) {
+      const sourceData = await request(scope).input('id', sql.Int, item.requestItemId).query(`SELECT d.*,r.status AS requestStatus,r.number AS requestNumber,
+        CONVERT(varchar(60),d.quantity) AS requestedQuantity,CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.PurchaseOrderItems i
+        JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')),0)) AS orderedQuantity
+        FROM dbo.PurchaseRequestItems d JOIN dbo.PurchaseRequests r ON r.id=d.requestId WHERE d.id=@id`);
+      if (!sourceData.recordset.length) throw Object.assign(new Error('Select a valid posted PR line.'), { status: 400 });
+      const source = sourceData.recordset[0];
+      if (!['posted', 'closed'].includes(source.requestStatus)) throw Object.assign(new Error('Purchase Orders can only use posted PR lines.'), { status: 409 });
+      const balances = { requested: source.requestedQuantity, ordered: source.orderedQuantity, quantity: item.quantity };
+      for (const [key, entered] of Object.entries(balances)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        balances[key] = units;
+      }
+      const remaining = balances.requested - balances.ordered;
+      if (balances.quantity > remaining) throw Object.assign(new Error('PO quantity exceeds the remaining Purchase Request balance.'), { status: 409 });
+      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('PO UOM must match the source PR line.'), { status: 400 });
+      snapshots.push({ ...item, suppliesId: source.suppliesId, suppliesCode: source.suppliesCode, suppliesName: source.suppliesName, description: source.description, unit: source.unit });
+    }
+    const settings = { vatRate: vat.recordset[0].rate, vatInclusive: supplier.vatInclusive, decimalInPrice: supplier.decimalInPrice, decimalInTotalPrice: supplier.decimalInTotalPrice };
+    const { vatRate = 0, vatInclusive = false, decimalInPrice = 6, decimalInTotalPrice = 2 } = settings;
+    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) throw Object.assign(new Error('Supplier price precision is outside the supported range.'), { status: 400 });
+    const totalFactor = 10n ** BigInt(decimalInTotalPrice);
+    const vatUnits = { rate: vatRate };
+    for (const [key, entered] of Object.entries(vatUnits)) {
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      const source = String(entered).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      const [whole, rawFraction = ''] = source.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+      const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+      if (units > 100n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+      vatUnits[key] = units;
+    }
+    const taxRateUnits = vatUnits.rate;
+    const percentages = 100000000n;
+    const totals = { items: [], grossAmount: 0n, discountAmount: 0n, netAmount: 0n, vatAmount: 0n, amount: 0n };
+    for (const item of snapshots) {
+      const lineUnits = { quantity: item.quantity, unitPrice: item.unitPrice, discountRate: item.discountRate ?? 0 };
+      for (const [key, entered] of Object.entries(lineUnits)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        lineUnits[key] = units;
+      }
+      const quantity = lineUnits.quantity;
+      if (!quantity) throw Object.assign(new Error('Quantity must be greater than zero.'), { status: 400 });
+      const step = 10n ** BigInt(6 - decimalInPrice);
+      const price = ((lineUnits.unitPrice + step / 2n) / step) * step;
+      const discount = lineUnits.discountRate;
+      if (discount > percentages) throw Object.assign(new Error('Discount rate is too large.'), { status: 400 });
+      const grossAmount = (quantity * price * totalFactor + 500000000000n) / 1000000000000n;
+      const discountAmount = (grossAmount * discount + percentages / 2n) / percentages;
+      const afterDiscount = grossAmount - discountAmount;
+      const vatAmount = vatInclusive ? (afterDiscount * taxRateUnits + (percentages + taxRateUnits) / 2n) / (percentages + taxRateUnits) : (afterDiscount * taxRateUnits + percentages / 2n) / percentages;
+      const netAmount = vatInclusive ? afterDiscount - vatAmount : afterDiscount;
+      const values = { grossAmount, discountAmount, netAmount, vatAmount, amount: netAmount + vatAmount };
+      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
+      for (const [key, amount] of Object.entries(values)) {
+        totals[key] += amount;
+        if (totals[key] > 1000000000000n * totalFactor) throw Object.assign(new Error('The document total exceeds the supported amount.'), { status: 400 });
+        calculated[key] = `${amount / totalFactor}${decimalInTotalPrice ? '.' + String(amount % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
+      }
+      totals.items.push(calculated);
+    }
+    for (const key of ['grossAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) totals[key] = `${totals[key] / totalFactor}${decimalInTotalPrice ? '.' + String(totals[key] % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
+
+    const req = request(scope);
+    req.input('grossAmount', sql.VarChar(60), totals.grossAmount);
+    req.input('discountAmount', sql.VarChar(60), totals.discountAmount);
+    req.input('netAmount', sql.VarChar(60), totals.netAmount);
+    req.input('vatAmount', sql.VarChar(60), totals.vatAmount);
+    req.input('amount', sql.VarChar(60), totals.amount);
+    req.input('supplierId', sql.Int, supplier.id).input('supplierName', sql.NVarChar(180), supplier.name)
+      .input('supplierAddress', sql.NVarChar(500), supplier.address).input('supplierContactPerson', sql.NVarChar(150), supplier.contactPerson)
+      .input('poDate', sql.VarChar(10), value.poDate).input('deliveryDate', sql.VarChar(10), value.deliveryDate).input('currency', sql.NVarChar(30), value.currency)
+      .input('rate', sql.VarChar(60), value.rate).input('paymentTerm', sql.NVarChar(100), value.paymentTerm).input('shipment', sql.NVarChar(20), value.shipment)
+      .input('suppliesCategory', sql.NVarChar(100), value.suppliesCategory).input('vatCode', sql.NVarChar(80), value.vatCode).input('vatRate', sql.VarChar(60), String(settings.vatRate))
+      .input('vatInclusive', sql.Bit, settings.vatInclusive).input('decimalInPrice', sql.Int, supplier.decimalInPrice).input('decimalInTotalPrice', sql.Int, supplier.decimalInTotalPrice)
+      .input('deliveryAddress', sql.NVarChar(500), value.deliveryAddress).input('remarks', sql.NVarChar(2000), value.remarks);
+    const saved = id;
+    await req.input('id', sql.Int, id).query(`UPDATE dbo.PurchaseOrders SET [supplierId]=@supplierId,[supplierName]=@supplierName,[supplierAddress]=@supplierAddress,[supplierContactPerson]=@supplierContactPerson,[poDate]=@poDate,[deliveryDate]=@deliveryDate,[currency]=@currency,[rate]=@rate,[paymentTerm]=@paymentTerm,[shipment]=@shipment,[suppliesCategory]=@suppliesCategory,[vatCode]=@vatCode,[vatRate]=@vatRate,[vatInclusive]=@vatInclusive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[deliveryAddress]=@deliveryAddress,[remarks]=@remarks,[grossAmount]=@grossAmount,[discountAmount]=@discountAmount,[netAmount]=@netAmount,[vatAmount]=@vatAmount,[amount]=@amount,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    await request(scope).input('id', sql.Int, id).query('DELETE FROM dbo.PurchaseOrderItems WHERE orderId=@id');
+    for (const [position, item] of totals.items.entries()) {
+      const lineWrite = request(scope);
+      lineWrite.input('grossAmount', sql.VarChar(60), item.grossAmount);
+    lineWrite.input('discountAmount', sql.VarChar(60), item.discountAmount);
+    lineWrite.input('netAmount', sql.VarChar(60), item.netAmount);
+    lineWrite.input('vatAmount', sql.VarChar(60), item.vatAmount);
+    lineWrite.input('amount', sql.VarChar(60), item.amount);
+      await lineWrite.input('id', sql.Int, saved).input('position', sql.Int, position).input('requestItemId', sql.Int, item.requestItemId)
+        .input('suppliesId', sql.Int, item.suppliesId).input('suppliesCode', sql.NVarChar(40), item.suppliesCode).input('suppliesName', sql.NVarChar(180), item.suppliesName)
+        .input('description', sql.NVarChar(1000), item.description).input('unit', sql.NVarChar(30), item.unit).input('quantity', sql.VarChar(60), item.quantity)
+        .input('unitPrice', sql.VarChar(60), item.unitPrice).input('currency', sql.NVarChar(30), item.currency).input('discountRate', sql.VarChar(60), item.discountRate)
+        .input('vatRate', sql.VarChar(60), item.vatRate).input('remarks', sql.NVarChar(2000), item.remarks)
+        .query(`INSERT INTO dbo.PurchaseOrderItems(orderId,position,requestItemId,suppliesId,suppliesCode,suppliesName,description,unit,quantity,unitPrice,currency,discountRate,vatRate,grossAmount,discountAmount,netAmount,vatAmount,amount,remarks)
+          VALUES(@id,@position,@requestItemId,@suppliesId,@suppliesCode,@suppliesName,@description,@unit,@quantity,@unitPrice,@currency,@discountRate,@vatRate,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@remarks)`);
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'purchase-orders')
+      .input('action', sql.NVarChar(50), 'update-draft').input('recordId', sql.NVarChar(100), String(saved))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o  WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of savedRecordData.recordsets[1]) savedRecordRows.get(orderId)?.items.push(item);
+    const savedRecord = [...savedRecordRows.values()][0];
+    if (!savedRecord) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    return savedRecord;
+  });
+  res.json({ record });
+});
+
+router.post('/receivings', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const value = { ...input };
+    value.purchaseOrderId = Number(value.purchaseOrderId);
+    if (!Number.isSafeInteger(value.purchaseOrderId) || value.purchaseOrderId <= 0 || value.purchaseOrderId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+    for (const [key, maximum] of Object.entries({ drNumber: 80, pezaReference: 80, invoiceNumber: 80, remarks: 2000 })) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    value.invoiceDate = value.invoiceDate || null;
+    if (value.rate !== undefined) {
+      for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
+        const entered = value[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+    }
+    const orderItemsUsed = new Set();
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    value.items = value.items.map(row => {
+      const orderItemId = Number(row.orderItemId);
+      if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || orderItemId > 2147483647) throw Object.assign(new Error('Enter a valid source item id.'), { status: 400 });
+      if (orderItemsUsed.has(orderItemId)) throw Object.assign(new Error('A PO line can appear only once in a receiving receipt.'), { status: 400 });
+      orderItemsUsed.add(orderItemId);
+      if (row.allocations !== undefined && (!Array.isArray(row.allocations) || row.allocations.some(allocation => !allocation || typeof allocation !== 'object' || Array.isArray(allocation)))) throw Object.assign(new Error('Send allocation rows as objects.'), { status: 400 });
+      const allocations = (row.allocations || []).map(allocation => {
+        const entry = { ...allocation, expiryDate: allocation.expiryDate || null, mfgDate: allocation.mfgDate || null };
+        for (const key of ['warehouseId', 'locationId']) {
+          entry[key] = entry[key] == null ? null : Number(entry[key]);
+          if (entry[key] !== null && (!Number.isSafeInteger(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) throw Object.assign(new Error('Enter a valid stock destination id.'), { status: 400 });
+        }
+        for (const [key, maximum] of Object.entries({ imLot: 100, qcStatus: 50 })) {
+          const entered = entry[key] ?? '';
+          if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+          entry[key] = entered.trim();
+        }
+        for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
+          const entered = entry[key];
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          const source = String(entered).trim();
+          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          const [whole, rawFraction = ''] = source.split('.');
+          const fraction = rawFraction.replace(/0+$/, '');
+          if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+          const factor = 10n ** BigInt(places);
+          const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+          if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+          entry[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+        }
+        return entry;
+      });
+      if (allocations.length > 200) throw Object.assign(new Error('Use no more than 200 allocations per item.'), { status: 400 });
+      const line = { ...row, orderItemId, allocations };
+      for (const [key, maximum] of Object.entries({ unit: 30, remarks: 2000 })) {
+        const entered = line[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        line[key] = entered.trim();
+      }
+      for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
+        const entered = line[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+      return line;
+    });
+    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 receiving lines.'), { status: 400 });
+    const orderData = await request(scope).input('id', sql.Int, value.purchaseOrderId).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const orderRows = new Map(orderData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of orderData.recordsets[1]) orderRows.get(orderId)?.items.push(item);
+    const order = [...orderRows.values()][0];
+    if (!order) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!['posted', 'closed'].includes(order.status)) throw Object.assign(new Error('Load a posted Purchase Order for receiving.'), { status: 409 });
+    const orderItems = new Map(order.items.map(item => [item.id, item]));
+    const snapshots = [];
+    for (const item of value.items) {
+      const source = orderItems.get(item.orderItemId);
+      if (!source) throw Object.assign(new Error('Receiving items must belong to the selected Purchase Order.'), { status: 400 });
+      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('Receiving UOM must match its Purchase Order.'), { status: 400 });
+      const balances = { ordered: source.quantity, received: source.receivedQuantity, quantity: item.quantity };
+      for (const [key, entered] of Object.entries(balances)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        balances[key] = units;
+      }
+      const available = balances.ordered - balances.received;
+      if (balances.quantity > available) throw Object.assign(new Error('Receiving quantity exceeds the open Purchase Order balance.'), { status: 409 });
+      for (const allocation of item.allocations) {
+        if (allocation.warehouseId) {
+          const warehouse = await request(scope).input('id', sql.Int, allocation.warehouseId).query('SELECT id FROM dbo.ConfigWarehouses WHERE id=@id AND isActive=1');
+          if (!warehouse.recordset.length) throw Object.assign(new Error('Select active configured Warehouses and Locations.'), { status: 400 });
+        }
+        if (allocation.locationId) {
+          const location = await request(scope).input('id', sql.Int, allocation.locationId).query('SELECT id FROM dbo.ConfigLocations WHERE id=@id AND isActive=1');
+          if (!location.recordset.length) throw Object.assign(new Error('Select active configured Warehouses and Locations.'), { status: 400 });
+        }
+      }
+      snapshots.push({ ...item, unitPrice: source.unitPrice, discountRate: source.discountRate });
+    }
+    const { vatRate = 0, vatInclusive = false, decimalInPrice = 6, decimalInTotalPrice = 2 } = order;
+    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) throw Object.assign(new Error('Supplier price precision is outside the supported range.'), { status: 400 });
+    const totalFactor = 10n ** BigInt(decimalInTotalPrice);
+    const vatUnits = { rate: vatRate };
+    for (const [key, entered] of Object.entries(vatUnits)) {
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      const source = String(entered).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      const [whole, rawFraction = ''] = source.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+      const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+      if (units > 100n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+      vatUnits[key] = units;
+    }
+    const taxRateUnits = vatUnits.rate;
+    const percentages = 100000000n;
+    const totals = { items: [], grossAmount: 0n, discountAmount: 0n, netAmount: 0n, vatAmount: 0n, amount: 0n };
+    for (const item of snapshots) {
+      const lineUnits = { quantity: item.quantity, unitPrice: item.unitPrice, discountRate: item.discountRate ?? 0 };
+      for (const [key, entered] of Object.entries(lineUnits)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        lineUnits[key] = units;
+      }
+      const quantity = lineUnits.quantity;
+      if (!quantity) throw Object.assign(new Error('Quantity must be greater than zero.'), { status: 400 });
+      const step = 10n ** BigInt(6 - decimalInPrice);
+      const price = ((lineUnits.unitPrice + step / 2n) / step) * step;
+      const discount = lineUnits.discountRate;
+      if (discount > percentages) throw Object.assign(new Error('Discount rate is too large.'), { status: 400 });
+      const grossAmount = (quantity * price * totalFactor + 500000000000n) / 1000000000000n;
+      const discountAmount = (grossAmount * discount + percentages / 2n) / percentages;
+      const afterDiscount = grossAmount - discountAmount;
+      const vatAmount = vatInclusive ? (afterDiscount * taxRateUnits + (percentages + taxRateUnits) / 2n) / (percentages + taxRateUnits) : (afterDiscount * taxRateUnits + percentages / 2n) / percentages;
+      const netAmount = vatInclusive ? afterDiscount - vatAmount : afterDiscount;
+      const values = { grossAmount, discountAmount, netAmount, vatAmount, amount: netAmount + vatAmount };
+      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
+      for (const [key, amount] of Object.entries(values)) {
+        totals[key] += amount;
+        if (totals[key] > 1000000000000n * totalFactor) throw Object.assign(new Error('The document total exceeds the supported amount.'), { status: 400 });
+        calculated[key] = `${amount / totalFactor}${decimalInTotalPrice ? '.' + String(amount % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
+      }
+      totals.items.push(calculated);
+    }
+    for (const key of ['grossAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) totals[key] = `${totals[key] / totalFactor}${decimalInTotalPrice ? '.' + String(totals[key] % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
+
+    const req = request(scope);
+    req.input('grossAmount', sql.VarChar(60), totals.grossAmount);
+    req.input('discountAmount', sql.VarChar(60), totals.discountAmount);
+    req.input('netAmount', sql.VarChar(60), totals.netAmount);
+    req.input('vatAmount', sql.VarChar(60), totals.vatAmount);
+    req.input('amount', sql.VarChar(60), totals.amount);
+    req.input('purchaseOrderId', sql.Int, order.id).input('srrDate', sql.VarChar(10), value.srrDate)
+      .input('drNumber', sql.NVarChar(80), value.drNumber).input('pezaReference', sql.NVarChar(80), value.pezaReference).input('invoiceNumber', sql.NVarChar(80), value.invoiceNumber)
+      .input('invoiceDate', sql.VarChar(10), value.invoiceDate).input('rate', sql.VarChar(60), value.rate || order.rate).input('remarks', sql.NVarChar(2000), value.remarks);
+    let saved;
+    const result = await req.input('receivedById', sql.Int, user.id).input('receivedBy', sql.NVarChar(150), user.name)
+      .query(`INSERT INTO dbo.SuppliesReceipts(purchaseOrderId,srrDate,drNumber,pezaReference,invoiceNumber,invoiceDate,rate,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount,receivedById,receivedBy) OUTPUT INSERTED.id VALUES(@purchaseOrderId,@srrDate,@drNumber,@pezaReference,@invoiceNumber,@invoiceDate,@rate,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@receivedById,@receivedBy)`);
+    saved = result.recordset[0].id;
+    for (const [position, item] of totals.items.entries()) {
+      const lineWrite = request(scope);
+      lineWrite.input('grossAmount', sql.VarChar(60), item.grossAmount);
+    lineWrite.input('discountAmount', sql.VarChar(60), item.discountAmount);
+    lineWrite.input('netAmount', sql.VarChar(60), item.netAmount);
+    lineWrite.input('vatAmount', sql.VarChar(60), item.vatAmount);
+    lineWrite.input('amount', sql.VarChar(60), item.amount);
+      const inserted = await lineWrite.input('id', sql.Int, saved).input('position', sql.Int, position).input('orderItemId', sql.Int, item.orderItemId)
+        .input('quantity', sql.VarChar(60), item.quantity).input('remarks', sql.NVarChar(2000), item.remarks)
+        .query(`INSERT INTO dbo.SuppliesReceiptItems(receiptId,position,orderItemId,quantity,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount) OUTPUT INSERTED.id
+          VALUES(@id,@position,@orderItemId,@quantity,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount)`);
+      const itemId = inserted.recordset[0].id;
+      for (const [allocationPosition, allocation] of item.allocations.entries()) {
+        await request(scope).input('id', sql.Int, itemId).input('position', sql.Int, allocationPosition).input('quantity', sql.VarChar(60), allocation.quantity)
+          .input('expiryDate', sql.VarChar(10), allocation.expiryDate).input('mfgDate', sql.VarChar(10), allocation.mfgDate).input('imLot', sql.NVarChar(100), allocation.imLot)
+          .input('qcStatus', sql.NVarChar(50), allocation.qcStatus).input('warehouseId', sql.Int, allocation.warehouseId).input('locationId', sql.Int, allocation.locationId)
+          .query(`INSERT INTO dbo.SuppliesReceiptAllocations(receiptItemId,position,quantity,expiryDate,mfgDate,imLot,qcStatus,warehouseId,locationId)
+            VALUES(@id,@position,@quantity,@expiryDate,@mfgDate,@imLot,@qcStatus,@warehouseId,@locationId)`);
+      }
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'receivings')
+      .input('action', sql.NVarChar(50), 'create-draft').input('recordId', sql.NVarChar(100), String(saved))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+        CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+        o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+        FROM dbo.SuppliesReceipts r  JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+        CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+        CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+        CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+        FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+        OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+        OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+        WHERE d.receiptId=@id ORDER BY d.receiptId,d.position;
+        SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+        CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+        FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+        LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+        WHERE d.receiptId=@id ORDER BY a.receiptItemId,a.position;`);
+    const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    const savedRecordItems = new Map();
+    for (const { receiptId, ...row } of savedRecordData.recordsets[1]) {
+      const item = { ...row, allocations: [] };
+      savedRecordItems.set(row.id, item);
+      savedRecordRows.get(receiptId)?.items.push(item);
+    }
+    for (const { receiptItemId, ...allocation } of savedRecordData.recordsets[2]) savedRecordItems.get(receiptItemId)?.allocations.push(allocation);
+    const savedRecord = [...savedRecordRows.values()][0];
+    if (!savedRecord) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    return savedRecord;
+  });
+  res.status(201).json({ record });
+});
+
+router.put('/receivings/:id', async (req, res) => {
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  const input = req.body;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  const user = req.purchasingUser;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const record = await transaction(async scope => {
+    const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+        CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+        o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+        FROM dbo.SuppliesReceipts r WITH (UPDLOCK,HOLDLOCK) JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+        CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+        CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+        CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+        FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+        OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+        OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+        WHERE d.receiptId=@id ORDER BY d.receiptId,d.position;
+        SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+        CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+        FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+        LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+        WHERE d.receiptId=@id ORDER BY a.receiptItemId,a.position;`);
+    const currentRows = new Map(currentData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    const currentItems = new Map();
+    for (const { receiptId, ...row } of currentData.recordsets[1]) {
+      const item = { ...row, allocations: [] };
+      currentItems.set(row.id, item);
+      currentRows.get(receiptId)?.items.push(item);
+    }
+    for (const { receiptItemId, ...allocation } of currentData.recordsets[2]) currentItems.get(receiptItemId)?.allocations.push(allocation);
+    const current = [...currentRows.values()][0];
+    if (!current) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (current && current.status !== 'draft') throw Object.assign(new Error('Only an unposted receiving receipt can be edited.'), { status: 409 });
+    const value = { ...current, ...input };
+    value.purchaseOrderId = Number(value.purchaseOrderId);
+    if (!Number.isSafeInteger(value.purchaseOrderId) || value.purchaseOrderId <= 0 || value.purchaseOrderId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+    for (const [key, maximum] of Object.entries({ drNumber: 80, pezaReference: 80, invoiceNumber: 80, remarks: 2000 })) {
+      const entered = value[key] ?? '';
+      if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+      value[key] = entered.trim();
+    }
+    value.invoiceDate = value.invoiceDate || null;
+    if (value.rate !== undefined) {
+      for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
+        const entered = value[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+    }
+    const orderItemsUsed = new Set();
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    value.items = value.items.map(row => {
+      const orderItemId = Number(row.orderItemId);
+      if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || orderItemId > 2147483647) throw Object.assign(new Error('Enter a valid source item id.'), { status: 400 });
+      if (orderItemsUsed.has(orderItemId)) throw Object.assign(new Error('A PO line can appear only once in a receiving receipt.'), { status: 400 });
+      orderItemsUsed.add(orderItemId);
+      if (row.allocations !== undefined && (!Array.isArray(row.allocations) || row.allocations.some(allocation => !allocation || typeof allocation !== 'object' || Array.isArray(allocation)))) throw Object.assign(new Error('Send allocation rows as objects.'), { status: 400 });
+      const allocations = (row.allocations || []).map(allocation => {
+        const entry = { ...allocation, expiryDate: allocation.expiryDate || null, mfgDate: allocation.mfgDate || null };
+        for (const key of ['warehouseId', 'locationId']) {
+          entry[key] = entry[key] == null ? null : Number(entry[key]);
+          if (entry[key] !== null && (!Number.isSafeInteger(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) throw Object.assign(new Error('Enter a valid stock destination id.'), { status: 400 });
+        }
+        for (const [key, maximum] of Object.entries({ imLot: 100, qcStatus: 50 })) {
+          const entered = entry[key] ?? '';
+          if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+          entry[key] = entered.trim();
+        }
+        for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
+          const entered = entry[key];
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          const source = String(entered).trim();
+          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          const [whole, rawFraction = ''] = source.split('.');
+          const fraction = rawFraction.replace(/0+$/, '');
+          if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+          const factor = 10n ** BigInt(places);
+          const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+          if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+          entry[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+        }
+        return entry;
+      });
+      if (allocations.length > 200) throw Object.assign(new Error('Use no more than 200 allocations per item.'), { status: 400 });
+      const line = { ...row, orderItemId, allocations };
+      for (const [key, maximum] of Object.entries({ unit: 30, remarks: 2000 })) {
+        const entered = line[key] ?? '';
+        if (typeof entered !== 'string' || entered.length > maximum || entered.includes('\0')) throw Object.assign(new Error(`${key} exceeds its supported storage value.`), { status: 400 });
+        line[key] = entered.trim();
+      }
+      for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
+        const entered = line[key];
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        const factor = 10n ** BigInt(places);
+        const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
+      }
+      return line;
+    });
+    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 receiving lines.'), { status: 400 });
+    const orderData = await request(scope).input('id', sql.Int, value.purchaseOrderId).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const orderRows = new Map(orderData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of orderData.recordsets[1]) orderRows.get(orderId)?.items.push(item);
+    const order = [...orderRows.values()][0];
+    if (!order) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!['posted', 'closed'].includes(order.status)) throw Object.assign(new Error('Load a posted Purchase Order for receiving.'), { status: 409 });
+    const orderItems = new Map(order.items.map(item => [item.id, item]));
+    const snapshots = [];
+    for (const item of value.items) {
+      const source = orderItems.get(item.orderItemId);
+      if (!source) throw Object.assign(new Error('Receiving items must belong to the selected Purchase Order.'), { status: 400 });
+      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('Receiving UOM must match its Purchase Order.'), { status: 400 });
+      const balances = { ordered: source.quantity, received: source.receivedQuantity, quantity: item.quantity };
+      for (const [key, entered] of Object.entries(balances)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        balances[key] = units;
+      }
+      const available = balances.ordered - balances.received;
+      if (balances.quantity > available) throw Object.assign(new Error('Receiving quantity exceeds the open Purchase Order balance.'), { status: 409 });
+      for (const allocation of item.allocations) {
+        if (allocation.warehouseId) {
+          const warehouse = await request(scope).input('id', sql.Int, allocation.warehouseId).query('SELECT id FROM dbo.ConfigWarehouses WHERE id=@id AND isActive=1');
+          if (!warehouse.recordset.length) throw Object.assign(new Error('Select active configured Warehouses and Locations.'), { status: 400 });
+        }
+        if (allocation.locationId) {
+          const location = await request(scope).input('id', sql.Int, allocation.locationId).query('SELECT id FROM dbo.ConfigLocations WHERE id=@id AND isActive=1');
+          if (!location.recordset.length) throw Object.assign(new Error('Select active configured Warehouses and Locations.'), { status: 400 });
+        }
+      }
+      snapshots.push({ ...item, unitPrice: source.unitPrice, discountRate: source.discountRate });
+    }
+    const { vatRate = 0, vatInclusive = false, decimalInPrice = 6, decimalInTotalPrice = 2 } = order;
+    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) throw Object.assign(new Error('Supplier price precision is outside the supported range.'), { status: 400 });
+    const totalFactor = 10n ** BigInt(decimalInTotalPrice);
+    const vatUnits = { rate: vatRate };
+    for (const [key, entered] of Object.entries(vatUnits)) {
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      const source = String(entered).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      const [whole, rawFraction = ''] = source.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+      const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+      if (units > 100n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+      vatUnits[key] = units;
+    }
+    const taxRateUnits = vatUnits.rate;
+    const percentages = 100000000n;
+    const totals = { items: [], grossAmount: 0n, discountAmount: 0n, netAmount: 0n, vatAmount: 0n, amount: 0n };
+    for (const item of snapshots) {
+      const lineUnits = { quantity: item.quantity, unitPrice: item.unitPrice, discountRate: item.discountRate ?? 0 };
+      for (const [key, entered] of Object.entries(lineUnits)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        lineUnits[key] = units;
+      }
+      const quantity = lineUnits.quantity;
+      if (!quantity) throw Object.assign(new Error('Quantity must be greater than zero.'), { status: 400 });
+      const step = 10n ** BigInt(6 - decimalInPrice);
+      const price = ((lineUnits.unitPrice + step / 2n) / step) * step;
+      const discount = lineUnits.discountRate;
+      if (discount > percentages) throw Object.assign(new Error('Discount rate is too large.'), { status: 400 });
+      const grossAmount = (quantity * price * totalFactor + 500000000000n) / 1000000000000n;
+      const discountAmount = (grossAmount * discount + percentages / 2n) / percentages;
+      const afterDiscount = grossAmount - discountAmount;
+      const vatAmount = vatInclusive ? (afterDiscount * taxRateUnits + (percentages + taxRateUnits) / 2n) / (percentages + taxRateUnits) : (afterDiscount * taxRateUnits + percentages / 2n) / percentages;
+      const netAmount = vatInclusive ? afterDiscount - vatAmount : afterDiscount;
+      const values = { grossAmount, discountAmount, netAmount, vatAmount, amount: netAmount + vatAmount };
+      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
+      for (const [key, amount] of Object.entries(values)) {
+        totals[key] += amount;
+        if (totals[key] > 1000000000000n * totalFactor) throw Object.assign(new Error('The document total exceeds the supported amount.'), { status: 400 });
+        calculated[key] = `${amount / totalFactor}${decimalInTotalPrice ? '.' + String(amount % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
+      }
+      totals.items.push(calculated);
+    }
+    for (const key of ['grossAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) totals[key] = `${totals[key] / totalFactor}${decimalInTotalPrice ? '.' + String(totals[key] % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
+
+    const req = request(scope);
+    req.input('grossAmount', sql.VarChar(60), totals.grossAmount);
+    req.input('discountAmount', sql.VarChar(60), totals.discountAmount);
+    req.input('netAmount', sql.VarChar(60), totals.netAmount);
+    req.input('vatAmount', sql.VarChar(60), totals.vatAmount);
+    req.input('amount', sql.VarChar(60), totals.amount);
+    req.input('purchaseOrderId', sql.Int, order.id).input('srrDate', sql.VarChar(10), value.srrDate)
+      .input('drNumber', sql.NVarChar(80), value.drNumber).input('pezaReference', sql.NVarChar(80), value.pezaReference).input('invoiceNumber', sql.NVarChar(80), value.invoiceNumber)
+      .input('invoiceDate', sql.VarChar(10), value.invoiceDate).input('rate', sql.VarChar(60), value.rate || order.rate).input('remarks', sql.NVarChar(2000), value.remarks);
+    const saved = id;
+    await req.input('id', sql.Int, id).query(`UPDATE dbo.SuppliesReceipts SET [purchaseOrderId]=@purchaseOrderId,[srrDate]=@srrDate,[drNumber]=@drNumber,[pezaReference]=@pezaReference,[invoiceNumber]=@invoiceNumber,[invoiceDate]=@invoiceDate,[rate]=@rate,[remarks]=@remarks,[grossAmount]=@grossAmount,[discountAmount]=@discountAmount,[netAmount]=@netAmount,[vatAmount]=@vatAmount,[amount]=@amount,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    await request(scope).input('id', sql.Int, id).query('DELETE a FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems i ON i.id=a.receiptItemId WHERE i.receiptId=@id; DELETE FROM dbo.SuppliesReceiptItems WHERE receiptId=@id;');
+    for (const [position, item] of totals.items.entries()) {
+      const lineWrite = request(scope);
+      lineWrite.input('grossAmount', sql.VarChar(60), item.grossAmount);
+    lineWrite.input('discountAmount', sql.VarChar(60), item.discountAmount);
+    lineWrite.input('netAmount', sql.VarChar(60), item.netAmount);
+    lineWrite.input('vatAmount', sql.VarChar(60), item.vatAmount);
+    lineWrite.input('amount', sql.VarChar(60), item.amount);
+      const inserted = await lineWrite.input('id', sql.Int, saved).input('position', sql.Int, position).input('orderItemId', sql.Int, item.orderItemId)
+        .input('quantity', sql.VarChar(60), item.quantity).input('remarks', sql.NVarChar(2000), item.remarks)
+        .query(`INSERT INTO dbo.SuppliesReceiptItems(receiptId,position,orderItemId,quantity,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount) OUTPUT INSERTED.id
+          VALUES(@id,@position,@orderItemId,@quantity,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount)`);
+      const itemId = inserted.recordset[0].id;
+      for (const [allocationPosition, allocation] of item.allocations.entries()) {
+        await request(scope).input('id', sql.Int, itemId).input('position', sql.Int, allocationPosition).input('quantity', sql.VarChar(60), allocation.quantity)
+          .input('expiryDate', sql.VarChar(10), allocation.expiryDate).input('mfgDate', sql.VarChar(10), allocation.mfgDate).input('imLot', sql.NVarChar(100), allocation.imLot)
+          .input('qcStatus', sql.NVarChar(50), allocation.qcStatus).input('warehouseId', sql.Int, allocation.warehouseId).input('locationId', sql.Int, allocation.locationId)
+          .query(`INSERT INTO dbo.SuppliesReceiptAllocations(receiptItemId,position,quantity,expiryDate,mfgDate,imLot,qcStatus,warehouseId,locationId)
+            VALUES(@id,@position,@quantity,@expiryDate,@mfgDate,@imLot,@qcStatus,@warehouseId,@locationId)`);
+      }
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'receivings')
+      .input('action', sql.NVarChar(50), 'update-draft').input('recordId', sql.NVarChar(100), String(saved))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+        CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+        o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+        FROM dbo.SuppliesReceipts r  JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+        CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+        CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+        CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+        FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+        OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+        OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+        WHERE d.receiptId=@id ORDER BY d.receiptId,d.position;
+        SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+        CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+        FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+        LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+        WHERE d.receiptId=@id ORDER BY a.receiptItemId,a.position;`);
+    const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    const savedRecordItems = new Map();
+    for (const { receiptId, ...row } of savedRecordData.recordsets[1]) {
+      const item = { ...row, allocations: [] };
+      savedRecordItems.set(row.id, item);
+      savedRecordRows.get(receiptId)?.items.push(item);
+    }
+    for (const { receiptItemId, ...allocation } of savedRecordData.recordsets[2]) savedRecordItems.get(receiptItemId)?.allocations.push(allocation);
+    const savedRecord = [...savedRecordRows.values()][0];
+    if (!savedRecord) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    return savedRecord;
+  });
+  res.json({ record });
+});
+
+router.post('/purchase-requests/:id/post', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const valueData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+        r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+        FROM dbo.PurchaseRequests r WITH (UPDLOCK,HOLDLOCK) WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+        CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+        CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+        FROM dbo.PurchaseRequestItems d OUTER APPLY (
+          SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+          FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+          WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+        ) a WHERE d.requestId=@id ORDER BY d.requestId,d.position;`);
+    const valueRows = new Map(valueData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { requestId, ...item } of valueData.recordsets[1]) valueRows.get(requestId)?.items.push(item);
+    const value = [...valueRows.values()][0];
+    if (!value) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (['posted', 'closed'].includes(value.status)) return value;
+    if (value.status !== 'draft' || !value.items.length) throw Object.assign(new Error('Only a nonempty unposted document can be posted.'), { status: 409 });
+    await request(scope).input('id', sql.Int, id).input('user', sql.Int, user.id).query("UPDATE dbo.PurchaseRequests SET status='posted',postedById=@user,postedAt=SYSUTCDATETIME(),updatedAt=SYSUTCDATETIME() WHERE id=@id");
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'purchase-requests')
+      .input('action', sql.NVarChar(50), 'post').input('recordId', sql.NVarChar(100), String(id))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+        r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+        FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+        CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+        CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+        FROM dbo.PurchaseRequestItems d OUTER APPLY (
+          SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+          FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+          WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+        ) a WHERE d.requestId=@id ORDER BY d.requestId,d.position;`);
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { requestId, ...item } of savedData.recordsets[1]) savedRows.get(requestId)?.items.push(item);
+    const saved = [...savedRows.values()][0];
+    if (!saved) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    return saved;
+  });
+  res.json({ record });
+});
+
+router.post('/purchase-requests/:id/cancel', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const valueData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+        r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+        FROM dbo.PurchaseRequests r WITH (UPDLOCK,HOLDLOCK) WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+        CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+        CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+        FROM dbo.PurchaseRequestItems d OUTER APPLY (
+          SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+          FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+          WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+        ) a WHERE d.requestId=@id ORDER BY d.requestId,d.position;`);
+    const valueRows = new Map(valueData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { requestId, ...item } of valueData.recordsets[1]) valueRows.get(requestId)?.items.push(item);
+    const value = [...valueRows.values()][0];
+    if (!value) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (value.status === 'cancelled') return value;
+    const linked = await request(scope).input('id', sql.Int, id).query("SELECT TOP(1) i.id FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseRequestItems d ON d.id=i.requestItemId JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE d.requestId=@id AND o.status<>'cancelled'");
+    if (linked.recordset.length) throw Object.assign(new Error('Cancel downstream documents before cancelling this source document.'), { status: 409 });
+    await request(scope).input('id', sql.Int, id).query("UPDATE dbo.PurchaseRequests SET status='cancelled',updatedAt=SYSUTCDATETIME() WHERE id=@id");
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'purchase-requests')
+      .input('action', sql.NVarChar(50), 'cancel').input('recordId', sql.NVarChar(100), String(id))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
+        r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
+        FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.requestId,d.position,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,CONVERT(varchar(60),d.quantity) AS quantity,d.unit,
+        CONVERT(varchar(10),d.neededDate,23) AS neededDate,d.remarks,CONVERT(varchar(60),COALESCE(a.orderedQuantity,0)) AS orderedQuantity,
+        CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.orderedQuantity,0) AS decimal(28,6))) AS balanceQuantity,a.purchaseOrderNumbers
+        FROM dbo.PurchaseRequestItems d OUTER APPLY (
+          SELECT SUM(i.quantity) AS orderedQuantity,STRING_AGG(CONVERT(nvarchar(max),o.number),N', ') AS purchaseOrderNumbers
+          FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseOrders o ON o.id=i.orderId
+          WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')
+        ) a WHERE d.requestId=@id ORDER BY d.requestId,d.position;`);
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { requestId, ...item } of savedData.recordsets[1]) savedRows.get(requestId)?.items.push(item);
+    const saved = [...savedRows.values()][0];
+    if (!saved) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    return saved;
+  });
+  res.json({ record });
+});
+
+router.post('/purchase-orders/:id/post', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const valueData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const valueRows = new Map(valueData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of valueData.recordsets[1]) valueRows.get(orderId)?.items.push(item);
+    const value = [...valueRows.values()][0];
+    if (!value) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (['posted', 'closed'].includes(value.status)) return value;
+    if (value.status !== 'draft' || !value.items.length) throw Object.assign(new Error('Only a nonempty unposted document can be posted.'), { status: 409 });
+    const requestIds = [...new Set(value.items.map(item => item.requestId))].sort((left, right) => left - right);
+    for (const requestId of requestIds) {
+      const sourceHeader = await request(scope).input('id', sql.Int, requestId).query('SELECT id FROM dbo.PurchaseRequests WITH (UPDLOCK,HOLDLOCK) WHERE id=@id');
+      if (!sourceHeader.recordset.length) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    }
+    for (const item of value.items) {
+      const sourceData = await request(scope).input('id', sql.Int, item.requestItemId).query(`SELECT d.*,r.status AS requestStatus,r.number AS requestNumber,
+          CONVERT(varchar(60),d.quantity) AS requestedQuantity,CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.PurchaseOrderItems i
+          JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')),0)) AS orderedQuantity
+          FROM dbo.PurchaseRequestItems d JOIN dbo.PurchaseRequests r ON r.id=d.requestId WHERE d.id=@id`);
+        if (!sourceData.recordset.length) throw Object.assign(new Error('Select a valid posted PR line.'), { status: 400 });
+        const source = sourceData.recordset[0];
+      if (!['posted', 'closed'].includes(source.requestStatus)) throw Object.assign(new Error('Purchase Orders can only use posted PR lines.'), { status: 409 });
+        const balances = { requested: source.requestedQuantity, ordered: source.orderedQuantity, quantity: item.quantity };
+        for (const [key, entered] of Object.entries(balances)) {
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          const source = String(entered).trim();
+          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          const [whole, rawFraction = ''] = source.split('.');
+          const fraction = rawFraction.replace(/0+$/, '');
+          if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+          const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+          if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+          balances[key] = units;
+        }
+        const remaining = balances.requested - balances.ordered;
+        if (balances.quantity > remaining) throw Object.assign(new Error('PO quantity exceeds the remaining Purchase Request balance.'), { status: 409 });
+    }
+    await request(scope).input('id', sql.Int, id).input('user', sql.Int, user.id).query("UPDATE dbo.PurchaseOrders SET status='posted',postedById=@user,postedAt=SYSUTCDATETIME(),updatedAt=SYSUTCDATETIME() WHERE id=@id");
+    for (const requestId of requestIds) {
+      await request(scope).input('id', sql.Int, requestId).query(`UPDATE r SET status=CASE WHEN EXISTS (
+          SELECT 1 FROM dbo.PurchaseRequestItems d WHERE d.requestId=r.id AND d.quantity>COALESCE((SELECT SUM(i.quantity) FROM dbo.PurchaseOrderItems i
+          JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')),0)) THEN 'posted' ELSE 'closed' END,
+          updatedAt=SYSUTCDATETIME() FROM dbo.PurchaseRequests r WHERE r.id=@id AND r.status IN ('posted','closed')`);
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'purchase-orders')
+      .input('action', sql.NVarChar(50), 'post').input('recordId', sql.NVarChar(100), String(id))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o  WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of savedData.recordsets[1]) savedRows.get(orderId)?.items.push(item);
+    const saved = [...savedRows.values()][0];
+    if (!saved) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    return saved;
+  });
+  res.json({ record });
+});
+
+router.post('/purchase-orders/:id/cancel', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const valueData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const valueRows = new Map(valueData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of valueData.recordsets[1]) valueRows.get(orderId)?.items.push(item);
+    const value = [...valueRows.values()][0];
+    if (!value) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (value.status === 'cancelled') return value;
+    const linked = await request(scope).input('id', sql.Int, id).query("SELECT TOP(1) id FROM dbo.SuppliesReceipts WHERE purchaseOrderId=@id AND status<>'cancelled'");
+    if (linked.recordset.length) throw Object.assign(new Error('Cancel downstream documents before cancelling this source document.'), { status: 409 });
+    await request(scope).input('id', sql.Int, id).query("UPDATE dbo.PurchaseOrders SET status='cancelled',updatedAt=SYSUTCDATETIME() WHERE id=@id");
+    for (const requestId of new Set(value.items.map(item => item.requestId))) {
+      await request(scope).input('id', sql.Int, requestId).query(`UPDATE r SET status=CASE WHEN EXISTS (
+          SELECT 1 FROM dbo.PurchaseRequestItems d WHERE d.requestId=r.id AND d.quantity>COALESCE((SELECT SUM(i.quantity) FROM dbo.PurchaseOrderItems i
+          JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')),0)) THEN 'posted' ELSE 'closed' END,
+          updatedAt=SYSUTCDATETIME() FROM dbo.PurchaseRequests r WHERE r.id=@id AND r.status IN ('posted','closed')`);
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'purchase-orders')
+      .input('action', sql.NVarChar(50), 'cancel').input('recordId', sql.NVarChar(100), String(id))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o  WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of savedData.recordsets[1]) savedRows.get(orderId)?.items.push(item);
+    const saved = [...savedRows.values()][0];
+    if (!saved) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    return saved;
+  });
+  res.json({ record });
+});
+
+router.post('/receivings/:id/post', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const user = req.purchasingUser;
+  const result = await transaction(async scope => {
+    const receiptData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+        CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+        o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+        FROM dbo.SuppliesReceipts r WITH (UPDLOCK,HOLDLOCK) JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+        CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+        CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+        CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+        FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+        OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+        OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+        WHERE d.receiptId=@id ORDER BY d.receiptId,d.position;
+        SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+        CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+        FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+        LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+        WHERE d.receiptId=@id ORDER BY a.receiptItemId,a.position;`);
+    const receiptRows = new Map(receiptData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    const receiptItems = new Map();
+    for (const { receiptId, ...row } of receiptData.recordsets[1]) {
+      const item = { ...row, allocations: [] };
+      receiptItems.set(row.id, item);
+      receiptRows.get(receiptId)?.items.push(item);
+    }
+    for (const { receiptItemId, ...allocation } of receiptData.recordsets[2]) receiptItems.get(receiptItemId)?.allocations.push(allocation);
+    const receipt = [...receiptRows.values()][0];
+    if (!receipt) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (receipt.status === 'posted') return { record: receipt, alreadyPosted: true };
+    if (receipt.status !== 'draft') throw Object.assign(new Error('Only an unposted receiving receipt can be posted.'), { status: 409 });
+    const orderData = await request(scope).input('id', sql.Int, receipt.purchaseOrderId).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
+        CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
+        o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        o.deliveryAddress,o.remarks,CONVERT(varchar(60),o.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),o.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),o.[netAmount]) AS [netAmount],CONVERT(varchar(60),o.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),o.[amount]) AS [amount],o.preparedById,o.preparedBy,o.status,o.postedAt
+        FROM dbo.PurchaseOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id ORDER BY o.id DESC;
+        SELECT d.id,d.orderId,d.position,d.requestItemId,r.requestId,pr.number AS requestNumber,d.suppliesId,d.suppliesCode,d.suppliesName,d.description,d.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),d.unitPrice) AS unitPrice,d.currency,CONVERT(varchar(60),d.discountRate) AS discountRate,
+        CONVERT(varchar(60),d.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS balanceQuantity
+        FROM dbo.PurchaseOrderItems d JOIN dbo.PurchaseRequestItems r ON r.id=d.requestItemId JOIN dbo.PurchaseRequests pr ON pr.id=r.requestId
+        OUTER APPLY(SELECT SUM(i.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted') a
+        WHERE d.orderId=@id ORDER BY d.orderId,d.position;`);
+    const orderRows = new Map(orderData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    for (const { orderId, ...item } of orderData.recordsets[1]) orderRows.get(orderId)?.items.push(item);
+    const order = [...orderRows.values()][0];
+    if (!order) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!['posted', 'closed'].includes(order.status)) throw Object.assign(new Error('Receiving requires a posted purchase order.'), { status: 409 });
+    if (!receipt.items.length) throw Object.assign(new Error('Add at least one receiving item.'), { status: 400 });
+    const sources = new Map(order.items.map(item => [item.id, item]));
+    const usedItems = new Set();
+    const movements = [];
+    for (const item of receipt.items) {
+      const source = sources.get(item.orderItemId);
+      if (!source || source.suppliesId !== item.suppliesId) throw Object.assign(new Error('Receiving items must match their purchase order Supplies.'), { status: 400 });
+      if (usedItems.has(source.id)) throw Object.assign(new Error('A purchase order line can appear only once in a receipt.'), { status: 400 });
+      usedItems.add(source.id);
+      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('Receiving UOM must match the purchase order.'), { status: 400 });
+      const balances = { receiving: item.quantity, ordered: source.quantity, received: source.receivedQuantity || 0 };
+      for (const [key, entered] of Object.entries(balances)) {
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        const source = String(entered).trim();
+        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        const [whole, rawFraction = ''] = source.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        balances[key] = units;
+      }
+      const quantity = balances.receiving;
+      if (!quantity) throw Object.assign(new Error('Receiving quantity must be greater than zero.'), { status: 400 });
+      const outstanding = balances.ordered - balances.received;
+      if (quantity > outstanding) throw Object.assign(new Error('Receiving quantity exceeds the remaining purchase order balance.'), { status: 409 });
+      if (!item.allocations.length) throw Object.assign(new Error('Allocate every receiving item to stock before posting.'), { status: 400 });
+      let allocated = 0n;
+      for (const allocation of item.allocations) {
+        const allocationUnits = { quantity: allocation.quantity };
+        for (const [key, entered] of Object.entries(allocationUnits)) {
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          const source = String(entered).trim();
+          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          const [whole, rawFraction = ''] = source.split('.');
+          const fraction = rawFraction.replace(/0+$/, '');
+          if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+          const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+          if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+          allocationUnits[key] = units;
+        }
+        const allocationQuantity = allocationUnits.quantity;
+        if (!allocationQuantity) throw Object.assign(new Error('Allocation quantity must be greater than zero.'), { status: 400 });
+        allocated += allocationQuantity;
+        if (!Number.isInteger(allocation.warehouseId) || allocation.warehouseId <= 0 || !Number.isInteger(allocation.locationId) || allocation.locationId <= 0) throw Object.assign(new Error('Every allocation needs an active Warehouse and Location.'), { status: 400 });
+        const destination = await request(scope).input('warehouse', sql.Int, allocation.warehouseId).input('location', sql.Int, allocation.locationId)
+          .query('SELECT w.id FROM dbo.ConfigWarehouses w CROSS JOIN dbo.ConfigLocations l WHERE w.id=@warehouse AND l.id=@location AND w.isActive=1 AND l.isActive=1');
+        if (destination.recordset.length !== 1) throw Object.assign(new Error('Every allocation needs an active Warehouse and Location.'), { status: 400 });
+        movements.push({ ...allocation, quantity: `${allocationQuantity / 1000000n}.${String(allocationQuantity % 1000000n).padStart(6, '0')}`, suppliesId: item.suppliesId, receiptId: id, receiptItemId: item.id, allocationId: allocation.id });
+      }
+      if (allocated !== quantity) throw Object.assign(new Error('Allocated quantity must equal the receiving item quantity exactly.'), { status: 400 });
+    }
+    // All source balances and destinations passed; every stock effect shares this transaction.
+    for (const movement of movements) {
+      const existing = await request(scope).input('suppliesId', sql.Int, movement.suppliesId).input('warehouseId', sql.Int, movement.warehouseId)
+          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(100), movement.imLot || '').input('qcStatus', sql.NVarChar(50), movement.qcStatus || '')
+          .input('expiryDate', sql.VarChar(10), movement.expiryDate || null).input('mfgDate', sql.VarChar(10), movement.mfgDate || null).input('quantity', sql.VarChar(60), movement.quantity).query(`SELECT id FROM dbo.SupplyInventory WITH (UPDLOCK,HOLDLOCK) WHERE suppliesId=@suppliesId AND warehouseId=@warehouseId AND locationId=@locationId
+          AND imLot=@imLot AND qcStatus=@qcStatus AND (expiryDate=@expiryDate OR (expiryDate IS NULL AND @expiryDate IS NULL)) AND (mfgDate=@mfgDate OR (mfgDate IS NULL AND @mfgDate IS NULL))`);
+        let inventoryId = existing.recordset[0]?.id;
+        if (inventoryId) {
+          const result = await request(scope).input('suppliesId', sql.Int, movement.suppliesId).input('warehouseId', sql.Int, movement.warehouseId)
+          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(100), movement.imLot || '').input('qcStatus', sql.NVarChar(50), movement.qcStatus || '')
+          .input('expiryDate', sql.VarChar(10), movement.expiryDate || null).input('mfgDate', sql.VarChar(10), movement.mfgDate || null).input('quantity', sql.VarChar(60), movement.quantity).input('id', sql.Int, inventoryId).query(`UPDATE dbo.SupplyInventory SET quantity=quantity+CONVERT(decimal(18,6),@quantity),updatedAt=SYSUTCDATETIME()
+            OUTPUT INSERTED.id WHERE id=@id AND quantity<=CONVERT(decimal(18,6),'999999999999.999999')-CONVERT(decimal(18,6),@quantity)`);
+          if (!result.recordset.length) throw Object.assign(new Error('This inventory balance exceeds the supported stock quantity.'), { status: 409 });
+        } else {
+          const result = await request(scope).input('suppliesId', sql.Int, movement.suppliesId).input('warehouseId', sql.Int, movement.warehouseId)
+          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(100), movement.imLot || '').input('qcStatus', sql.NVarChar(50), movement.qcStatus || '')
+          .input('expiryDate', sql.VarChar(10), movement.expiryDate || null).input('mfgDate', sql.VarChar(10), movement.mfgDate || null).input('quantity', sql.VarChar(60), movement.quantity).query(`INSERT INTO dbo.SupplyInventory(suppliesId,warehouseId,locationId,imLot,qcStatus,expiryDate,mfgDate,quantity) OUTPUT INSERTED.id
+            VALUES(@suppliesId,@warehouseId,@locationId,@imLot,@qcStatus,@expiryDate,@mfgDate,@quantity)`);
+          inventoryId = result.recordset[0].id;
+        }
+        await request(scope).input('receiptId', sql.Int, movement.receiptId).input('receiptItemId', sql.Int, movement.receiptItemId).input('allocationId', sql.Int, movement.allocationId)
+          .input('inventoryId', sql.Int, inventoryId).input('quantity', sql.VarChar(60), movement.quantity).input('user', sql.Int, user.id)
+          .query(`INSERT INTO dbo.SupplyStockMovements(receiptId,receiptItemId,allocationId,inventoryId,quantity,createdById)
+            VALUES(@receiptId,@receiptItemId,@allocationId,@inventoryId,@quantity,@user)`);
+    }
+    await request(scope).input('id', sql.Int, id).input('user', sql.Int, user.id).query("UPDATE dbo.SuppliesReceipts SET status='posted',postedById=@user,postedAt=SYSUTCDATETIME(),updatedAt=SYSUTCDATETIME() WHERE id=@id");
+    await request(scope).input('id', sql.Int, order.id).query(`UPDATE o SET status=CASE WHEN EXISTS(SELECT 1 FROM dbo.PurchaseOrderItems d WHERE d.orderId=o.id
+        AND d.quantity>COALESCE((SELECT SUM(i.quantity) FROM dbo.SuppliesReceiptItems i JOIN dbo.SuppliesReceipts h ON h.id=i.receiptId WHERE i.orderItemId=d.id AND h.status='posted'),0))
+        THEN 'posted' ELSE 'closed' END,updatedAt=SYSUTCDATETIME() FROM dbo.PurchaseOrders o WHERE o.id=@id AND o.status IN ('posted','closed')`);
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'receivings')
+      .input('action', sql.NVarChar(50), 'post').input('recordId', sql.NVarChar(100), String(id))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+        CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+        o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+        FROM dbo.SuppliesReceipts r  JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+        CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+        CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+        CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+        FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+        OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+        OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+        WHERE d.receiptId=@id ORDER BY d.receiptId,d.position;
+        SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+        CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+        FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+        LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+        WHERE d.receiptId=@id ORDER BY a.receiptItemId,a.position;`);
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    const savedItems = new Map();
+    for (const { receiptId, ...row } of savedData.recordsets[1]) {
+      const item = { ...row, allocations: [] };
+      savedItems.set(row.id, item);
+      savedRows.get(receiptId)?.items.push(item);
+    }
+    for (const { receiptItemId, ...allocation } of savedData.recordsets[2]) savedItems.get(receiptItemId)?.allocations.push(allocation);
+    const saved = [...savedRows.values()][0];
+    if (!saved) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    return { record: saved, alreadyPosted: false };
+  });
+  res.json(result);
+});
+
+router.post('/receivings/:id/cancel', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  const user = req.purchasingUser;
+  const record = await transaction(async scope => {
+    const receiptData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+        CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+        o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+        FROM dbo.SuppliesReceipts r WITH (UPDLOCK,HOLDLOCK) JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+        CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+        CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+        CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+        FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+        OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+        OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+        WHERE d.receiptId=@id ORDER BY d.receiptId,d.position;
+        SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+        CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+        FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+        LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+        WHERE d.receiptId=@id ORDER BY a.receiptItemId,a.position;`);
+    const receiptRows = new Map(receiptData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    const receiptItems = new Map();
+    for (const { receiptId, ...row } of receiptData.recordsets[1]) {
+      const item = { ...row, allocations: [] };
+      receiptItems.set(row.id, item);
+      receiptRows.get(receiptId)?.items.push(item);
+    }
+    for (const { receiptItemId, ...allocation } of receiptData.recordsets[2]) receiptItems.get(receiptItemId)?.allocations.push(allocation);
+    const receipt = [...receiptRows.values()][0];
+    if (!receipt) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (receipt.status === 'cancelled') return receipt;
+    if (receipt.status !== 'draft') throw Object.assign(new Error('Posted receiving receipts cannot be cancelled from the inventory-only system.'), { status: 409 });
+    await request(scope).input('id', sql.Int, id).query("UPDATE dbo.SuppliesReceipts SET status='cancelled',updatedAt=SYSUTCDATETIME() WHERE id=@id");
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name)
+      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), 'receivings')
+      .input('action', sql.NVarChar(50), 'cancel').input('recordId', sql.NVarChar(100), String(id))
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
+        CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
+        o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
+        r.remarks,CONVERT(varchar(60),r.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),r.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),r.[netAmount]) AS [netAmount],CONVERT(varchar(60),r.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),r.[amount]) AS [amount],r.receivedById,r.receivedBy,r.status,r.postedAt
+        FROM dbo.SuppliesReceipts r  JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId WHERE r.id=@id ORDER BY r.id DESC;
+        SELECT d.id,d.receiptId,d.position,d.orderItemId,o.suppliesId,o.suppliesCode,o.suppliesName,o.description,o.unit,
+        CONVERT(varchar(60),d.quantity) AS quantity,CONVERT(varchar(60),o.unitPrice) AS unitPrice,o.currency,
+        CONVERT(varchar(60),o.discountRate) AS discountRate,CONVERT(varchar(60),o.vatRate) AS vatRate,CONVERT(varchar(60),d.[grossAmount]) AS [grossAmount],CONVERT(varchar(60),d.[discountAmount]) AS [discountAmount],CONVERT(varchar(60),d.[netAmount]) AS [netAmount],CONVERT(varchar(60),d.[vatAmount]) AS [vatAmount],CONVERT(varchar(60),d.[amount]) AS [amount],d.remarks,
+        CONVERT(varchar(60),o.quantity) AS orderQuantity,CONVERT(varchar(60),COALESCE(a.receivedQuantity,0)) AS receivedQuantity,
+        CONVERT(varchar(60),o.quantity-CAST(COALESCE(a.receivedQuantity,0) AS decimal(28,6))) AS orderBalanceQuantity,
+        CONVERT(varchar(60),COALESCE(l.allocatedQuantity,0)) AS allocatedQuantity,CONVERT(varchar(60),d.quantity-CAST(COALESCE(l.allocatedQuantity,0) AS decimal(28,6))) AS allocationBalanceQuantity
+        FROM dbo.SuppliesReceiptItems d JOIN dbo.PurchaseOrderItems o ON o.id=d.orderItemId
+        OUTER APPLY(SELECT SUM(x.quantity) AS receivedQuantity FROM dbo.SuppliesReceiptItems x JOIN dbo.SuppliesReceipts h ON h.id=x.receiptId WHERE x.orderItemId=o.id AND h.status='posted') a
+        OUTER APPLY(SELECT SUM(x.quantity) AS allocatedQuantity FROM dbo.SuppliesReceiptAllocations x WHERE x.receiptItemId=d.id) l
+        WHERE d.receiptId=@id ORDER BY d.receiptId,d.position;
+        SELECT a.id,a.receiptItemId,a.position,CONVERT(varchar(60),a.quantity) AS quantity,CONVERT(varchar(10),a.expiryDate,23) AS expiryDate,
+        CONVERT(varchar(10),a.mfgDate,23) AS mfgDate,a.imLot,a.qcStatus,a.warehouseId,a.locationId,w.code AS warehouseCode,l.code AS locationCode
+        FROM dbo.SuppliesReceiptAllocations a JOIN dbo.SuppliesReceiptItems d ON d.id=a.receiptItemId
+        LEFT JOIN dbo.ConfigWarehouses w ON w.id=a.warehouseId LEFT JOIN dbo.ConfigLocations l ON l.id=a.locationId
+        WHERE d.receiptId=@id ORDER BY a.receiptItemId,a.position;`);
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
+    const savedItems = new Map();
+    for (const { receiptId, ...row } of savedData.recordsets[1]) {
+      const item = { ...row, allocations: [] };
+      savedItems.set(row.id, item);
+      savedRows.get(receiptId)?.items.push(item);
+    }
+    for (const { receiptItemId, ...allocation } of savedData.recordsets[2]) savedItems.get(receiptItemId)?.allocations.push(allocation);
+    const saved = [...savedRows.values()][0];
+    if (!saved) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    return saved;
+  });
+  res.json({ record });
+});
+
+router.all('/suppliers', (_req, res) => res.set('Allow', 'GET, POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/suppliers/:id', (_req, res) => res.set('Allow', 'GET, PUT, DELETE').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/supplies', (_req, res) => res.set('Allow', 'GET, POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/supplies/:id', (_req, res) => res.set('Allow', 'GET, PUT, DELETE').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/options', (_req, res) => res.set('Allow', 'GET').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchasing-options', (_req, res) => res.set('Allow', 'GET').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchase-requests', (_req, res) => res.set('Allow', 'GET, POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchase-requests/:id', (_req, res) => res.set('Allow', 'GET, PUT').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchase-orders', (_req, res) => res.set('Allow', 'GET, POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchase-orders/:id', (_req, res) => res.set('Allow', 'GET, PUT').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/receivings', (_req, res) => res.set('Allow', 'GET, POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/receivings/:id', (_req, res) => res.set('Allow', 'GET, PUT').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchase-requests/:id/post', (_req, res) => res.set('Allow', 'POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchase-requests/:id/cancel', (_req, res) => res.set('Allow', 'POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchase-orders/:id/post', (_req, res) => res.set('Allow', 'POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/purchase-orders/:id/cancel', (_req, res) => res.set('Allow', 'POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/receivings/:id/post', (_req, res) => res.set('Allow', 'POST').status(405).json({ message: 'This request method is not supported.' }));
+router.all('/receivings/:id/cancel', (_req, res) => res.set('Allow', 'POST').status(405).json({ message: 'This request method is not supported.' }));
+
+module.exports = router;

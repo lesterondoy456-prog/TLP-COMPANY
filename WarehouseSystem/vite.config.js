@@ -1,12 +1,26 @@
-import { defineConfig } from 'vite';
-
-const proxy = {
-  '/api': { target: process.env.API_PROXY_TARGET || 'http://localhost:5189', changeOrigin: false },
-};
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  esbuild: { jsx: 'automatic' },
-  build: { outDir: 'dist', emptyOutDir: true },
-  server: { host: true, port: 5190, strictPort: true, proxy },
-  preview: { host: true, port: 5190, strictPort: true, proxy },
+  plugins: [react()],
+  server: {
+    host: true,
+    port: 5190,
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: process.env.API_PROXY_TARGET || "http://localhost:5189",
+        changeOrigin: true,
+      },
+      "/Uploads": {
+        target: process.env.API_PROXY_TARGET || "http://localhost:5189",
+        changeOrigin: true,
+      },
+      "/socket.io": {
+        target: process.env.API_PROXY_TARGET || "http://localhost:5189",
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  },
 });

@@ -12,6 +12,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: "5189"
+      FRONTEND_ORIGINS: "${FRONTEND_ORIGINS:?Set FRONTEND_ORIGINS in .env}"
       DB_AUTH: sql
       DB_SERVER: host.docker.internal
       DB_PORT: "${DB_PORT:-1433}"

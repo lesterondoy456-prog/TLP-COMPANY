@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Icon } from './Icons.jsx';
+import { validatePhotoFile } from '../helper/validation.js';
 
 export const roleLabel = role => ({ admin: 'Administrator', configuration: 'Configuration' })[role] || role;
 
@@ -38,8 +39,8 @@ export function PhotoField({ value, onChange, name }) {
   function load(event) {
     const file = event.target.files?.[0]; setError('');
     if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('Choose a JPG, PNG, or WebP image.'); event.target.value = ''; return; }
-    if (file.size > 250 * 1024) { setError('Choose a photo smaller than 250 KB.'); event.target.value = ''; return; }
+    try { validatePhotoFile(file); }
+    catch (failure) { setError(failure.message); event.target.value = ''; return; }
     const reader = new FileReader();
     reader.onload = () => onChange(String(reader.result));
     reader.onerror = () => setError('This photo could not be read. Please choose another image.');

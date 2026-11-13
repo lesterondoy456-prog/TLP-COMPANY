@@ -1,7 +1,8 @@
+import { loadApi } from './helpers/load-api.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { expect } from '@playwright/test';
-import { configurationMetadata } from '../configuration.js';
+const { configurationMetadata } = loadApi('configuration');
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
 const systems = [

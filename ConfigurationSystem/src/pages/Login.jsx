@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Icon } from '../components/Icons.jsx';
 import { APP } from '../appSettings.js';
+import { validateLoginForm } from '../helper/validation.js';
 
 export default function Login({ onLogin, initialError }) {
   const [username, setUsername] = useState('');
@@ -13,12 +14,15 @@ export default function Login({ onLogin, initialError }) {
   async function submit(event) {
     event.preventDefault();
     if (busy) return;
-    setBusy(true);
+    const formElement = event.currentTarget;
     setError('');
     try {
-      await onLogin({ username: username.trim(), password, remember });
+      const credentials = validateLoginForm({ username, password, remember });
+      setBusy(true);
+      await onLogin(credentials);
     } catch (error) {
       setError(error.message);
+      if (error.field) formElement.elements.namedItem(error.field)?.focus();
     } finally {
       setBusy(false);
     }
@@ -38,7 +42,7 @@ export default function Login({ onLogin, initialError }) {
     </section>
     <section className="login-form-side"><div className="login-card">
       <span className="eyebrow">WELCOME BACK</span><h2>Sign in to {APP.appName}</h2><p>Use your ConfigurationSystem account.</p>
-      <form onSubmit={submit}>
+      <form onSubmit={submit} noValidate>
         {(error || initialError) && <div className="notice error" role="alert">{error || initialError}</div>}
         <label className="field">Username<input name="username" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} disabled={busy} required maxLength={80} autoFocus /></label>
         <label className="field">Password<div className="password-input"><input name="password" type={visible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} required maxLength={128} /><button type="button" className="icon-button" disabled={busy} aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(!visible)}><Icon name={visible ? 'eyeOff' : 'eye'} /></button></div></label>

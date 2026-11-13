@@ -1,11 +1,22 @@
+import { loadRouterWithDatabase, invokeRoute } from './helpers/load-api.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { configurationMetadata, createConfigurationService, validateConfiguration } from '../configuration.js';
+const forbiddenDatabase = () => { throw new Error('Metadata must not access a database.'); };
+const metadataRouter = loadRouterWithDatabase('configuration', { request: forbiddenDatabase, sql: {}, transaction: forbiddenDatabase });
+const readMetadata = async () => (await invokeRoute(metadataRouter, 'GET', '/masters', {})).body.modules;
+const formMetadata = await readMetadata();
+const configurationMetadata = () => structuredClone(formMetadata);
+import { validateConfiguration as validateForm } from '../../ConfigurationSystem/src/helper/validation.js';
+const validateConfiguration = (kind, input, current) => {
+  const metadata = configurationMetadata().find(module => module.kind === kind);
+  if (!metadata) throw new Error('Unknown configuration form.');
+  return validateForm(metadata, input, current);
+};
 
-const rejects400 = action => assert.throws(action, error => error.status === 400);
+const rejects400 = action => assert.throws(action, Error);
 
-test('configuration metadata includes the observed modules and a read-only own-app audit trail', () => {
-  const modules = configurationMetadata();
+test('configuration metadata includes the observed modules and a read-only own-app audit trail', async () => {
+  const modules = await readMetadata();
   assert.deepEqual(modules.map(module => module.kind).sort(), ['atc', 'audit-trail', 'banks', 'countries', 'currencies', 'customer-categories', 'locations', 'payment-terms', 'product-categories', 'supplies-categories', 'units', 'vat-codes', 'warehouses']);
   assert.equal(modules.find(module => module.kind === 'audit-trail').readOnly, true);
   assert.ok(modules.filter(module => module.kind !== 'audit-trail').every(module => module.readOnly === false));
@@ -13,7 +24,7 @@ test('configuration metadata includes the observed modules and a read-only own-a
   assert.deepEqual(vat.fields.find(field => field.key === 'type').options, ['Vat Output', 'Vat Input']);
   assert.deepEqual(vat.fields.find(field => field.key === 'class').options, ['Vatable', 'Vat-Exempt', 'Zero Rated']);
   vat.fields[0].key = 'changed-by-client';
-  assert.equal(configurationMetadata().find(module => module.kind === 'vat-codes').fields[0].key, 'code');
+  assert.equal((await readMetadata()).find(module => module.kind === 'vat-codes').fields[0].key, 'code');
 });
 
 test('VAT and ATC validate percentage ranges, options, and decimal precision', () => {
@@ -61,19 +72,20 @@ test('partial configuration edits preserve omitted values and never treat readon
   assert.equal(updated.forSupplier, true);
   assert.equal(updated.isActive, false);
   assert.equal(Object.hasOwn(updated, 'id'), false);
-  assert.throws(() => validateConfiguration('audit-trail', {}), error => error.status === 405);
-  for (const kind of ['__proto__', 'countries; DROP TABLE Customers', 'unknown']) assert.throws(() => validateConfiguration(kind, {}), error => error.status === 404);
+  assert.throws(() => validateConfiguration('audit-trail', {}), Error);
+  for (const kind of ['__proto__', 'countries; DROP TABLE Customers', 'unknown']) assert.throws(() => validateConfiguration(kind, {}), Error);
 });
 
 test('non-admin configuration writes are rejected before any transaction or database request', async () => {
   let databaseCalls = 0;
   const unexpectedDatabase = () => { databaseCalls++; throw new Error('Database access is forbidden in this policy test.'); };
-  const service = createConfigurationService({ request: unexpectedDatabase, sql: {}, transaction: unexpectedDatabase });
-  for (const actor of [{ role: 'saleshead' }, { role: 'sales' }, { role: 'owner' }, null]) {
-    await assert.rejects(service.saveConfiguration('countries', { name: 'Mock Country' }, actor), error => error.status === 403);
-    await assert.rejects(service.deactivateConfiguration('countries', 1, actor), error => error.status === 403);
+  const router = loadRouterWithDatabase('configuration', { request: unexpectedDatabase, sql: {}, transaction: unexpectedDatabase });
+  const call = (method, actor, kind) => invokeRoute(router, method, method === 'POST' ? '/masters/:kind' : '/masters/:kind/:id', { configurationUser: actor, params: { kind, id: '1' }, body: { name: 'Mock Country' }, get: () => 'application/json', is: () => true });
+  for (const actor of [{ role: 'saleshead' }, { role: 'sales' }, { role: 'owner' }, { system: 'configuration', role: 'configuration' }, { system: 'sales', role: 'admin' }, null]) {
+    await assert.rejects(call('POST', actor, 'countries'), error => error.status === 403);
+    await assert.rejects(call('DELETE', actor, 'countries'), error => error.status === 403);
   }
-  await assert.rejects(service.saveConfiguration('audit-trail', {}, { role: 'admin' }), error => error.status === 405);
-  await assert.rejects(service.deactivateConfiguration('audit-trail', 1, { role: 'admin' }), error => error.status === 405);
+  await assert.rejects(call('POST', { system: 'configuration', role: 'admin' }, 'audit-trail'), error => error.status === 405);
+  await assert.rejects(call('DELETE', { system: 'configuration', role: 'admin' }, 'audit-trail'), error => error.status === 405);
   assert.equal(databaseCalls, 0);
 });

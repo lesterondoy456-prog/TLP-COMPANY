@@ -1,107 +1,1976 @@
-import { validateCredentials, issueSession, requireUser, requireAdmin, requireAccountManager, sessionCookie, expiredCookie } from '../components/auth.js';
-import * as accounts from '../accounts.js';
-import { idValue } from '../components/validation.js';
-import * as service from '../services.js';
-import { productOptions } from '../products.js';
-import { json, readJson, methodNotAllowed } from './common.js';
+const express = require('express');
+const router = express.Router();
+const {
+  request,
+  sql,
+  transaction
+} = require('../db');
+const textLengths = {
+  code: 40,
+  name: 180,
+  contactPerson: 150,
+  cpnumber: 30,
+  email: 254,
+  address: 500,
+  shortName: 80,
+  businessStyle: 180,
+  salesInCharge: 150,
+  tin: 50,
+  faxNo: 30,
+  countryOfOrigin: 100,
+  country: 100,
+  category: 100,
+  remarks: 2000,
+  salesName: 180,
+  drName: 180,
+  paymentTerm: 100,
+  vatCode: 80,
+  taxCode: 80
+};
+const defaults = {
+  ...Object.fromEntries(Object.keys(textLengths).map(key => [key, ''])),
+  isActive: true,
+  decimalInPrice: 2,
+  decimalInTotalPrice: 2,
+  salesAddressType: 'office',
+  drAddressType: 'office',
+  discount: 0,
+  discountType: 'percent',
+  includePoInInvoice: false,
+  vatInclusive: false,
+  deliveryAddresses: [],
+  salesInChargeId: null
+};
+const PRODUCT_TEXT_LENGTHS = Object.freeze({
+  sku: 40,
+  name: 180,
+  description: 1000,
+  unit: 30,
+  revision: 30,
+  secondaryUnit: 30,
+  currency: 30,
+  model: 150,
+  category: 100,
+  planType: 100,
+  color: 80,
+  remarks: 2000,
+  tagColor: 30
+});
+const PRODUCT_QUANTITIES = Object.freeze(['quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'divisor', 'thickness', 'weight']);
+router.use((boundRequest, res, next) => {
+  if (res.locals.user?.system !== 'sales') throw Object.assign(new Error('Sign in to Sales to continue.'), {
+    status: 401
+  });
+  next();
+});
 
-export async function handleSalesApi(request, context) {
-  const { env } = context;
-  const url = new URL(request.url);
-  const prefix = '/api/sales';
-  if (url.pathname !== prefix && !url.pathname.startsWith(prefix + '/')) return null;
-  const pathname = '/api' + url.pathname.slice(prefix.length).replace(/\/$/, '');
-  const system = 'sales';
-
-  if (pathname === '/api/auth/login') {
-    if (request.method !== 'POST') return methodNotAllowed(['POST']);
-    const input = await readJson(request);
-    const user = await validateCredentials(input, request, system);
-    const { token, lifetime } = issueSession(env, user, input.remember === true);
-    return json({ user }, 200, { 'Set-Cookie': sessionCookie(request, token, lifetime, input.remember === true, system) });
+// Customer master and its lookup choices.
+router.get('/customers', async (boundRequest, res) => {
+  const result = await request().query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId ORDER BY c.id DESC`);
+  const addressRows = (await request().query('SELECT customerId,position,address FROM dbo.CustomerDeliveryAddresses ORDER BY customerId,position')).recordset;
+  const grouped = new Map();
+  for (const row of addressRows) {
+    if (!grouped.has(row.customerId)) grouped.set(row.customerId, []);
+    grouped.get(row.customerId).push(row.address);
   }
-  if (pathname === '/api/auth/logout') {
-    if (request.method !== 'POST') return methodNotAllowed(['POST']);
-    return json({ success: true }, 200, { 'Set-Cookie': expiredCookie(request, system) });
-  }
-  const user = await requireUser(request, env, system);
-  if (pathname === '/api/auth/session') {
-    if (request.method !== 'GET') return methodNotAllowed(['GET']);
-    return json({ user });
-  }
-  if (pathname === '/api/auth/profile') {
-    if (request.method !== 'PUT') return methodNotAllowed(['PUT']);
-    return json({ user: await accounts.saveUser(await readJson(request), user, user.id, true) });
-  }
-  const users = pathname.match(/^\/api\/users(?:\/(\d+))?$/);
-  if (users) {
-    requireAccountManager(user);
-    const id = users[1] ? idValue(users[1]) : undefined;
-    if (request.method === 'GET') return json(id ? { record: await accounts.getUser(id, user) } : { records: await accounts.listUsers(user) });
-    if (request.method === 'POST' && !id) return json({ record: await accounts.saveUser(await readJson(request), user) }, 201);
-    if (request.method === 'PUT' && id) {
-      requireAdmin(user);
-      return json({ record: await accounts.saveUser(await readJson(request), user, id) });
+  res.json({
+    records: result.recordset.map(record => ({
+      ...record,
+      deliveryAddresses: grouped.get(record.id) || []
+    }))
+  });
+});
+router.get('/customers/:id', async (req, res) => {
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
+    status: 404
+  });
+  const recordAddresses = await request().input('id', sql.Int, id).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
+  const record = {
+    ...recordResult.recordset[0],
+    deliveryAddresses: recordAddresses.recordset.map(row => row.address)
+  };
+  res.json({
+    record
+  });
+});
+router.get('/customer-options', async (boundRequest, res) => {
+  const fields = [['countriesOfOrigin', 'countryOfOrigin'], ['countries', 'country'], ['paymentTerms', 'paymentTerm'], ['categories', 'category'], ['taxCodes', 'taxCode']];
+  const result = await request().query(`SELECT id,name,username,role FROM dbo.SalesUserLogin WHERE isActive=1 AND role='sales' ORDER BY name,username,id;
+    SELECT DISTINCT LTRIM(RTRIM([countryOfOrigin])) AS value FROM dbo.Customers WHERE LEN(LTRIM(RTRIM([countryOfOrigin])))>0 ORDER BY value;
+SELECT DISTINCT LTRIM(RTRIM([country])) AS value FROM dbo.Customers WHERE LEN(LTRIM(RTRIM([country])))>0 ORDER BY value;
+SELECT DISTINCT LTRIM(RTRIM([paymentTerm])) AS value FROM dbo.Customers WHERE LEN(LTRIM(RTRIM([paymentTerm])))>0 ORDER BY value;
+SELECT DISTINCT LTRIM(RTRIM([category])) AS value FROM dbo.Customers WHERE LEN(LTRIM(RTRIM([category])))>0 ORDER BY value;
+SELECT DISTINCT LTRIM(RTRIM([taxCode])) AS value FROM dbo.Customers WHERE LEN(LTRIM(RTRIM([taxCode])))>0 ORDER BY value;
+    SELECT name FROM dbo.ConfigCountries WHERE isActive=1 ORDER BY name;
+    SELECT description FROM dbo.ConfigPaymentTerms WHERE isActive=1 AND forCustomer=1 ORDER BY description;
+    SELECT name FROM dbo.ConfigCustomerCategories WHERE isActive=1 ORDER BY name;
+    SELECT code FROM dbo.ConfigAtc WHERE isActive=1 ORDER BY code;
+    SELECT id,code,description,rate FROM dbo.ConfigVatCodes WHERE isActive=1 ORDER BY code;`);
+  const existing = Object.fromEntries(fields.map(([key], index) => [key, result.recordsets[index + 1].map(row => row.value)]));
+  const countries = result.recordsets[6].map(row => row.name);
+  res.json({
+    salesInCharges: result.recordsets[0],
+    countriesOfOrigin: [...new Set([...countries, ...existing.countriesOfOrigin])].sort((leftValue, rightValue) => leftValue.localeCompare(rightValue)),
+    countries: [...new Set([...countries, ...existing.countries])].sort((leftValue, rightValue) => leftValue.localeCompare(rightValue)),
+    paymentTerms: [...new Set([...result.recordsets[7].map(productRow => productRow.description), ...existing.paymentTerms])].sort((leftValue, rightValue) => leftValue.localeCompare(rightValue)),
+    categories: [...new Set([...result.recordsets[8].map(productRow => productRow.name), ...existing.categories])].sort((leftValue, rightValue) => leftValue.localeCompare(rightValue)),
+    taxCodes: [...new Set([...result.recordsets[9].map(productRow => productRow.code), ...existing.taxCodes])].sort((leftValue, rightValue) => leftValue.localeCompare(rightValue)),
+    vatCodes: result.recordsets[10]
+  });
+});
+router.post('/customers', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const id = undefined;
+  const savedId = await transaction(async tx => {
+    let current;
+    if (id) {
+      const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],c.salesInCharge AS _salesInChargeSnapshot FROM dbo.Customers c WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+      if (!currentResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
+        status: 404
+      });
+      const currentAddresses = await request(tx).input('id', sql.Int, id).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
+      current = {
+        ...currentResult.recordset[0],
+        deliveryAddresses: currentAddresses.recordset.map(row => row.address)
+      };
     }
-    return methodNotAllowed(id ? ['GET', 'PUT'] : ['GET', 'POST']);
-  }
-  if (pathname === '/api/customer-options') {
-    if (request.method !== 'GET') return methodNotAllowed(['GET']);
-    return json(await service.customerOptions());
-  }
-  if (pathname === '/api/product-options') {
-    if (request.method !== 'GET') return methodNotAllowed(['GET']);
-    return json(await productOptions());
-  }
-  const master = pathname.match(/^\/api\/(customers|products)(?:\/(\d+))?$/);
-  if (master) {
-    const [, kind, rawId] = master;
-    const id = rawId ? idValue(rawId) : undefined;
-    if (request.method === 'GET') return json(id ? { record: await service.getMaster(kind, id) } : { records: await service.listMaster(kind) });
-    if (request.method === 'POST' && !id) return json({ record: await service.saveMaster(kind, await readJson(request), undefined, user) }, 201);
-    if (request.method === 'PUT' && id) return json({ record: await service.saveMaster(kind, await readJson(request), id, user) });
-    if (request.method === 'DELETE' && id) { await service.deleteMaster(kind, id, user); return json({ success: true }); }
-    return methodNotAllowed(id ? ['GET', 'PUT', 'DELETE'] : ['GET', 'POST']);
-  }
-
-  const orders = pathname.match(/^\/api\/sales-orders(?:\/(\d+))?$/);
-  if (orders) {
-    const id = orders[1] ? idValue(orders[1]) : undefined;
-    if (request.method === 'GET') return json(id ? { record: await service.getOrder(id) } : { records: await service.listOrders() });
-    if (request.method === 'POST' && !id) return json({ record: await service.saveOrder(await readJson(request), user) }, 201);
-    if (request.method === 'PUT' && id) return json({ record: await service.saveOrder(await readJson(request), user, id) });
-    if (request.method === 'DELETE' && id) { await service.deleteOrder(id, user); return json({ success: true }); }
-    return methodNotAllowed(id ? ['GET', 'PUT', 'DELETE'] : ['GET', 'POST']);
-  }
-
-  const invoices = pathname.match(/^\/api\/sales-invoices(?:\/(\d+))?(\/payment)?$/);
-  if (invoices) {
-    const id = invoices[1] ? idValue(invoices[1]) : undefined;
-    if (invoices[2]) {
-      if (!id) return json({ message: 'Sales invoice could not be found.' }, 404);
-      if (request.method !== 'PATCH') return methodNotAllowed(['PATCH']);
-      return json({ record: await service.recordPayment(id, await readJson(request), user) });
+    const customer = {
+      ...defaults,
+      ...(current || {})
+    };
+    for (const key of Object.keys(textLengths)) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === true;
+    for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
+      const numericFieldValue = Number(input[key] ?? 0);
+      if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
+        status: 400
+      });
+      customer[key] = numericFieldValue;
     }
-    if (request.method === 'GET') return json(id ? { record: await service.getInvoice(id) } : { records: await service.listInvoices() });
-    if (request.method === 'POST' && !id) return json({ record: await service.createInvoice(await readJson(request), user) }, 201);
-    return methodNotAllowed(id ? ['GET'] : ['GET', 'POST']);
-  }
+    for (const key of ['salesAddressType', 'drAddressType', 'discountType']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    if (Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
+      if (!Array.isArray(input.deliveryAddresses) || input.deliveryAddresses.length > 50) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+        status: 400
+      });
+      customer.deliveryAddresses = input.deliveryAddresses.map(value => typeof value === 'string' ? value.trim() : '');
+    }
+    if (current && !customer.code) customer.code = current.code;
+    if (customer.discountType === 'percent' && customer.discount > 100) throw Object.assign(new Error('Percentage discount cannot exceed 100.'), {
+      status: 400
+    });
+    const storedName = current?._salesInChargeSnapshot ?? current?.salesInCharge ?? '';
+    let assignment = {
+      id: current?.salesInChargeId ?? null,
+      name: storedName
+    };
+    if (Object.hasOwn(input, 'salesInChargeId') && input['salesInChargeId'] !== undefined) {
+      if (input.salesInChargeId === null) assignment = {
+        id: null,
+        name: ''
+      };else {
+        const parsedSalesInChargeId = Number(input.salesInChargeId);
+        if (!Number.isSafeInteger(parsedSalesInChargeId) || parsedSalesInChargeId <= 0 || parsedSalesInChargeId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Sales account'}.`), {
+          status: 400
+        });
+        const accountId = parsedSalesInChargeId;
+        if (!current || accountId !== current.salesInChargeId) {
+          const accountResult = await request(tx).input('id', sql.Int, accountId).query('SELECT id,name,role,isActive FROM dbo.SalesUserLogin WHERE id=@id');
+          const account = accountResult.recordset[0];
+          if (!(account?.role === 'sales' && account.isActive === true)) throw Object.assign(new Error('Sales In-charge must be an active Sales account.'), {
+            status: 400
+          });
+          assignment = {
+            id: account.id,
+            name: account.name
+          };
+        }
+      }
+    } else if (Object.hasOwn(input, 'salesInCharge') && input['salesInCharge'] !== undefined) {
+      const name = typeof input.salesInCharge === 'string' ? input.salesInCharge.trim() : '';
+      if (name !== current?.salesInCharge && name !== storedName) {
+        if (!name) assignment = {
+          id: null,
+          name: ''
+        };else {
+          const accountResult = await request(tx).input('name', sql.NVarChar(150), name).query("SELECT id,name FROM dbo.SalesUserLogin WHERE name=@name AND role='sales' AND isActive=1");
+          if (accountResult.recordset.length !== 1) throw Object.assign(new Error('Select an active Sales account; names must resolve to one account.'), {
+            status: 400
+          });
+          assignment = {
+            id: accountResult.recordset[0].id,
+            name: accountResult.recordset[0].name
+          };
+        }
+      }
+    }
+    customer.salesInChargeId = assignment.id;
+    customer.salesInCharge = assignment.name;
+    if (!customer.code) {
+      // Hold the customer table while reading its next identity, so generated codes
+      // remain tied to Company Id even when multiple customers are saved together.
+      await request(tx).query('SELECT COUNT_BIG(*) AS total FROM dbo.Customers WITH (TABLOCKX,HOLDLOCK)');
+      const result = await request(tx).query(`SELECT COALESCE(CONVERT(bigint,last_value)+CONVERT(bigint,increment_value),CONVERT(bigint,seed_value)) AS nextId
+    FROM sys.identity_columns WHERE object_id=OBJECT_ID(N'dbo.Customers') AND name=N'id'`);
+      const id = Number(result.recordset[0]?.nextId);
+      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('A customer identifier could not be allocated.'), {
+        status: 409
+      });
+      const base = `C-${String(id).padStart(8, '0')}`;
+      let code = base;
+      let suffix = 0;
+      while ((await request(tx).input('code', sql.NVarChar(40), code).query('SELECT id FROM dbo.Customers WHERE code=@code')).recordset.length) {
+        code = `${base}-${++suffix}`;
+      }
+      customer.code = code;
+    }
+    const boundRequest = request(tx);
+    for (const [fieldName, maximumLength] of Object.entries(textLengths)) boundRequest.input(fieldName, sql.NVarChar(maximumLength), customer[fieldName]);
+    for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) boundRequest.input(fieldName, sql.Bit, customer[fieldName]);
+    for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) boundRequest.input(fieldName, sql.Int, customer[fieldName]);
+    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) boundRequest.input(fieldName, sql.NVarChar(10), customer[fieldName]);
+    boundRequest.input('discount', sql.Decimal(18, 6), customer.discount);
+    boundRequest.input('salesInChargeId', sql.Int, customer.salesInChargeId);
+    const req = boundRequest;
+    let saved = id;
+    if (id) {
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.Customers SET [code]=@code,[name]=@name,[contactPerson]=@contactPerson,[cpnumber]=@cpnumber,[email]=@email,[address]=@address,[shortName]=@shortName,[businessStyle]=@businessStyle,[salesInCharge]=@salesInCharge,[tin]=@tin,[faxNo]=@faxNo,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[category]=@category,[remarks]=@remarks,[salesName]=@salesName,[drName]=@drName,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[isActive]=@isActive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[salesAddressType]=@salesAddressType,[drAddressType]=@drAddressType,[discount]=@discount,[discountType]=@discountType,[includePoInInvoice]=@includePoInInvoice,[vatInclusive]=@vatInclusive,[salesInChargeId]=@salesInChargeId,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    } else {
+      const result = await req.query(`INSERT INTO dbo.Customers ([code],[name],[contactPerson],[cpnumber],[email],[address],[shortName],[businessStyle],[salesInCharge],[tin],[faxNo],[countryOfOrigin],[country],[category],[remarks],[salesName],[drName],[paymentTerm],[vatCode],[taxCode],[isActive],[decimalInPrice],[decimalInTotalPrice],[salesAddressType],[drAddressType],[discount],[discountType],[includePoInInvoice],[vatInclusive],[salesInChargeId]) OUTPUT INSERTED.id VALUES (@code,@name,@contactPerson,@cpnumber,@email,@address,@shortName,@businessStyle,@salesInCharge,@tin,@faxNo,@countryOfOrigin,@country,@category,@remarks,@salesName,@drName,@paymentTerm,@vatCode,@taxCode,@isActive,@decimalInPrice,@decimalInTotalPrice,@salesAddressType,@drAddressType,@discount,@discountType,@includePoInInvoice,@vatInclusive,@salesInChargeId)`);
+      saved = result.recordset[0].id;
+    }
+    if (!current || Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
+      await request(tx).input('id', sql.Int, saved).query('DELETE FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id');
+      for (const [position, address] of customer.deliveryAddresses.entries()) {
+        await request(tx).input('id', sql.Int, saved).input('position', sql.Int, position).input('address', sql.NVarChar(500), address).query('INSERT INTO dbo.CustomerDeliveryAddresses(customerId,position,address) VALUES(@id,@position,@address)');
+      }
+    }
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'customers').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return saved;
+  });
+  const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
+    status: 404
+  });
+  const recordAddresses = await request().input('id', sql.Int, savedId).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
+  const record = {
+    ...recordResult.recordset[0],
+    deliveryAddresses: recordAddresses.recordset.map(row => row.address)
+  };
+  res.status(201).json({
+    record
+  });
+});
+router.put('/customers/:id', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const savedId = await transaction(async tx => {
+    let current;
+    if (id) {
+      const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],c.salesInCharge AS _salesInChargeSnapshot FROM dbo.Customers c WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+      if (!currentResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
+        status: 404
+      });
+      const currentAddresses = await request(tx).input('id', sql.Int, id).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
+      current = {
+        ...currentResult.recordset[0],
+        deliveryAddresses: currentAddresses.recordset.map(row => row.address)
+      };
+    }
+    const customer = {
+      ...defaults,
+      ...(current || {})
+    };
+    for (const key of Object.keys(textLengths)) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === true;
+    for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
+      const numericFieldValue = Number(input[key] ?? 0);
+      if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
+        status: 400
+      });
+      customer[key] = numericFieldValue;
+    }
+    for (const key of ['salesAddressType', 'drAddressType', 'discountType']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    if (Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
+      if (!Array.isArray(input.deliveryAddresses) || input.deliveryAddresses.length > 50) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+        status: 400
+      });
+      customer.deliveryAddresses = input.deliveryAddresses.map(value => typeof value === 'string' ? value.trim() : '');
+    }
+    if (current && !customer.code) customer.code = current.code;
+    if (customer.discountType === 'percent' && customer.discount > 100) throw Object.assign(new Error('Percentage discount cannot exceed 100.'), {
+      status: 400
+    });
+    const storedName = current?._salesInChargeSnapshot ?? current?.salesInCharge ?? '';
+    let assignment = {
+      id: current?.salesInChargeId ?? null,
+      name: storedName
+    };
+    if (Object.hasOwn(input, 'salesInChargeId') && input['salesInChargeId'] !== undefined) {
+      if (input.salesInChargeId === null) assignment = {
+        id: null,
+        name: ''
+      };else {
+        const parsedSalesInChargeId = Number(input.salesInChargeId);
+        if (!Number.isSafeInteger(parsedSalesInChargeId) || parsedSalesInChargeId <= 0 || parsedSalesInChargeId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Sales account'}.`), {
+          status: 400
+        });
+        const accountId = parsedSalesInChargeId;
+        if (!current || accountId !== current.salesInChargeId) {
+          const accountResult = await request(tx).input('id', sql.Int, accountId).query('SELECT id,name,role,isActive FROM dbo.SalesUserLogin WHERE id=@id');
+          const account = accountResult.recordset[0];
+          if (!(account?.role === 'sales' && account.isActive === true)) throw Object.assign(new Error('Sales In-charge must be an active Sales account.'), {
+            status: 400
+          });
+          assignment = {
+            id: account.id,
+            name: account.name
+          };
+        }
+      }
+    } else if (Object.hasOwn(input, 'salesInCharge') && input['salesInCharge'] !== undefined) {
+      const name = typeof input.salesInCharge === 'string' ? input.salesInCharge.trim() : '';
+      if (name !== current?.salesInCharge && name !== storedName) {
+        if (!name) assignment = {
+          id: null,
+          name: ''
+        };else {
+          const accountResult = await request(tx).input('name', sql.NVarChar(150), name).query("SELECT id,name FROM dbo.SalesUserLogin WHERE name=@name AND role='sales' AND isActive=1");
+          if (accountResult.recordset.length !== 1) throw Object.assign(new Error('Select an active Sales account; names must resolve to one account.'), {
+            status: 400
+          });
+          assignment = {
+            id: accountResult.recordset[0].id,
+            name: accountResult.recordset[0].name
+          };
+        }
+      }
+    }
+    customer.salesInChargeId = assignment.id;
+    customer.salesInCharge = assignment.name;
+    if (!customer.code) {
+      // Hold the customer table while reading its next identity, so generated codes
+      // remain tied to Company Id even when multiple customers are saved together.
+      await request(tx).query('SELECT COUNT_BIG(*) AS total FROM dbo.Customers WITH (TABLOCKX,HOLDLOCK)');
+      const result = await request(tx).query(`SELECT COALESCE(CONVERT(bigint,last_value)+CONVERT(bigint,increment_value),CONVERT(bigint,seed_value)) AS nextId
+    FROM sys.identity_columns WHERE object_id=OBJECT_ID(N'dbo.Customers') AND name=N'id'`);
+      const id = Number(result.recordset[0]?.nextId);
+      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('A customer identifier could not be allocated.'), {
+        status: 409
+      });
+      const base = `C-${String(id).padStart(8, '0')}`;
+      let code = base;
+      let suffix = 0;
+      while ((await request(tx).input('code', sql.NVarChar(40), code).query('SELECT id FROM dbo.Customers WHERE code=@code')).recordset.length) {
+        code = `${base}-${++suffix}`;
+      }
+      customer.code = code;
+    }
+    const boundRequest = request(tx);
+    for (const [fieldName, maximumLength] of Object.entries(textLengths)) boundRequest.input(fieldName, sql.NVarChar(maximumLength), customer[fieldName]);
+    for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) boundRequest.input(fieldName, sql.Bit, customer[fieldName]);
+    for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) boundRequest.input(fieldName, sql.Int, customer[fieldName]);
+    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) boundRequest.input(fieldName, sql.NVarChar(10), customer[fieldName]);
+    boundRequest.input('discount', sql.Decimal(18, 6), customer.discount);
+    boundRequest.input('salesInChargeId', sql.Int, customer.salesInChargeId);
+    const req = boundRequest;
+    let saved = id;
+    if (id) {
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.Customers SET [code]=@code,[name]=@name,[contactPerson]=@contactPerson,[cpnumber]=@cpnumber,[email]=@email,[address]=@address,[shortName]=@shortName,[businessStyle]=@businessStyle,[salesInCharge]=@salesInCharge,[tin]=@tin,[faxNo]=@faxNo,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[category]=@category,[remarks]=@remarks,[salesName]=@salesName,[drName]=@drName,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[isActive]=@isActive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[salesAddressType]=@salesAddressType,[drAddressType]=@drAddressType,[discount]=@discount,[discountType]=@discountType,[includePoInInvoice]=@includePoInInvoice,[vatInclusive]=@vatInclusive,[salesInChargeId]=@salesInChargeId,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    } else {
+      const result = await req.query(`INSERT INTO dbo.Customers ([code],[name],[contactPerson],[cpnumber],[email],[address],[shortName],[businessStyle],[salesInCharge],[tin],[faxNo],[countryOfOrigin],[country],[category],[remarks],[salesName],[drName],[paymentTerm],[vatCode],[taxCode],[isActive],[decimalInPrice],[decimalInTotalPrice],[salesAddressType],[drAddressType],[discount],[discountType],[includePoInInvoice],[vatInclusive],[salesInChargeId]) OUTPUT INSERTED.id VALUES (@code,@name,@contactPerson,@cpnumber,@email,@address,@shortName,@businessStyle,@salesInCharge,@tin,@faxNo,@countryOfOrigin,@country,@category,@remarks,@salesName,@drName,@paymentTerm,@vatCode,@taxCode,@isActive,@decimalInPrice,@decimalInTotalPrice,@salesAddressType,@drAddressType,@discount,@discountType,@includePoInInvoice,@vatInclusive,@salesInChargeId)`);
+      saved = result.recordset[0].id;
+    }
+    if (!current || Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
+      await request(tx).input('id', sql.Int, saved).query('DELETE FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id');
+      for (const [position, address] of customer.deliveryAddresses.entries()) {
+        await request(tx).input('id', sql.Int, saved).input('position', sql.Int, position).input('address', sql.NVarChar(500), address).query('INSERT INTO dbo.CustomerDeliveryAddresses(customerId,position,address) VALUES(@id,@position,@address)');
+      }
+    }
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'customers').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return saved;
+  });
+  const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
+    status: 404
+  });
+  const recordAddresses = await request().input('id', sql.Int, savedId).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
+  const record = {
+    ...recordResult.recordset[0],
+    deliveryAddresses: recordAddresses.recordset.map(row => row.address)
+  };
+  res.json({
+    record
+  });
+});
+router.delete('/customers/:id', async (req, res) => {
+  const kind = 'customers';
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const user = res.locals.user;
+  await transaction(async tx => {
+    const result = await request(tx).input('id', sql.Int, id).query(`DELETE FROM dbo.Customers OUTPUT DELETED.id WHERE id=@id`);
+    if (!result.recordset.length) throw Object.assign(new Error('The record could not be found.'), {
+      status: 404
+    });
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), kind).input('action', sql.NVarChar(50), 'delete').input('recordId', sql.NVarChar(100), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+  });
+  res.json({
+    success: true
+  });
+});
+router.delete('/products/:id', async (req, res) => {
+  const kind = 'products';
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const user = res.locals.user;
+  await transaction(async tx => {
+    const result = await request(tx).input('id', sql.Int, id).query(`DELETE FROM dbo.Products OUTPUT DELETED.id WHERE id=@id`);
+    if (!result.recordset.length) throw Object.assign(new Error('The record could not be found.'), {
+      status: 404
+    });
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), kind).input('action', sql.NVarChar(50), 'delete').input('recordId', sql.NVarChar(100), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+  });
+  res.json({
+    success: true
+  });
+});
 
-  const deliveries = pathname.match(/^\/api\/delivery-receipts(?:\/(\d+))?$/);
-  if (deliveries) {
-    const id = deliveries[1] ? idValue(deliveries[1]) : undefined;
-    if (request.method === 'GET') return json(id ? { record: await service.getDelivery(id) } : { records: await service.listDeliveries() });
-    if (request.method === 'POST' && !id) return json({ record: await service.createDelivery(await readJson(request), user) }, 201);
-    return methodNotAllowed(id ? ['GET'] : ['GET', 'POST']);
-  }
+// Product master with customer approvals, schedules and linked supplies.
+router.get('/products', async (boundRequest, res) => {
+  const recordsQuery = request();
+  const recordsResult = await recordsQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[planType],p.[color],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[thickness],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+    FROM dbo.Products p
+    LEFT JOIN dbo.Products h ON h.id=p.productHeaderId  ORDER BY p.id DESC;
+    SELECT productId,name FROM dbo.ProductProcesses  ORDER BY productId,position;
+SELECT productId,name FROM dbo.ProductOffices  ORDER BY productId,position;
+SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals  ORDER BY productId,position;
+SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules  ORDER BY productId,position;
+    SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
+    FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId  ORDER BY l.productId,l.position;`);
+  const productsById = new Map(recordsResult.recordsets[0].map(productRow => [productRow.id, {
+    ...productRow,
+    processes: [],
+    offices: [],
+    customerApprovals: [],
+    inventorySchedules: [],
+    linkedSupplies: []
+  }]));
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordsResult.recordsets[1]) productsById.get(linkedProductId)?.["processes"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordsResult.recordsets[2]) productsById.get(linkedProductId)?.["offices"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordsResult.recordsets[3]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordsResult.recordsets[4]) productsById.get(linkedProductId)?.["inventorySchedules"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordsResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  const recordsRows = [...productsById.values()];
+  const records = recordsRows;
+  res.json({
+    records
+  });
+});
+router.get('/products/:id', async (req, res) => {
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const recordQuery = request();
+  recordQuery.input('id', sql.Int, id);
+  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[planType],p.[color],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[thickness],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+    FROM dbo.Products p
+    LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
+    SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
+SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
+SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
+SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
+    SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
+    FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
+  const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
+    ...productRow,
+    processes: [],
+    offices: [],
+    customerApprovals: [],
+    inventorySchedules: [],
+    linkedSupplies: []
+  }]));
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[1]) productsById.get(linkedProductId)?.["processes"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["offices"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.["inventorySchedules"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  const recordRows = [...productsById.values()];
+  if (!recordRows.length) throw Object.assign(new Error('The product could not be found.'), {
+    status: 404
+  });
+  const record = recordRows[0];
+  res.json({
+    record
+  });
+});
+router.get('/product-options', async (boundRequest, res) => {
+  const result = await request().query(`
+    SELECT id,shortName AS name,description,[decimal],isActive FROM dbo.ConfigUnits WHERE isActive=1 AND forProduct=1 ORDER BY shortName;
+    SELECT id,shortName AS code,name AS description,isDefault,isActive FROM dbo.ConfigCurrencies WHERE isActive=1 ORDER BY shortName;
+    SELECT id,name,isActive FROM dbo.ConfigProductCategories WHERE isActive=1 ORDER BY name;
+    SELECT id,sku,name,description FROM dbo.Products WHERE isActive=1 ORDER BY sku;
+    SELECT id,code,name,description,unit,isActive FROM dbo.Supplies WHERE isActive=1 ORDER BY name;
+    SELECT id,code,name FROM dbo.Customers WHERE isActive=1 ORDER BY name;
+    SELECT DISTINCT name FROM dbo.ProductProcesses ORDER BY name;
+    SELECT DISTINCT name FROM dbo.ProductOffices ORDER BY name;`);
+  res.json({
+    units: result.recordsets[0],
+    currencies: result.recordsets[1],
+    categories: result.recordsets[2],
+    headers: result.recordsets[3],
+    supplies: result.recordsets[4],
+    customers: result.recordsets[5],
+    processes: result.recordsets[6].map(row => row.name),
+    offices: [...new Set([process.env.COMPANY_NAME || 'TLP COMPANY', ...result.recordsets[7].map(row => row.name)])]
+  });
+});
+router.post('/products', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const id = undefined;
+  const savedId = await transaction(async scope => {
+    let current;
+    if (id) {
+      const currentQuery = request(scope);
+      currentQuery.input('id', sql.Int, id);
+      const currentResult = await currentQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[planType],p.[color],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[thickness],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+    FROM dbo.Products p WITH (UPDLOCK,HOLDLOCK)
+    LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
+    SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
+SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
+SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
+SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
+    SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
+    FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
+      const productsById2 = new Map(currentResult.recordsets[0].map(productRow => [productRow.id, {
+        ...productRow,
+        processes: [],
+        offices: [],
+        customerApprovals: [],
+        inventorySchedules: [],
+        linkedSupplies: []
+      }]));
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[1]) productsById2.get(linkedProductId)?.["processes"].push(productRow);
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[2]) productsById2.get(linkedProductId)?.["offices"].push(productRow);
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[3]) productsById2.get(linkedProductId)?.["customerApprovals"].push(productRow);
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[4]) productsById2.get(linkedProductId)?.["inventorySchedules"].push(productRow);
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[5]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
+      const currentRows = [...productsById2.values()];
+      if (!currentRows.length) throw Object.assign(new Error('The product could not be found.'), {
+        status: 404
+      });
+      current = currentRows[0];
+    }
+    const product = {
+      ...Object.fromEntries(Object.keys(PRODUCT_TEXT_LENGTHS).map(key => [key, ''])),
+      ...Object.fromEntries(PRODUCT_QUANTITIES.map(key => [key, 0])),
+      revision: '0',
+      vatMode: 'customer',
+      productHeaderId: null,
+      price: 0,
+      stock: 0,
+      isActive: true,
+      processes: [],
+      offices: [],
+      customerApprovals: [],
+      linkedSupplies: [],
+      inventorySetup: '',
+      inventorySchedules: [],
+      ...(current || {})
+    };
+    for (const key of Object.keys(PRODUCT_TEXT_LENGTHS)) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    if (!(Object.hasOwn(input, 'name') && input['name'] !== undefined) && (!current || Object.hasOwn(input, 'description') && input['description'] !== undefined)) product.name = (product.description || product.sku).slice(0, PRODUCT_TEXT_LENGTHS.name);
+    if (!product.name) product.name = product.sku;
+    for (const key of [...PRODUCT_QUANTITIES, 'price', 'stock']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
+      const numericFieldValue = Number(input[key] ?? 0);
+      if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
+        status: 400
+      });
+      product[key] = numericFieldValue;
+    }
+    if (Object.hasOwn(input, 'isActive') && input['isActive'] !== undefined) product.isActive = input.isActive === true;
+    for (const key of ['vatMode', 'inventorySetup']) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    if (Object.hasOwn(input, 'productHeaderId') && input['productHeaderId'] !== undefined) if (input.productHeaderId === null) {
+      product.productHeaderId = null;
+    } else {
+      const parsedProductHeaderId = Number(input.productHeaderId);
+      if (!Number.isSafeInteger(parsedProductHeaderId) || parsedProductHeaderId <= 0 || parsedProductHeaderId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Product Header'}.`), {
+        status: 400
+      });
+      product.productHeaderId = parsedProductHeaderId;
+    }
+    for (const [key, limit] of [['processes', 100], ['offices', 50]]) {
+      if (Object.hasOwn(input, key) && input[key] !== undefined) {
+        if (!Array.isArray(input[key]) || input[key].length > limit) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+          status: 400
+        });
+        product[key] = input[key].map(row => {
+          return {
+            name: typeof row.name === 'string' ? row.name.trim() : ''
+          };
+        });
+      }
+    }
+    if (Object.hasOwn(input, 'customerApprovals') && input['customerApprovals'] !== undefined) {
+      if (!Array.isArray(input.customerApprovals) || input.customerApprovals.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+        status: 400
+      });
+      product.customerApprovals = input.customerApprovals.map(row => {
+        const parsedCustomerId = Number(row.customerId);
+        if (!Number.isSafeInteger(parsedCustomerId) || parsedCustomerId <= 0 || parsedCustomerId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'customer'}.`), {
+          status: 400
+        });
+        return {
+          customerId: parsedCustomerId,
+          approvalDate: row.approvalDate || null,
+          eolDate: row.eolDate || null,
+          approvalRemarks: typeof row.approvalRemarks === 'string' ? row.approvalRemarks.trim() : '',
+          eolRemarks: typeof row.eolRemarks === 'string' ? row.eolRemarks.trim() : ''
+        };
+      });
+    }
+    if (Object.hasOwn(input, 'inventorySchedules') && input['inventorySchedules'] !== undefined) {
+      if (!Array.isArray(input.inventorySchedules) || input.inventorySchedules.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+        status: 400
+      });
+      product.inventorySchedules = input.inventorySchedules.map(row => {
+        return {
+          scheduleDate: row.scheduleDate || null,
+          month: typeof row.month === 'string' ? row.month.trim() : ''
+        };
+      });
+    }
+    if (Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
+      if (!Array.isArray(input.linkedSupplies) || input.linkedSupplies.length > 200) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+        status: 400
+      });
+      product.linkedSupplies = input.linkedSupplies.map(row => {
+        const parsedSuppliesId = Number(row.suppliesId);
+        if (!Number.isSafeInteger(parsedSuppliesId) || parsedSuppliesId <= 0 || parsedSuppliesId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Supplies'}.`), {
+          status: 400
+        });
+        const numericFieldValue = Number(row.quantity ?? 0);
+        if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
+          status: 400
+        });
+        return {
+          suppliesId: parsedSuppliesId,
+          quantity: numericFieldValue,
+          unit: typeof row.unit === 'string' ? row.unit.trim() : ''
+        };
+      });
+    }
+    if (product.secondaryUnit && product.quantityPerSecondaryUnit <= 0) throw Object.assign(new Error('UOP2 conversion quantity must be positive.'), {
+      status: 400
+    });
+    if (user && Number(product.stock) !== Number(current?.stock || 0)) {
+      throw Object.assign(new Error('Finished-product stock cannot be adjusted from the Product master.'), {
+        status: 400
+      });
+    }
+    for (const field of ['unit', 'secondaryUnit']) {
+      if (!product[field] || product[field] === current?.[field]) continue;
+      const result = await request(scope).input('name', sql.NVarChar(30), product[field]).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@name AND isActive=1 AND forProduct=1');
+      if (!result.recordset.length) throw Object.assign(new Error('Product UOP and UOP2 must use active Configuration units marked For Product.'), {
+        status: 400
+      });
+    }
+    if (product.currency && product.currency !== current?.currency) {
+      const result = await request(scope).input('code', sql.NVarChar(30), product.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
+      if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Currency.'), {
+        status: 400
+      });
+    }
+    if (product.category && product.category !== current?.category) {
+      const result = await request(scope).input('name', sql.NVarChar(100), product.category).query('SELECT id FROM dbo.ConfigProductCategories WHERE name=@name AND isActive=1');
+      if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Product Category.'), {
+        status: 400
+      });
+    }
+    if (current && product.unit !== current.unit) {
+      const result = await request(scope).input('id', sql.Int, current.id).query('SELECT TOP(1) id FROM dbo.SalesOrderItems WHERE productId=@id');
+      if (Number(current.stock) > 0 || result.recordset.length) throw Object.assign(new Error('UOP cannot change after finished-product stock or sales history exists.'), {
+        status: 409
+      });
+    }
+    let headerId = product.productHeaderId;
+    if (headerId) {
+      const visited = new Set(id ? [id] : []);
+      let first = true;
+      while (headerId) {
+        if (visited.has(headerId)) throw Object.assign(new Error('Product Header cannot refer to this product or form a circular group.'), {
+          status: 400
+        });
+        if (visited.size >= 100) throw Object.assign(new Error('Product Header grouping exceeds the supported depth.'), {
+          status: 400
+        });
+        visited.add(headerId);
+        const result = await request(scope).input('id', sql.Int, headerId).query('SELECT productHeaderId,isActive FROM dbo.Products WHERE id=@id');
+        if (!result.recordset.length) throw Object.assign(new Error('Select an existing Product Header.'), {
+          status: 400
+        });
+        if (first && !result.recordset[0].isActive && product.productHeaderId !== current?.productHeaderId) throw Object.assign(new Error('Select an active Product Header.'), {
+          status: 400
+        });
+        first = false;
+        headerId = result.recordset[0].productHeaderId;
+      }
+    }
+    for (const row of product.customerApprovals) {
+      const result = await request(scope).input('id', sql.Int, row.customerId).query('SELECT id FROM dbo.Customers WHERE id=@id');
+      if (!result.recordset.length) throw Object.assign(new Error('A Product Customer row references a customer that does not exist.'), {
+        status: 400
+      });
+    }
+    const previous = new Set(current?.linkedSupplies.map(row => row.suppliesId) || []);
+    for (const row of product.linkedSupplies) {
+      const result = await request(scope).input('id', sql.Int, row.suppliesId).query('SELECT unit,isActive FROM dbo.Supplies WHERE id=@id');
+      const supplies = result.recordset[0];
+      if (!supplies || !supplies.isActive && !previous.has(row.suppliesId)) throw Object.assign(new Error('Select an active Supplies record for each linked material.'), {
+        status: 400
+      });
+      if (row.unit && row.unit !== supplies.unit) throw Object.assign(new Error('Linked Supplies UOM must match its Supplies master record.'), {
+        status: 400
+      });
+      row.unit = supplies.unit;
+    }
+    const boundRequest = request(scope);
+    for (const [fieldName, maximumLength] of Object.entries(PRODUCT_TEXT_LENGTHS)) boundRequest.input(fieldName, sql.NVarChar(maximumLength), product[fieldName]);
+    for (const fieldName of PRODUCT_QUANTITIES) boundRequest.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
+    boundRequest.input('price', sql.VarChar(60), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(20), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(20), product.inventorySetup);
+    const req = boundRequest;
+    let saved = id;
+    if (id) {
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.Products SET [sku]=@sku,[name]=@name,[description]=@description,[unit]=@unit,[revision]=@revision,[secondaryUnit]=@secondaryUnit,[currency]=@currency,[model]=@model,[category]=@category,[planType]=@planType,[color]=@color,[remarks]=@remarks,[tagColor]=@tagColor,[quantityPerSecondaryUnit]=@quantityPerSecondaryUnit,[moq]=@moq,[spq]=@spq,[unitCost]=@unitCost,[divisor]=@divisor,[thickness]=@thickness,[weight]=@weight,[price]=@price,[stock]=@stock,[isActive]=@isActive,[vatMode]=@vatMode,[productHeaderId]=@productHeaderId,[inventorySetup]=@inventorySetup,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    } else {
+      const result = await req.query(`INSERT INTO dbo.Products([sku],[name],[description],[unit],[revision],[secondaryUnit],[currency],[model],[category],[planType],[color],[remarks],[tagColor],[quantityPerSecondaryUnit],[moq],[spq],[unitCost],[divisor],[thickness],[weight],[price],[stock],[isActive],[vatMode],[productHeaderId],[inventorySetup]) OUTPUT INSERTED.id VALUES(@sku,@name,@description,@unit,@revision,@secondaryUnit,@currency,@model,@category,@planType,@color,@remarks,@tagColor,@quantityPerSecondaryUnit,@moq,@spq,@unitCost,@divisor,@thickness,@weight,@price,@stock,@isActive,@vatMode,@productHeaderId,@inventorySetup)`);
+      saved = result.recordset[0].id;
+    }
+    if (!current || Object.hasOwn(input, 'processes') && input.processes !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductProcesses WHERE productId=@id');
+      for (const [position, row] of product.processes.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.ProductProcesses(productId,position,name) VALUES(@id,@position,@name)');
+      }
+    }
+    if (!current || Object.hasOwn(input, 'offices') && input.offices !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductOffices WHERE productId=@id');
+      for (const [position, row] of product.offices.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.ProductOffices(productId,position,name) VALUES(@id,@position,@name)');
+      }
+    }
+    if (!current || Object.hasOwn(input, 'customerApprovals') && input.customerApprovals !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductCustomerApprovals WHERE productId=@id');
+      for (const [position, row] of product.customerApprovals.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('customerId', sql.Int, row.customerId).input('approvalDate', sql.VarChar(10), row.approvalDate).input('eolDate', sql.VarChar(10), row.eolDate).input('approvalRemarks', sql.NVarChar(2000), row.approvalRemarks).input('eolRemarks', sql.NVarChar(2000), row.eolRemarks).query('INSERT INTO dbo.ProductCustomerApprovals(productId,position,customerId,approvalDate,eolDate,approvalRemarks,eolRemarks) VALUES(@id,@position,@customerId,@approvalDate,@eolDate,@approvalRemarks,@eolRemarks)');
+      }
+    }
+    if (!current || Object.hasOwn(input, 'inventorySchedules') && input.inventorySchedules !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductInventorySchedules WHERE productId=@id');
+      for (const [position, row] of product.inventorySchedules.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(10), row.scheduleDate).input('month', sql.NVarChar(40), row.month).query('INSERT INTO dbo.ProductInventorySchedules(productId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
+      }
+    }
+    if (!current || Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductSupplies WHERE productId=@id');
+      for (const [position, row] of product.linkedSupplies.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, row.suppliesId).input('quantity', sql.Decimal(18, 6), row.quantity).input('unit', sql.NVarChar(30), row.unit).query('INSERT INTO dbo.ProductSupplies(productId,position,suppliesId,quantity,unit) VALUES(@id,@position,@suppliesId,@quantity,@unit)');
+      }
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'products').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return saved;
+  });
+  const recordQuery = request();
+  recordQuery.input('id', sql.Int, savedId);
+  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[planType],p.[color],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[thickness],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+    FROM dbo.Products p
+    LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
+    SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
+SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
+SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
+SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
+    SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
+    FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
+  const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
+    ...productRow,
+    processes: [],
+    offices: [],
+    customerApprovals: [],
+    inventorySchedules: [],
+    linkedSupplies: []
+  }]));
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[1]) productsById.get(linkedProductId)?.["processes"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["offices"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.["inventorySchedules"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  const recordRows = [...productsById.values()];
+  if (!recordRows.length) throw Object.assign(new Error('The product could not be found.'), {
+    status: 404
+  });
+  const record = recordRows[0];
+  res.status(201).json({
+    record
+  });
+});
+router.put('/products/:id', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const savedId = await transaction(async scope => {
+    let current;
+    if (id) {
+      const currentQuery = request(scope);
+      currentQuery.input('id', sql.Int, id);
+      const currentResult = await currentQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[planType],p.[color],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[thickness],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+    FROM dbo.Products p WITH (UPDLOCK,HOLDLOCK)
+    LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
+    SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
+SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
+SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
+SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
+    SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
+    FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
+      const productsById2 = new Map(currentResult.recordsets[0].map(productRow => [productRow.id, {
+        ...productRow,
+        processes: [],
+        offices: [],
+        customerApprovals: [],
+        inventorySchedules: [],
+        linkedSupplies: []
+      }]));
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[1]) productsById2.get(linkedProductId)?.["processes"].push(productRow);
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[2]) productsById2.get(linkedProductId)?.["offices"].push(productRow);
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[3]) productsById2.get(linkedProductId)?.["customerApprovals"].push(productRow);
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[4]) productsById2.get(linkedProductId)?.["inventorySchedules"].push(productRow);
+      for (const {
+        productId: linkedProductId,
+        ...productRow
+      } of currentResult.recordsets[5]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
+      const currentRows = [...productsById2.values()];
+      if (!currentRows.length) throw Object.assign(new Error('The product could not be found.'), {
+        status: 404
+      });
+      current = currentRows[0];
+    }
+    const product = {
+      ...Object.fromEntries(Object.keys(PRODUCT_TEXT_LENGTHS).map(key => [key, ''])),
+      ...Object.fromEntries(PRODUCT_QUANTITIES.map(key => [key, 0])),
+      revision: '0',
+      vatMode: 'customer',
+      productHeaderId: null,
+      price: 0,
+      stock: 0,
+      isActive: true,
+      processes: [],
+      offices: [],
+      customerApprovals: [],
+      linkedSupplies: [],
+      inventorySetup: '',
+      inventorySchedules: [],
+      ...(current || {})
+    };
+    for (const key of Object.keys(PRODUCT_TEXT_LENGTHS)) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    if (!(Object.hasOwn(input, 'name') && input['name'] !== undefined) && (!current || Object.hasOwn(input, 'description') && input['description'] !== undefined)) product.name = (product.description || product.sku).slice(0, PRODUCT_TEXT_LENGTHS.name);
+    if (!product.name) product.name = product.sku;
+    for (const key of [...PRODUCT_QUANTITIES, 'price', 'stock']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
+      const numericFieldValue = Number(input[key] ?? 0);
+      if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
+        status: 400
+      });
+      product[key] = numericFieldValue;
+    }
+    if (Object.hasOwn(input, 'isActive') && input['isActive'] !== undefined) product.isActive = input.isActive === true;
+    for (const key of ['vatMode', 'inventorySetup']) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    if (Object.hasOwn(input, 'productHeaderId') && input['productHeaderId'] !== undefined) if (input.productHeaderId === null) {
+      product.productHeaderId = null;
+    } else {
+      const parsedProductHeaderId = Number(input.productHeaderId);
+      if (!Number.isSafeInteger(parsedProductHeaderId) || parsedProductHeaderId <= 0 || parsedProductHeaderId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Product Header'}.`), {
+        status: 400
+      });
+      product.productHeaderId = parsedProductHeaderId;
+    }
+    for (const [key, limit] of [['processes', 100], ['offices', 50]]) {
+      if (Object.hasOwn(input, key) && input[key] !== undefined) {
+        if (!Array.isArray(input[key]) || input[key].length > limit) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+          status: 400
+        });
+        product[key] = input[key].map(row => {
+          return {
+            name: typeof row.name === 'string' ? row.name.trim() : ''
+          };
+        });
+      }
+    }
+    if (Object.hasOwn(input, 'customerApprovals') && input['customerApprovals'] !== undefined) {
+      if (!Array.isArray(input.customerApprovals) || input.customerApprovals.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+        status: 400
+      });
+      product.customerApprovals = input.customerApprovals.map(row => {
+        const parsedCustomerId = Number(row.customerId);
+        if (!Number.isSafeInteger(parsedCustomerId) || parsedCustomerId <= 0 || parsedCustomerId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'customer'}.`), {
+          status: 400
+        });
+        return {
+          customerId: parsedCustomerId,
+          approvalDate: row.approvalDate || null,
+          eolDate: row.eolDate || null,
+          approvalRemarks: typeof row.approvalRemarks === 'string' ? row.approvalRemarks.trim() : '',
+          eolRemarks: typeof row.eolRemarks === 'string' ? row.eolRemarks.trim() : ''
+        };
+      });
+    }
+    if (Object.hasOwn(input, 'inventorySchedules') && input['inventorySchedules'] !== undefined) {
+      if (!Array.isArray(input.inventorySchedules) || input.inventorySchedules.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+        status: 400
+      });
+      product.inventorySchedules = input.inventorySchedules.map(row => {
+        return {
+          scheduleDate: row.scheduleDate || null,
+          month: typeof row.month === 'string' ? row.month.trim() : ''
+        };
+      });
+    }
+    if (Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
+      if (!Array.isArray(input.linkedSupplies) || input.linkedSupplies.length > 200) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+        status: 400
+      });
+      product.linkedSupplies = input.linkedSupplies.map(row => {
+        const parsedSuppliesId = Number(row.suppliesId);
+        if (!Number.isSafeInteger(parsedSuppliesId) || parsedSuppliesId <= 0 || parsedSuppliesId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Supplies'}.`), {
+          status: 400
+        });
+        const numericFieldValue = Number(row.quantity ?? 0);
+        if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
+          status: 400
+        });
+        return {
+          suppliesId: parsedSuppliesId,
+          quantity: numericFieldValue,
+          unit: typeof row.unit === 'string' ? row.unit.trim() : ''
+        };
+      });
+    }
+    if (product.secondaryUnit && product.quantityPerSecondaryUnit <= 0) throw Object.assign(new Error('UOP2 conversion quantity must be positive.'), {
+      status: 400
+    });
+    if (user && Number(product.stock) !== Number(current?.stock || 0)) {
+      throw Object.assign(new Error('Finished-product stock cannot be adjusted from the Product master.'), {
+        status: 400
+      });
+    }
+    for (const field of ['unit', 'secondaryUnit']) {
+      if (!product[field] || product[field] === current?.[field]) continue;
+      const result = await request(scope).input('name', sql.NVarChar(30), product[field]).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@name AND isActive=1 AND forProduct=1');
+      if (!result.recordset.length) throw Object.assign(new Error('Product UOP and UOP2 must use active Configuration units marked For Product.'), {
+        status: 400
+      });
+    }
+    if (product.currency && product.currency !== current?.currency) {
+      const result = await request(scope).input('code', sql.NVarChar(30), product.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
+      if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Currency.'), {
+        status: 400
+      });
+    }
+    if (product.category && product.category !== current?.category) {
+      const result = await request(scope).input('name', sql.NVarChar(100), product.category).query('SELECT id FROM dbo.ConfigProductCategories WHERE name=@name AND isActive=1');
+      if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Product Category.'), {
+        status: 400
+      });
+    }
+    if (current && product.unit !== current.unit) {
+      const result = await request(scope).input('id', sql.Int, current.id).query('SELECT TOP(1) id FROM dbo.SalesOrderItems WHERE productId=@id');
+      if (Number(current.stock) > 0 || result.recordset.length) throw Object.assign(new Error('UOP cannot change after finished-product stock or sales history exists.'), {
+        status: 409
+      });
+    }
+    let headerId = product.productHeaderId;
+    if (headerId) {
+      const visited = new Set(id ? [id] : []);
+      let first = true;
+      while (headerId) {
+        if (visited.has(headerId)) throw Object.assign(new Error('Product Header cannot refer to this product or form a circular group.'), {
+          status: 400
+        });
+        if (visited.size >= 100) throw Object.assign(new Error('Product Header grouping exceeds the supported depth.'), {
+          status: 400
+        });
+        visited.add(headerId);
+        const result = await request(scope).input('id', sql.Int, headerId).query('SELECT productHeaderId,isActive FROM dbo.Products WHERE id=@id');
+        if (!result.recordset.length) throw Object.assign(new Error('Select an existing Product Header.'), {
+          status: 400
+        });
+        if (first && !result.recordset[0].isActive && product.productHeaderId !== current?.productHeaderId) throw Object.assign(new Error('Select an active Product Header.'), {
+          status: 400
+        });
+        first = false;
+        headerId = result.recordset[0].productHeaderId;
+      }
+    }
+    for (const row of product.customerApprovals) {
+      const result = await request(scope).input('id', sql.Int, row.customerId).query('SELECT id FROM dbo.Customers WHERE id=@id');
+      if (!result.recordset.length) throw Object.assign(new Error('A Product Customer row references a customer that does not exist.'), {
+        status: 400
+      });
+    }
+    const previous = new Set(current?.linkedSupplies.map(row => row.suppliesId) || []);
+    for (const row of product.linkedSupplies) {
+      const result = await request(scope).input('id', sql.Int, row.suppliesId).query('SELECT unit,isActive FROM dbo.Supplies WHERE id=@id');
+      const supplies = result.recordset[0];
+      if (!supplies || !supplies.isActive && !previous.has(row.suppliesId)) throw Object.assign(new Error('Select an active Supplies record for each linked material.'), {
+        status: 400
+      });
+      if (row.unit && row.unit !== supplies.unit) throw Object.assign(new Error('Linked Supplies UOM must match its Supplies master record.'), {
+        status: 400
+      });
+      row.unit = supplies.unit;
+    }
+    const boundRequest = request(scope);
+    for (const [fieldName, maximumLength] of Object.entries(PRODUCT_TEXT_LENGTHS)) boundRequest.input(fieldName, sql.NVarChar(maximumLength), product[fieldName]);
+    for (const fieldName of PRODUCT_QUANTITIES) boundRequest.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
+    boundRequest.input('price', sql.VarChar(60), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(20), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(20), product.inventorySetup);
+    const req = boundRequest;
+    let saved = id;
+    if (id) {
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.Products SET [sku]=@sku,[name]=@name,[description]=@description,[unit]=@unit,[revision]=@revision,[secondaryUnit]=@secondaryUnit,[currency]=@currency,[model]=@model,[category]=@category,[planType]=@planType,[color]=@color,[remarks]=@remarks,[tagColor]=@tagColor,[quantityPerSecondaryUnit]=@quantityPerSecondaryUnit,[moq]=@moq,[spq]=@spq,[unitCost]=@unitCost,[divisor]=@divisor,[thickness]=@thickness,[weight]=@weight,[price]=@price,[stock]=@stock,[isActive]=@isActive,[vatMode]=@vatMode,[productHeaderId]=@productHeaderId,[inventorySetup]=@inventorySetup,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    } else {
+      const result = await req.query(`INSERT INTO dbo.Products([sku],[name],[description],[unit],[revision],[secondaryUnit],[currency],[model],[category],[planType],[color],[remarks],[tagColor],[quantityPerSecondaryUnit],[moq],[spq],[unitCost],[divisor],[thickness],[weight],[price],[stock],[isActive],[vatMode],[productHeaderId],[inventorySetup]) OUTPUT INSERTED.id VALUES(@sku,@name,@description,@unit,@revision,@secondaryUnit,@currency,@model,@category,@planType,@color,@remarks,@tagColor,@quantityPerSecondaryUnit,@moq,@spq,@unitCost,@divisor,@thickness,@weight,@price,@stock,@isActive,@vatMode,@productHeaderId,@inventorySetup)`);
+      saved = result.recordset[0].id;
+    }
+    if (!current || Object.hasOwn(input, 'processes') && input.processes !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductProcesses WHERE productId=@id');
+      for (const [position, row] of product.processes.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.ProductProcesses(productId,position,name) VALUES(@id,@position,@name)');
+      }
+    }
+    if (!current || Object.hasOwn(input, 'offices') && input.offices !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductOffices WHERE productId=@id');
+      for (const [position, row] of product.offices.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.ProductOffices(productId,position,name) VALUES(@id,@position,@name)');
+      }
+    }
+    if (!current || Object.hasOwn(input, 'customerApprovals') && input.customerApprovals !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductCustomerApprovals WHERE productId=@id');
+      for (const [position, row] of product.customerApprovals.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('customerId', sql.Int, row.customerId).input('approvalDate', sql.VarChar(10), row.approvalDate).input('eolDate', sql.VarChar(10), row.eolDate).input('approvalRemarks', sql.NVarChar(2000), row.approvalRemarks).input('eolRemarks', sql.NVarChar(2000), row.eolRemarks).query('INSERT INTO dbo.ProductCustomerApprovals(productId,position,customerId,approvalDate,eolDate,approvalRemarks,eolRemarks) VALUES(@id,@position,@customerId,@approvalDate,@eolDate,@approvalRemarks,@eolRemarks)');
+      }
+    }
+    if (!current || Object.hasOwn(input, 'inventorySchedules') && input.inventorySchedules !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductInventorySchedules WHERE productId=@id');
+      for (const [position, row] of product.inventorySchedules.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(10), row.scheduleDate).input('month', sql.NVarChar(40), row.month).query('INSERT INTO dbo.ProductInventorySchedules(productId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
+      }
+    }
+    if (!current || Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
+      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductSupplies WHERE productId=@id');
+      for (const [position, row] of product.linkedSupplies.entries()) {
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, row.suppliesId).input('quantity', sql.Decimal(18, 6), row.quantity).input('unit', sql.NVarChar(30), row.unit).query('INSERT INTO dbo.ProductSupplies(productId,position,suppliesId,quantity,unit) VALUES(@id,@position,@suppliesId,@quantity,@unit)');
+      }
+    }
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'products').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return saved;
+  });
+  const recordQuery = request();
+  recordQuery.input('id', sql.Int, savedId);
+  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[planType],p.[color],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[thickness],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+    FROM dbo.Products p
+    LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
+    SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
+SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
+SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
+SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.ProductInventorySchedules WHERE productId=@id ORDER BY productId,position;
+    SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
+    FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
+  const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
+    ...productRow,
+    processes: [],
+    offices: [],
+    customerApprovals: [],
+    inventorySchedules: [],
+    linkedSupplies: []
+  }]));
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[1]) productsById.get(linkedProductId)?.["processes"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["offices"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.["inventorySchedules"].push(productRow);
+  for (const {
+    productId: linkedProductId,
+    ...productRow
+  } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  const recordRows = [...productsById.values()];
+  if (!recordRows.length) throw Object.assign(new Error('The product could not be found.'), {
+    status: 404
+  });
+  const record = recordRows[0];
+  res.json({
+    record
+  });
+});
 
-  const shipping = pathname.match(/^\/api\/shipping-invoices(?:\/(\d+))?$/);
-  if (shipping) {
-    const id = shipping[1] ? idValue(shipping[1]) : undefined;
-    if (request.method === 'GET') return json(id ? { record: await service.getShippingInvoice(id) } : { records: await service.listShippingInvoices() });
-    if (request.method === 'POST' && !id) return json({ record: await service.createShippingInvoice(await readJson(request), user) }, 201);
-    return methodNotAllowed(id ? ['GET'] : ['GET', 'POST']);
-  }
+// Sales orders snapshot customer/product data and use exact six-place prices.
+router.get('/sales-orders', async (boundRequest, res) => {
+  const result = await request().query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o ORDER BY o.id DESC`);
+  res.json({
+    records: result.recordset
+  });
+});
+router.get('/sales-orders/:id', async (req, res) => {
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WHERE o.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('id', sql.Int, id).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.json({
+    record
+  });
+});
+router.post('/sales-orders', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const id = undefined;
+  if (!Array.isArray(input.items) || input.items.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+    status: 400
+  });
+  let totalCents = 0n;
+  const items = input.items.map(item => {
+    if (!['string', 'number'].includes(typeof item.quantity) || !Number.isFinite(Number(item.quantity))) throw Object.assign(new Error('Quantity must be a valid decimal number.'), {
+      status: 400
+    });
+    const quantityText = String(item.quantity).trim();
+    if (!/^\d+(?:\.\d+)?$/.test(quantityText)) throw Object.assign(new Error('Quantity must be zero or greater.'), {
+      status: 400
+    });
+    const [wholeQuantity, enteredQuantityFraction = ''] = quantityText.split('.');
+    const quantityFraction = enteredQuantityFraction.replace(/0+$/, '');
+    if (quantityFraction.length > 3) throw Object.assign(new Error('Quantity supports at most 3 decimal places.'), {
+      status: 400
+    });
+    const quantityThousandths = BigInt(wholeQuantity) * 1000n + BigInt(quantityFraction.padEnd(3, '0') || '0');
+    if (quantityThousandths <= 0n || quantityThousandths > 1000000000n) throw Object.assign(new Error('Order quantities must be positive and at most 1,000,000.'), {
+      status: 400
+    });
+    if (!['string', 'number'].includes(typeof item.unitPrice) || !Number.isFinite(Number(item.unitPrice))) throw Object.assign(new Error('Unit price must be a valid decimal number.'), {
+      status: 400
+    });
+    const priceText = String(item.unitPrice).trim();
+    if (!/^\d+(?:\.\d+)?$/.test(priceText)) throw Object.assign(new Error('Unit price must be zero or greater.'), {
+      status: 400
+    });
+    const [wholePrice, enteredPriceFraction = ''] = priceText.split('.');
+    const priceFraction = enteredPriceFraction.replace(/0+$/, '');
+    if (priceFraction.length > 6) throw Object.assign(new Error('Unit price supports at most 6 decimal places.'), {
+      status: 400
+    });
+    const priceMillionths = BigInt(wholePrice) * 1000000n + BigInt(priceFraction.padEnd(6, '0') || '0');
+    if (priceMillionths > 100000000000000n) throw Object.assign(new Error('Unit price is too large.'), {
+      status: 400
+    });
+    const productId = Number(item.productId);
+    if (!Number.isSafeInteger(productId) || productId <= 0 || productId > 2147483647) throw Object.assign(new Error('Enter a valid product.'), {
+      status: 400
+    });
+    // Quantity has scale 3 and price scale 6. Round each line HALF-UP to cents.
+    const lineCents = (quantityThousandths * priceMillionths * 100n + 500000000n) / 1000000000n;
+    totalCents += lineCents;
+    if (totalCents > 100000000000000n) throw Object.assign(new Error('The document total exceeds the supported amount.'), {
+      status: 400
+    });
+    return {
+      productId,
+      quantity: Number(quantityThousandths) / 1000,
+      unitPrice: Number(priceMillionths) / 1000000,
+      lineTotal: Number(lineCents) / 100
+    };
+  });
+  if (!items.length || new Set(items.map(item => item.productId)).size !== items.length) throw Object.assign(new Error('Orders need distinct product lines.'), {
+    status: 400
+  });
+  const customerId = Number(input.customerId);
+  if (!Number.isSafeInteger(customerId) || customerId <= 0 || customerId > 2147483647) throw Object.assign(new Error('Enter a valid customer.'), {
+    status: 400
+  });
+  const order = {
+    customerId,
+    orderDate: typeof input.orderDate === 'string' ? input.orderDate.trim() : '',
+    notes: typeof input.notes === 'string' ? input.notes.trim() : '',
+    status: input.status || 'draft',
+    items,
+    total: Number(totalCents) / 100
+  };
+  if (!['draft', 'confirmed'].includes(order.status)) throw Object.assign(new Error('The order state is invalid.'), {
+    status: 400
+  });
+  const savedId = await transaction(async tx => {
+    if (id) {
+      const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
+      if (!currentResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
+        status: 404
+      });
+      const currentItems = await request(tx).input('id', sql.Int, id).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
+      const current = {
+        ...currentResult.recordset[0],
+        items: currentItems.recordset
+      };
+      if (current.invoiced || current.delivered) throw Object.assign(new Error('This order is already linked to an invoice or delivery receipt and cannot be edited.'), {
+        status: 409
+      });
+    }
+    const customerResult = await request(tx).input('id', sql.Int, order.customerId).query('SELECT id,name,address,isActive FROM dbo.Customers WHERE id=@id');
+    if (!customerResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
+      status: 404
+    });
+    const customer = customerResult.recordset[0];
+    if (!customer.isActive) throw Object.assign(new Error('Select an active customer.'), {
+      status: 400
+    });
+    const snapshots = [];
+    for (const item of [...order.items].sort((a, b) => a.productId - b.productId)) {
+      const productResult = await request(tx).input('id', sql.Int, item.productId).query('SELECT id,name,sku,unit,currency,isActive FROM dbo.Products WHERE id=@id');
+      if (!productResult.recordset.length) throw Object.assign(new Error('The product could not be found.'), {
+        status: 404
+      });
+      const product = productResult.recordset[0];
+      if (!product.isActive) throw Object.assign(new Error(`${product.name} is inactive.`), {
+        status: 400
+      });
+      snapshots.push({
+        ...item,
+        productName: product.name,
+        sku: product.sku,
+        unit: product.unit,
+        currency: product.currency
+      });
+    }
+    const productCurrencies = new Set(snapshots.map(productSnapshot => String(productSnapshot.currency || 'PHP').trim().toUpperCase() || 'PHP'));
+    if (productCurrencies.size !== 1) throw Object.assign(new Error('Use products with the same currency in one sales order.'), {
+      status: 400
+    });
+    const currency = [...productCurrencies][0];
+    if (input.currency !== undefined && (typeof input.currency === 'string' ? input.currency.trim() : '').toUpperCase() !== currency) throw Object.assign(new Error('Order currency must match the selected product prices.'), {
+      status: 400
+    });
+    const req = request(tx).input('customerId', sql.Int, order.customerId).input('customerName', sql.NVarChar(180), customer.name).input('customerAddress', sql.NVarChar(500), customer.address).input('orderDate', sql.VarChar(10), order.orderDate).input('notes', sql.NVarChar(2000), order.notes).input('status', sql.NVarChar(20), order.status).input('total', sql.Decimal(18, 2), order.total).input('currency', sql.NVarChar(30), currency);
+    let saved = id;
+    if (id) {
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.SalesOrders SET customerId=@customerId,customerName=@customerName,customerAddress=@customerAddress,
+        orderDate=@orderDate,notes=@notes,status=@status,total=@total,currency=@currency,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+      await request(tx).input('id', sql.Int, id).query('DELETE FROM dbo.SalesOrderItems WHERE orderId=@id');
+    } else {
+      const result = await req.input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.SalesOrders
+        (customerId,customerName,customerAddress,orderDate,notes,status,total,currency,createdBy) OUTPUT INSERTED.id
+        VALUES (@customerId,@customerName,@customerAddress,@orderDate,@notes,@status,@total,@currency,@createdBy)`);
+      saved = result.recordset[0].id;
+    }
+    for (const item of snapshots) {
+      await request(tx).input('orderId', sql.Int, saved).input('productId', sql.Int, item.productId).input('productName', sql.NVarChar(180), item.productName).input('sku', sql.NVarChar(40), item.sku).input('unit', sql.NVarChar(30), item.unit).input('quantity', sql.Decimal(18, 3), item.quantity).input('unitPrice', sql.Decimal(18, 6), item.unitPrice).input('lineTotal', sql.Decimal(18, 2), item.lineTotal).query(`INSERT INTO dbo.SalesOrderItems (orderId,productId,productName,sku,unit,quantity,unitPrice,lineTotal)
+          VALUES (@orderId,@productId,@productName,@sku,@unit,@quantity,@unitPrice,@lineTotal)`);
+    }
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-orders').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return saved;
+  });
+  const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WHERE o.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('id', sql.Int, savedId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.status(201).json({
+    record
+  });
+});
+router.put('/sales-orders/:id', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  if (!Array.isArray(input.items) || input.items.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
+    status: 400
+  });
+  let totalCents = 0n;
+  const items = input.items.map(item => {
+    if (!['string', 'number'].includes(typeof item.quantity) || !Number.isFinite(Number(item.quantity))) throw Object.assign(new Error('Quantity must be a valid decimal number.'), {
+      status: 400
+    });
+    const quantityText = String(item.quantity).trim();
+    if (!/^\d+(?:\.\d+)?$/.test(quantityText)) throw Object.assign(new Error('Quantity must be zero or greater.'), {
+      status: 400
+    });
+    const [wholeQuantity, enteredQuantityFraction = ''] = quantityText.split('.');
+    const quantityFraction = enteredQuantityFraction.replace(/0+$/, '');
+    if (quantityFraction.length > 3) throw Object.assign(new Error('Quantity supports at most 3 decimal places.'), {
+      status: 400
+    });
+    const quantityThousandths = BigInt(wholeQuantity) * 1000n + BigInt(quantityFraction.padEnd(3, '0') || '0');
+    if (quantityThousandths <= 0n || quantityThousandths > 1000000000n) throw Object.assign(new Error('Order quantities must be positive and at most 1,000,000.'), {
+      status: 400
+    });
+    if (!['string', 'number'].includes(typeof item.unitPrice) || !Number.isFinite(Number(item.unitPrice))) throw Object.assign(new Error('Unit price must be a valid decimal number.'), {
+      status: 400
+    });
+    const priceText = String(item.unitPrice).trim();
+    if (!/^\d+(?:\.\d+)?$/.test(priceText)) throw Object.assign(new Error('Unit price must be zero or greater.'), {
+      status: 400
+    });
+    const [wholePrice, enteredPriceFraction = ''] = priceText.split('.');
+    const priceFraction = enteredPriceFraction.replace(/0+$/, '');
+    if (priceFraction.length > 6) throw Object.assign(new Error('Unit price supports at most 6 decimal places.'), {
+      status: 400
+    });
+    const priceMillionths = BigInt(wholePrice) * 1000000n + BigInt(priceFraction.padEnd(6, '0') || '0');
+    if (priceMillionths > 100000000000000n) throw Object.assign(new Error('Unit price is too large.'), {
+      status: 400
+    });
+    const productId = Number(item.productId);
+    if (!Number.isSafeInteger(productId) || productId <= 0 || productId > 2147483647) throw Object.assign(new Error('Enter a valid product.'), {
+      status: 400
+    });
+    // Quantity has scale 3 and price scale 6. Round each line HALF-UP to cents.
+    const lineCents = (quantityThousandths * priceMillionths * 100n + 500000000n) / 1000000000n;
+    totalCents += lineCents;
+    if (totalCents > 100000000000000n) throw Object.assign(new Error('The document total exceeds the supported amount.'), {
+      status: 400
+    });
+    return {
+      productId,
+      quantity: Number(quantityThousandths) / 1000,
+      unitPrice: Number(priceMillionths) / 1000000,
+      lineTotal: Number(lineCents) / 100
+    };
+  });
+  if (!items.length || new Set(items.map(item => item.productId)).size !== items.length) throw Object.assign(new Error('Orders need distinct product lines.'), {
+    status: 400
+  });
+  const customerId = Number(input.customerId);
+  if (!Number.isSafeInteger(customerId) || customerId <= 0 || customerId > 2147483647) throw Object.assign(new Error('Enter a valid customer.'), {
+    status: 400
+  });
+  const order = {
+    customerId,
+    orderDate: typeof input.orderDate === 'string' ? input.orderDate.trim() : '',
+    notes: typeof input.notes === 'string' ? input.notes.trim() : '',
+    status: input.status || 'draft',
+    items,
+    total: Number(totalCents) / 100
+  };
+  if (!['draft', 'confirmed'].includes(order.status)) throw Object.assign(new Error('The order state is invalid.'), {
+    status: 400
+  });
+  const savedId = await transaction(async tx => {
+    if (id) {
+      const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
+      if (!currentResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
+        status: 404
+      });
+      const currentItems = await request(tx).input('id', sql.Int, id).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
+      const current = {
+        ...currentResult.recordset[0],
+        items: currentItems.recordset
+      };
+      if (current.invoiced || current.delivered) throw Object.assign(new Error('This order is already linked to an invoice or delivery receipt and cannot be edited.'), {
+        status: 409
+      });
+    }
+    const customerResult = await request(tx).input('id', sql.Int, order.customerId).query('SELECT id,name,address,isActive FROM dbo.Customers WHERE id=@id');
+    if (!customerResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
+      status: 404
+    });
+    const customer = customerResult.recordset[0];
+    if (!customer.isActive) throw Object.assign(new Error('Select an active customer.'), {
+      status: 400
+    });
+    const snapshots = [];
+    for (const item of [...order.items].sort((a, b) => a.productId - b.productId)) {
+      const productResult = await request(tx).input('id', sql.Int, item.productId).query('SELECT id,name,sku,unit,currency,isActive FROM dbo.Products WHERE id=@id');
+      if (!productResult.recordset.length) throw Object.assign(new Error('The product could not be found.'), {
+        status: 404
+      });
+      const product = productResult.recordset[0];
+      if (!product.isActive) throw Object.assign(new Error(`${product.name} is inactive.`), {
+        status: 400
+      });
+      snapshots.push({
+        ...item,
+        productName: product.name,
+        sku: product.sku,
+        unit: product.unit,
+        currency: product.currency
+      });
+    }
+    const productCurrencies = new Set(snapshots.map(productSnapshot => String(productSnapshot.currency || 'PHP').trim().toUpperCase() || 'PHP'));
+    if (productCurrencies.size !== 1) throw Object.assign(new Error('Use products with the same currency in one sales order.'), {
+      status: 400
+    });
+    const currency = [...productCurrencies][0];
+    if (input.currency !== undefined && (typeof input.currency === 'string' ? input.currency.trim() : '').toUpperCase() !== currency) throw Object.assign(new Error('Order currency must match the selected product prices.'), {
+      status: 400
+    });
+    const req = request(tx).input('customerId', sql.Int, order.customerId).input('customerName', sql.NVarChar(180), customer.name).input('customerAddress', sql.NVarChar(500), customer.address).input('orderDate', sql.VarChar(10), order.orderDate).input('notes', sql.NVarChar(2000), order.notes).input('status', sql.NVarChar(20), order.status).input('total', sql.Decimal(18, 2), order.total).input('currency', sql.NVarChar(30), currency);
+    let saved = id;
+    if (id) {
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.SalesOrders SET customerId=@customerId,customerName=@customerName,customerAddress=@customerAddress,
+        orderDate=@orderDate,notes=@notes,status=@status,total=@total,currency=@currency,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+      await request(tx).input('id', sql.Int, id).query('DELETE FROM dbo.SalesOrderItems WHERE orderId=@id');
+    } else {
+      const result = await req.input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.SalesOrders
+        (customerId,customerName,customerAddress,orderDate,notes,status,total,currency,createdBy) OUTPUT INSERTED.id
+        VALUES (@customerId,@customerName,@customerAddress,@orderDate,@notes,@status,@total,@currency,@createdBy)`);
+      saved = result.recordset[0].id;
+    }
+    for (const item of snapshots) {
+      await request(tx).input('orderId', sql.Int, saved).input('productId', sql.Int, item.productId).input('productName', sql.NVarChar(180), item.productName).input('sku', sql.NVarChar(40), item.sku).input('unit', sql.NVarChar(30), item.unit).input('quantity', sql.Decimal(18, 3), item.quantity).input('unitPrice', sql.Decimal(18, 6), item.unitPrice).input('lineTotal', sql.Decimal(18, 2), item.lineTotal).query(`INSERT INTO dbo.SalesOrderItems (orderId,productId,productName,sku,unit,quantity,unitPrice,lineTotal)
+          VALUES (@orderId,@productId,@productName,@sku,@unit,@quantity,@unitPrice,@lineTotal)`);
+    }
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-orders').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return saved;
+  });
+  const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WHERE o.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('id', sql.Int, savedId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.json({
+    record
+  });
+});
+router.delete('/sales-orders/:id', async (req, res) => {
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const user = res.locals.user;
+  await transaction(async tx => {
+    const orderResult = await request(tx).input('id', sql.Int, id).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
+    if (!orderResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
+      status: 404
+    });
+    const orderItems = await request(tx).input('id', sql.Int, id).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
+    const order = {
+      ...orderResult.recordset[0],
+      items: orderItems.recordset
+    };
+    if (order.invoiced || order.delivered) throw Object.assign(new Error('Orders linked to an invoice or delivery receipt cannot be deleted.'), {
+      status: 409
+    });
+    await request(tx).input('id', sql.Int, id).query('DELETE FROM dbo.SalesOrderItems WHERE orderId=@id; DELETE FROM dbo.SalesOrders WHERE id=@id;');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-orders').input('action', sql.NVarChar(50), 'delete').input('recordId', sql.NVarChar(100), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+  });
+  res.json({
+    success: true
+  });
+});
 
-  return null;
-}
+// Invoice, delivery and shipping documents retain their source-order snapshots.
+router.get('/sales-invoices', async (boundRequest, res) => {
+  const result = await request().query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
+  CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
+  i.notes,i.total,i.paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId ORDER BY i.id DESC`);
+  res.json({
+    records: result.recordset
+  });
+});
+router.get('/sales-invoices/:id', async (req, res) => {
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
+  CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
+  i.notes,i.total,i.paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId WHERE i.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.json({
+    record
+  });
+});
+router.get('/delivery-receipts', async (boundRequest, res) => {
+  const result = await request().query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.total,o.currency,
+  CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId ORDER BY d.id DESC`);
+  res.json({
+    records: result.recordset
+  });
+});
+router.get('/delivery-receipts/:id', async (req, res) => {
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.total,o.currency,
+  CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId WHERE d.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Delivery receipt could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.json({
+    record
+  });
+});
+router.get('/shipping-invoices', async (boundRequest, res) => {
+  const result = await request().query(`SELECT s.id,s.number,s.invoiceId,i.number AS invoiceNumber,i.orderId,o.number AS orderNumber,
+  o.customerId,o.customerName,o.customerAddress,o.currency,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
+  s.carrier,s.trackingNumber,s.notes,i.total,i.paidAmount,d.number AS deliveryNumber FROM dbo.ShippingInvoices s
+  JOIN dbo.SalesInvoices i ON i.id=s.invoiceId
+  JOIN dbo.SalesOrders o ON o.id=i.orderId
+  LEFT JOIN dbo.DeliveryReceipts d ON d.orderId=o.id ORDER BY s.id DESC`);
+  res.json({
+    records: result.recordset
+  });
+});
+router.get('/shipping-invoices/:id', async (req, res) => {
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT s.id,s.number,s.invoiceId,i.number AS invoiceNumber,i.orderId,o.number AS orderNumber,
+  o.customerId,o.customerName,o.customerAddress,o.currency,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
+  s.carrier,s.trackingNumber,s.notes,i.total,i.paidAmount,d.number AS deliveryNumber FROM dbo.ShippingInvoices s
+  JOIN dbo.SalesInvoices i ON i.id=s.invoiceId
+  JOIN dbo.SalesOrders o ON o.id=i.orderId
+  LEFT JOIN dbo.DeliveryReceipts d ON d.orderId=o.id WHERE s.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Shipping invoice could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.json({
+    record
+  });
+});
+router.post('/sales-invoices', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const parsedOrderId = Number(input.orderId);
+  if (!Number.isSafeInteger(parsedOrderId) || parsedOrderId <= 0 || parsedOrderId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'sales order'}.`), {
+    status: 400
+  });
+  const orderId = parsedOrderId;
+  const invoiceDate = typeof input.invoiceDate === 'string' ? input.invoiceDate.trim() : '';
+  const dueDate = typeof input.dueDate === 'string' ? input.dueDate.trim() : '';
+  if (dueDate < invoiceDate) throw Object.assign(new Error('Due date cannot be earlier than invoice date.'), {
+    status: 400
+  });
+  const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
+  const id = await transaction(async tx => {
+    const orderResult = await request(tx).input('id', sql.Int, orderId).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
+    if (!orderResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
+      status: 404
+    });
+    const orderItems = await request(tx).input('id', sql.Int, orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
+    const order = {
+      ...orderResult.recordset[0],
+      items: orderItems.recordset
+    };
+    if (order.status !== 'confirmed') throw Object.assign(new Error('Confirm the sales order before creating an invoice.'), {
+      status: 400
+    });
+    if (order.invoiced) throw Object.assign(new Error('This sales order already has an invoice.'), {
+      status: 409
+    });
+    const result = await request(tx).input('orderId', sql.Int, orderId).input('invoiceDate', sql.VarChar(10), invoiceDate).input('dueDate', sql.VarChar(10), dueDate).input('notes', sql.NVarChar(2000), notes).input('total', sql.Decimal(18, 2), order.total).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.SalesInvoices (orderId,invoiceDate,dueDate,notes,total,createdBy) OUTPUT INSERTED.id
+        VALUES (@orderId,@invoiceDate,@dueDate,@notes,@total,@createdBy)`);
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-invoices').input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return result.recordset[0].id;
+  });
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
+  CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
+  i.notes,i.total,i.paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId WHERE i.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.status(201).json({
+    record
+  });
+});
+router.patch('/sales-invoices/:id/payment', async (req, res) => {
+  const parsedId = Number(req.params.id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
+    status: 400
+  });
+  const id = parsedId;
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  if (!['string', 'number'].includes(typeof input.paidAmount) || !Number.isFinite(Number(input.paidAmount))) throw Object.assign(new Error('Payment must be a valid decimal number.'), {
+    status: 400
+  });
+  const paymentText = String(input.paidAmount).trim();
+  if (!/^\d+(?:\.\d+)?$/.test(paymentText)) throw Object.assign(new Error('Payment must be zero or greater.'), {
+    status: 400
+  });
+  const [wholePayment, enteredPaymentFraction = ''] = paymentText.split('.');
+  const paymentFraction = enteredPaymentFraction.replace(/0+$/, '');
+  if (paymentFraction.length > 2) throw Object.assign(new Error('Payment supports at most 2 decimal places.'), {
+    status: 400
+  });
+  const paymentCents = BigInt(wholePayment) * 100n + BigInt(paymentFraction.padEnd(2, '0') || '0');
+  if (paymentCents > 100000000000000n) throw Object.assign(new Error('Payment is too large.'), {
+    status: 400
+  });
+  const paidAmount = Number(paymentCents) / 100;
+  await transaction(async tx => {
+    const result = await request(tx).input('id', sql.Int, id).input('paidAmount', sql.Decimal(18, 2), paidAmount).query('UPDATE dbo.SalesInvoices SET paidAmount=@paidAmount,updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id AND total>=@paidAmount');
+    if (!result.recordset.length) {
+      const existing = await request(tx).input('id', sql.Int, id).query('SELECT id FROM dbo.SalesInvoices WHERE id=@id');
+      if (!existing.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
+        status: 404
+      });
+      throw Object.assign(new Error('Payment cannot exceed the invoice total.'), {
+        status: 400
+      });
+    }
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-invoices').input('action', sql.NVarChar(50), 'payment').input('recordId', sql.NVarChar(100), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+  });
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
+  CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
+  i.notes,i.total,i.paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId WHERE i.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.json({
+    record
+  });
+});
+router.post('/delivery-receipts', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const parsedOrderId = Number(input.orderId);
+  if (!Number.isSafeInteger(parsedOrderId) || parsedOrderId <= 0 || parsedOrderId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'sales order'}.`), {
+    status: 400
+  });
+  const orderId = parsedOrderId;
+  const deliveryDate = typeof input.deliveryDate === 'string' ? input.deliveryDate.trim() : '';
+  const receivedBy = typeof input.receivedBy === 'string' ? input.receivedBy.trim() : '';
+  const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
+  const address = typeof input.address === 'string' ? input.address.trim() : '';
+  const id = await transaction(async tx => {
+    const orderResult = await request(tx).input('id', sql.Int, orderId).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
+    if (!orderResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
+      status: 404
+    });
+    const orderItems = await request(tx).input('id', sql.Int, orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
+    const order = {
+      ...orderResult.recordset[0],
+      items: orderItems.recordset
+    };
+    if (order.status !== 'confirmed') throw Object.assign(new Error('Confirm the sales order before creating a delivery receipt.'), {
+      status: 400
+    });
+    if (order.delivered) throw Object.assign(new Error('This sales order already has a delivery receipt.'), {
+      status: 409
+    });
+    for (const item of [...order.items].sort((a, b) => a.productId - b.productId)) {
+      const result = await request(tx).input('productId', sql.Int, item.productId).input('quantity', sql.Decimal(18, 3), item.quantity).query('UPDATE dbo.Products SET stock=stock-@quantity,updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@productId AND stock>=@quantity');
+      if (!result.recordset.length) throw Object.assign(new Error(`Insufficient finished-product stock for ${item.productName}.`), {
+        status: 409
+      });
+    }
+    const result = await request(tx).input('orderId', sql.Int, orderId).input('deliveryDate', sql.VarChar(10), deliveryDate).input('receivedBy', sql.NVarChar(150), receivedBy).input('address', sql.NVarChar(500), address || order.customerAddress).input('notes', sql.NVarChar(2000), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.DeliveryReceipts (orderId,deliveryDate,receivedBy,address,notes,createdBy) OUTPUT INSERTED.id
+        VALUES (@orderId,@deliveryDate,@receivedBy,@address,@notes,@createdBy)`);
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'delivery-receipts').input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return result.recordset[0].id;
+  });
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.total,o.currency,
+  CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId WHERE d.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Delivery receipt could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.status(201).json({
+    record
+  });
+});
+router.post('/shipping-invoices', async (req, res) => {
+  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
+    status: 415
+  });
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
+    status: 400
+  });
+  const input = req.body;
+  const user = res.locals.user;
+  const parsedInvoiceId = Number(input.invoiceId);
+  if (!Number.isSafeInteger(parsedInvoiceId) || parsedInvoiceId <= 0 || parsedInvoiceId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'sales invoice'}.`), {
+    status: 400
+  });
+  const invoiceId = parsedInvoiceId;
+  const shippingDate = typeof input.shippingDate === 'string' ? input.shippingDate.trim() : '';
+  const carrier = typeof input.carrier === 'string' ? input.carrier.trim() : '';
+  const trackingNumber = typeof input.trackingNumber === 'string' ? input.trackingNumber.trim() : '';
+  const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
+  const id = await transaction(async tx => {
+    // Serialize requests for the same source invoice without changing its data.
+    const invoice = await request(tx).input('id', sql.Int, invoiceId).query('SELECT CONVERT(varchar(10),invoiceDate,23) AS invoiceDate FROM dbo.SalesInvoices WITH (UPDLOCK,HOLDLOCK) WHERE id=@id');
+    if (!invoice.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
+      status: 404
+    });
+    if (shippingDate < invoice.recordset[0].invoiceDate) throw Object.assign(new Error('Shipping date cannot be earlier than invoice date.'), {
+      status: 400
+    });
+    const existing = await request(tx).input('invoiceId', sql.Int, invoiceId).query('SELECT id FROM dbo.ShippingInvoices WHERE invoiceId=@invoiceId');
+    if (existing.recordset.length) throw Object.assign(new Error('This sales invoice already has a shipping invoice.'), {
+      status: 409
+    });
+    const result = await request(tx).input('invoiceId', sql.Int, invoiceId).input('shippingDate', sql.VarChar(10), shippingDate).input('carrier', sql.NVarChar(150), carrier).input('trackingNumber', sql.NVarChar(100), trackingNumber).input('notes', sql.NVarChar(2000), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.ShippingInvoices (invoiceId,shippingDate,carrier,trackingNumber,notes,createdBy)
+        OUTPUT INSERTED.id VALUES (@invoiceId,@shippingDate,@carrier,@trackingNumber,@notes,@createdBy)`);
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'shipping-invoices').input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    return result.recordset[0].id;
+  });
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT s.id,s.number,s.invoiceId,i.number AS invoiceNumber,i.orderId,o.number AS orderNumber,
+  o.customerId,o.customerName,o.customerAddress,o.currency,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
+  s.carrier,s.trackingNumber,s.notes,i.total,i.paidAmount,d.number AS deliveryNumber FROM dbo.ShippingInvoices s
+  JOIN dbo.SalesInvoices i ON i.id=s.invoiceId
+  JOIN dbo.SalesOrders o ON o.id=i.orderId
+  LEFT JOIN dbo.DeliveryReceipts d ON d.orderId=o.id WHERE s.id=@id`);
+  if (!recordResult.recordset.length) throw Object.assign(new Error('Shipping invoice could not be found.'), {
+    status: 404
+  });
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
+  const record = {
+    ...recordResult.recordset[0],
+    items: recordItems.recordset
+  };
+  res.status(201).json({
+    record
+  });
+});
+for (const [path, methods] of [['/customer-options', ['GET']], ['/product-options', ['GET']], ['/customers', ['GET', 'POST']], ['/customers/:id', ['GET', 'PUT', 'DELETE']], ['/products', ['GET', 'POST']], ['/products/:id', ['GET', 'PUT', 'DELETE']], ['/sales-orders', ['GET', 'POST']], ['/sales-orders/:id', ['GET', 'PUT', 'DELETE']], ['/sales-invoices', ['GET', 'POST']], ['/sales-invoices/:id', ['GET']], ['/sales-invoices/:id/payment', ['PATCH']], ['/delivery-receipts', ['GET', 'POST']], ['/delivery-receipts/:id', ['GET']], ['/shipping-invoices', ['GET', 'POST']], ['/shipping-invoices/:id', ['GET']]]) router.all(path, (boundRequest, res) => res.set('Allow', methods.join(', ')).status(405).json({
+  message: 'This HTTP method is not supported.'
+}));
+module.exports = router;

@@ -1,10 +1,9 @@
 export const SYSTEM = 'purchasing';
-const API_BASE = '/api/purchasing';
 
 export async function api(path, options = {}) {
   let response;
   try {
-    response = await fetch(API_BASE + path, {
+    response = await fetch(path, {
       credentials: 'same-origin', ...options,
       ...(options.body ? { headers: { 'Content-Type': 'application/json', ...options.headers }, body: JSON.stringify(options.body) } : {}),
     });
@@ -15,11 +14,11 @@ export async function api(path, options = {}) {
   if (!response.ok) {
     const error = new Error(result.message || 'Unable to complete this request. Please try again.');
     error.status = response.status;
-    if (response.status === 401 && path !== '/auth/login' && path !== '/auth/session') window.dispatchEvent(new Event('session-expired'));
+    if (response.status === 401 && path !== '/api/purchasing/auth/login' && path !== '/api/purchasing/auth/session') window.dispatchEvent(new Event('session-expired'));
     throw error;
   }
   const authPath = path.split('?')[0];
-  if (['/auth/session', '/auth/login', '/auth/profile'].includes(authPath)
+  if (['/api/purchasing/auth/session', '/api/purchasing/auth/login', '/api/purchasing/auth/profile'].includes(authPath)
       && (!result.user || result.user.system !== SYSTEM)) {
     throw new Error('The server returned an account for another application. Please sign in here again.');
   }

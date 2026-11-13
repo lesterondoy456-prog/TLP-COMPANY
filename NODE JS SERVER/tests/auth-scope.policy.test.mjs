@@ -1,99 +1,147 @@
-import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+﻿import assert from 'node:assert/strict';
+import { createHmac, scryptSync } from 'node:crypto';
 import test from 'node:test';
-import {
-  AUTH_SYSTEMS, canCreateSystemAccount, canEditSystemAccount, canManageSystemAccounts,
-  canReadSystemAccount, createScopedSession, scopedCookieToken, systemDefinition,
-  verifyScopedSession,
-} from '../components/auth-scope.js';
+import { invokeRoute, loadRouterWithDatabase } from './helpers/load-api.mjs';
 
-// Production policy and JWT code only; no environment, application, or SQL imports.
 const secret = 'mock-only-session-secret-for-isolation-tests-123456';
-const now = Date.UTC(2026, 10, 13, 1);
 const systems = ['sales', 'purchasing', 'warehouse', 'configuration'];
+const salt = '0123456789abcdef0123456789abcdef';
+const password = 'Mock-Password-12345';
+const passwordHash = `scrypt$${salt}$${scryptSync(password, salt, 64).toString('hex')}`;
 const unauthorized = error => error.status === 401;
 
-test('each system owns its account table, worker roles, cookie name and cookie path', () => {
-  assert.deepEqual(Object.keys(AUTH_SYSTEMS).sort(), systems.toSorted());
-  for (const system of systems) {
-    const definition = systemDefinition(system);
-    const title = system[0].toUpperCase() + system.slice(1);
-    assert.equal(definition.table, title + 'UserLogin');
-    assert.equal(definition.cookie, `tlp_${system}_session`);
-    assert.equal(definition.path, `/api/${system}`);
-    assert.deepEqual([...definition.roles], system === 'sales' ? ['admin', 'saleshead', 'sales'] : ['admin', system]);
-    assert.equal(scopedCookieToken(`tlp_session=old-unscoped; tlp_${system}_session=own-token`, system), 'own-token');
-    const otherCookies = systems.filter(other => other !== system).map(other => `tlp_${other}_session=other-token`).join('; ');
-    assert.equal(scopedCookieToken(otherCookies + '; tlp_session=old-unscoped', system), undefined);
-  }
-  for (const invalid of ['other', '__proto__', 'constructor', '', undefined]) assert.throws(() => systemDefinition(invalid), error => error.status === 400);
-});
-
-test('JWTs are accepted only by their issuing system even with the same account ID and server secret', () => {
-  for (const source of systems) {
-    const { token, lifetime } = createScopedSession({ secret, system: source, userId: 1, now });
-    assert.equal(lifetime, 8 * 3600);
-    assert.equal(token.split('.').length, 3);
-    const payload = verifyScopedSession(token, { secret, system: source, now });
-    assert.equal(payload.sub, 1);
-    assert.equal(payload.system, source);
-    assert.equal(payload.aud, systemDefinition(source).audience);
-    assert.equal(payload.exp - payload.iat, lifetime);
-    assert.ok(payload.jti);
-    for (const destination of systems.filter(system => system !== source)) assert.throws(() => verifyScopedSession(token, { secret, system: destination, now }), unauthorized);
-    assert.throws(() => verifyScopedSession(token, { secret: secret + '-wrong', system: source, now }), unauthorized);
-    assert.throws(() => verifyScopedSession(token, { secret, system: source, now: now + lifetime * 1000 }), unauthorized);
-    const remembered = createScopedSession({ secret, system: source, userId: 1, remember: true, now });
-    assert.equal(remembered.lifetime, 7 * 86400);
-    assert.equal(verifyScopedSession(remembered.token, { secret, system: source, now: now + 86400 * 1000 }).system, source);
-  }
-});
-
-test('signed JWTs still require the correct system, audience, account ID, time and algorithm', () => {
-  const system = 'purchasing';
-  const { token } = createScopedSession({ secret, system, userId: 25, now });
-  const [header, body] = token.split('.');
-  const original = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-  const sign = (payload, customHeader = header) => {
-    const value = customHeader + '.' + Buffer.from(JSON.stringify(payload)).toString('base64url');
-    const key = createHmac('sha256', secret).update(`tlp-session:${system}`).digest();
-    return value + '.' + createHmac('sha256', key).update(value).digest('base64url');
+// Actual route callbacks, SELECT-only fake DB: never import db.js or its .env.
+function fixture(overrides = {}) {
+  const calls = [];
+  const database = {
+    sql: new Proxy({}, { get: () => (...args) => args }),
+    request() {
+      const inputs = {};
+      return {
+        input(name, _type, value) { inputs[name] = value; return this; },
+        async query(statement) {
+          calls.push({ statement, inputs });
+          assert.match(statement, /^SELECT /);
+          const table = statement.match(/FROM dbo\.(\w+)UserLogin/)?.[1];
+          assert.ok(table && systems.includes(table.toLowerCase()));
+          const row = { id: 1, name: 'Mock Admin', username: 'mock_admin', cpnumber: '', email: '', photo: '', role: 'admin', isActive: true, ...overrides };
+          if (statement.includes('passwordHash')) row.passwordHash = overrides.passwordHash ?? passwordHash;
+          return { recordset: overrides.missing ? [] : [row] };
+        },
+      };
+    },
+    transaction() { throw new Error('Auth read tests may not start transactions.'); },
   };
-  for (const changes of [
-    { system: 'sales' }, { system: undefined }, { aud: systemDefinition('sales').audience }, { aud: undefined }, { sub: 0 }, { sub: 1.5 },
-    { sub: 2147483648 }, { exp: original.iat }, { iat: original.iat + 61 },
-  ]) assert.throws(() => verifyScopedSession(sign({ ...original, ...changes }), { secret, system, now }), unauthorized);
-  const noneHeader = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
-  assert.throws(() => verifyScopedSession(sign(original, noneHeader), { secret, system, now }), unauthorized);
-  for (const malformed of [undefined, '', 'not-a-jwt', token + '.extra', token.slice(0, -8), 'x'.repeat(2049)]) assert.throws(() => verifyScopedSession(malformed, { secret, system, now }), unauthorized);
-  for (const userId of [0, -1, 1.5, '1', 2147483648]) assert.throws(() => createScopedSession({ secret, system, userId, now }), error => error.status === 400);
+  const router = loadRouterWithDatabase('login', database);
+  const guard = router.stack.find(layer => !layer.route).handle;
+  return {
+    calls,
+    login: (system, input = {}, secure = false) => invokeRoute(router, 'POST', '/:system/auth/login', {
+      params: { system }, body: { username: ' Mock_Admin ', password, ...input },
+      is: type => type === 'application/json', secure, app: { locals: { env: { SESSION_SECRET: secret } } },
+    }),
+    async session(system, cookie, envSecret = secret) {
+      const res = { locals: {}, statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+      let accepted = false;
+      const req = { params: { system }, get: () => cookie, app: { locals: { env: { SESSION_SECRET: envSecret } } } };
+      await guard(req, res, () => { accepted = true; });
+      return { accepted, res, user: res.locals.user, scopedUser: req[system + 'User'] };
+    },
+    logout: system => invokeRoute(router, 'POST', '/:system/auth/logout', { params: { system }, secure: true }),
+  };
+}
+
+function signedToken(system, payload, header = { alg: 'HS256', typ: 'JWT' }) {
+  const value = Buffer.from(JSON.stringify(header)).toString('base64url') + '.' + Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const key = createHmac('sha256', secret).update(`tlp-session:${system}`).digest();
+  return value + '.' + createHmac('sha256', key).update(value).digest('base64url');
+}
+
+test('actual login handlers issue isolated JWT cookies using each system login table', async () => {
+  const api = fixture();
+  for (const system of systems) {
+    const result = await api.login(system);
+    const cookie = result.headers['Set-Cookie'];
+    const token = cookie.split(';')[0].split('=')[1];
+    assert.match(cookie, new RegExp(`^tlp_${system}_session=`));
+    assert.ok(cookie.includes(`Path=/api/${system}; HttpOnly; SameSite=Lax`));
+    assert.ok(!cookie.includes('Max-Age='));
+    assert.equal(result.body.user.system, system);
+    assert.equal(result.body.user.passwordHash, undefined);
+    assert.equal(token.split('.').length, 3);
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
+    assert.equal(payload.sub, 1);
+    assert.equal(payload.aud, `tlp-company-${system}`);
+    assert.equal(payload.system, system);
+    assert.equal(payload.exp - payload.iat, 8 * 3600);
+    assert.ok(payload.jti);
+    const accepted = await api.session(system, cookie);
+    assert.equal(accepted.accepted, true);
+    assert.equal(accepted.user.system, system);
+    assert.deepEqual(accepted.user, accepted.scopedUser);
+    assert.equal(api.calls.at(-2).inputs.username, 'mock_admin');
+    for (const other of systems.filter(value => value !== system)) {
+      const before = api.calls.length;
+      await assert.rejects(api.session(other, cookie), unauthorized);
+      await assert.rejects(api.session(other, `tlp_${other}_session=${token}`), unauthorized);
+      assert.equal(api.calls.length, before, 'Foreign JWTs must be rejected before SQL.');
+    }
+    await assert.rejects(api.session(system, cookie, secret + '-wrong'), unauthorized);
+  }
 });
 
-test('account management never crosses systems and workers cannot elevate local privileges', () => {
+test('remembered login and logout use the correct system cookie, expiry and secure flag', async () => {
+  const api = fixture();
   for (const system of systems) {
-    const admin = { id: 1, system, role: 'admin' };
-    const worker = { id: 2, system, role: system };
-    assert.equal(canManageSystemAccounts(admin), true);
-    assert.equal(canReadSystemAccount(admin, worker), true);
-    assert.equal(canEditSystemAccount(admin, worker), true);
-    for (const role of systemDefinition(system).roles) assert.equal(canCreateSystemAccount(admin, role), true);
-    for (const other of systems.filter(value => value !== system)) {
-      const target = { id: 1, system: other, role: 'admin' };
-      assert.equal(canReadSystemAccount(admin, target), false);
-      assert.equal(canEditSystemAccount(admin, target), false);
-      assert.equal(canCreateSystemAccount(admin, other), false);
-    }
-    assert.equal(canManageSystemAccounts(worker), false);
-    assert.equal(canReadSystemAccount(worker, admin), false);
-    assert.equal(canEditSystemAccount(worker, admin), false);
-    for (const role of ['admin', 'saleshead', ...systems]) assert.equal(canCreateSystemAccount(worker, role), false);
+    const result = await api.login(system, { remember: true }, true);
+    const cookie = result.headers['Set-Cookie'];
+    assert.match(cookie, /; Secure; Max-Age=604800$/);
+    const payload = JSON.parse(Buffer.from(cookie.split('.')[1], 'base64url'));
+    assert.equal(payload.exp - payload.iat, 7 * 86400);
+    const logout = await api.logout(system);
+    assert.equal(logout.headers['Set-Cookie'], `tlp_${system}_session=; Path=/api/${system}; HttpOnly; SameSite=Lax; Max-Age=0; Secure`);
+    assert.equal(logout.body.success, true);
   }
-  const head = { system: 'sales', role: 'saleshead' };
-  assert.equal(canManageSystemAccounts(head), true);
-  assert.equal(canCreateSystemAccount(head, 'sales'), true);
-  assert.equal(canReadSystemAccount(head, { system: 'sales', role: 'sales' }), true);
-  assert.equal(canCreateSystemAccount(head, 'admin'), false);
-  assert.equal(canEditSystemAccount(head, { system: 'sales', role: 'sales' }), false);
-  assert.equal(canReadSystemAccount(head, { system: 'purchasing', role: 'sales' }), false);
-  for (const actor of [null, undefined, {}, { system: 'other', role: 'admin' }, { system: 'warehouse', role: 'saleshead' }]) assert.equal(canManageSystemAccounts(actor), false);
+});
+
+test('actual authentication middleware rejects expired, tampered or incorrectly scoped JWT claims before SQL', async () => {
+  const api = fixture(), system = 'purchasing';
+  const login = await api.login(system);
+  const token = login.headers['Set-Cookie'].split(';')[0].split('=')[1];
+  const original = JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
+  const before = api.calls.length;
+  for (const changes of [
+    { system: 'sales' }, { system: undefined }, { aud: 'tlp-company-sales' }, { aud: undefined },
+    { sub: 0 }, { sub: 1.5 }, { sub: '1' }, { sub: 2147483648 },
+    { exp: original.iat }, { exp: original.iat - 1 }, { iat: original.iat + 120 },
+  ]) await assert.rejects(api.session(system, `tlp_${system}_session=${signedToken(system, { ...original, ...changes })}`), unauthorized);
+  await assert.rejects(api.session(system, `tlp_${system}_session=${signedToken(system, original, { alg: 'none', typ: 'JWT' })}`), unauthorized);
+  for (const malformed of ['', 'not-a-jwt', token + '.extra', token.slice(0, -8), 'x'.repeat(2049)]) {
+    await assert.rejects(api.session(system, `tlp_${system}_session=${malformed}`), unauthorized);
+  }
+  assert.equal(api.calls.length, before);
+});
+
+test('invalid credentials, inactive users, missing hashes and foreign roles cannot log in', async () => {
+  for (const overrides of [{ isActive: false }, { missing: true }, { passwordHash: 'broken' }, { role: 'warehouse' }]) {
+    await assert.rejects(fixture(overrides).login('sales'), unauthorized);
+  }
+  await assert.rejects(fixture().login('sales', { password: 'wrong-password' }), unauthorized);
+  assert.equal((await fixture({ role: 'sales' }).login('sales')).body.user.role, 'sales');
+  const api = fixture();
+  for (const system of ['other', '__proto__', 'constructor', 'Sales']) {
+    await assert.rejects(api.login(system), error => error.status === 404);
+    assert.equal((await api.session(system, '')).res.statusCode, 404);
+    await assert.rejects(api.logout(system), error => error.status === 404);
+  }
+  assert.equal(api.calls.length, 0);
+});
+
+test('failed login attempts are limited before further password queries', async () => {
+  const api = fixture();
+  for (let index = 0; index < 8; index++) await assert.rejects(api.login('sales', { password: 'wrong-password' }), unauthorized);
+  assert.equal(api.calls.length, 8);
+  await assert.rejects(api.login('sales', { password: 'wrong-password' }), error => error.status === 429);
+  assert.equal(api.calls.length, 8);
+  assert.equal((await api.login('purchasing')).body.user.system, 'purchasing');
 });

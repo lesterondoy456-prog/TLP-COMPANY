@@ -1,37 +1,75 @@
+import { loadServer } from './helpers/load-api.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_BODY, checkOrigin, errorResponse, json, methodNotAllowed, readJson } from '../Api/common.js';
-import { ApiError } from '../components/errors.js';
+import { once } from 'node:events';
+const { MAX_BODY, checkOrigin, createApp } = loadServer();
+
+function policyRequest(url, { method = 'GET', headers = {} } = {}) {
+  const parsed = new URL(url);
+  const values = new Headers(headers);
+  return { method, protocol: parsed.protocol.slice(0, -1), get: name => name.toLowerCase() === 'host' ? parsed.host : values.get(name) };
+}
 
 test('each frontend port can send same-origin proxy writes while cross-origin writes are rejected', () => {
   for (const port of [5188, 5190, 5191, 5192]) {
     const origin = `http://127.0.0.1:${port}`;
-    assert.doesNotThrow(() => checkOrigin(new Request(origin + '/api/mock', { method: 'POST', headers: { Origin: origin, 'Sec-Fetch-Site': 'same-origin' } })));
-    assert.throws(() => checkOrigin(new Request(origin + '/api/mock', { method: 'POST', headers: { Origin: 'http://unrelated.example' } })), error => error.status === 403);
-    assert.throws(() => checkOrigin(new Request(origin + '/api/mock', { method: 'POST', headers: { Origin: origin, 'Sec-Fetch-Site': 'cross-site' } })), error => error.status === 403);
+    assert.doesNotThrow(() => checkOrigin(policyRequest(origin + '/api/mock', { method: 'POST', headers: { Origin: origin, 'Sec-Fetch-Site': 'same-origin' } })));
+    assert.throws(() => checkOrigin(policyRequest(origin + '/api/mock', { method: 'POST', headers: { Origin: 'http://unrelated.example' } })), error => error.status === 403);
+    assert.throws(() => checkOrigin(policyRequest(origin + '/api/mock', { method: 'POST', headers: { Origin: origin, 'Sec-Fetch-Site': 'cross-site' } })), error => error.status === 403);
   }
 });
 
-test('shared JSON parsing rejects invalid objects, content types, and oversized UTF-8 bodies', async () => {
-  const request = body => new Request('http://127.0.0.1:5189/api/mock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-  assert.deepEqual(await readJson(request('{"name":"Mock"}')), { name: 'Mock' });
-  for (const body of ['[]', 'null', 'true', '{broken']) await assert.rejects(readJson(request(body)), error => error.status === 400);
-  await assert.rejects(readJson(new Request('http://127.0.0.1:5189/api/mock', { method: 'POST', body: '{}' })), error => error.status === 415);
-  await assert.rejects(readJson(request(JSON.stringify({ text: 'é'.repeat(MAX_BODY / 2 + 1) }))), error => error.status === 413);
+test('rewritten proxy hosts accept only configured frontend origins, including HTTP LAN without Fetch Metadata', () => {
+  for (const host of ['localhost', '127.0.0.1', '192.168.1.5']) {
+    for (const port of [5188, 5190, 5191, 5192]) {
+      const origin = `http://${host}:${port}`;
+      const request = headers => policyRequest('http://nodejs-server:5189/api/mock', { method: 'POST', headers: { Origin: origin, ...headers } });
+      assert.doesNotThrow(() => checkOrigin(request(), [origin]));
+      assert.doesNotThrow(() => checkOrigin(request({ 'Sec-Fetch-Site': 'same-origin' }), [origin]));
+      assert.throws(() => checkOrigin(request()), error => error.status === 403);
+      assert.throws(() => checkOrigin(request({ 'Sec-Fetch-Site': 'cross-site' }), [origin]), error => error.status === 403);
+    }
+  }
+  const allowedOrigins = ['http://192.168.1.5:5188'];
+  for (const origin of ['http://unrelated.example', 'http://192.168.1.5:5999', 'http://192.168.1.5:5188.unrelated.example', 'null']) {
+    for (const site of [undefined, 'same-origin', 'same-site', 'none']) {
+      const headers = { Origin: origin, ...(site ? { 'Sec-Fetch-Site': site } : {}) };
+      assert.throws(() => checkOrigin(policyRequest('http://nodejs-server:5189/api/mock', { method: 'POST', headers }), allowedOrigins), error => error.status === 403);
+    }
+  }
 });
 
-test('shared responses retain structured errors, allowed methods, and no-store JSON headers', async () => {
-  const response = json({ success: true }, 201);
-  assert.equal(response.status, 201);
-  assert.equal(response.headers.get('Cache-Control'), 'no-store');
-  assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
-  assert.deepEqual(await response.json(), { success: true });
-  const denied = methodNotAllowed(['GET', 'POST']);
-  assert.equal(denied.status, 405);
-  assert.equal(denied.headers.get('Allow'), 'GET, POST');
-  const conflict = errorResponse(new ApiError(409, 'Mock conflict'));
-  assert.equal(conflict.status, 409);
-  assert.deepEqual(await conflict.json(), { message: 'Mock conflict' });
-  assert.equal(errorResponse({ number: 1205 }).status, 409);
-  assert.equal(errorResponse({ originalError: { info: { number: 2627 } } }).status, 409);
+test('invalid or non-HTTP origins cannot be enabled by allowlist configuration', () => {
+  for (const origin of ['null', 'not-an-origin', 'data:text/plain,mock', 'file://', 'http://localhost:5188/', 'http://localhost:5188/path', 'http://user:password@localhost:5188']) {
+    const request = policyRequest('http://nodejs-server:5189/api/mock', { method: 'POST', headers: { Origin: origin } });
+    assert.throws(() => checkOrigin(request, [origin]), error => error.status === 403);
+  }
+  assert.doesNotThrow(() => checkOrigin(policyRequest('http://nodejs-server:5189/api/mock', { method: 'POST' })));
+});
+
+test('Express JSON parsing and per-system authentication reject invalid requests before any SQL operation', async t => {
+  const server = createApp({ SESSION_SECRET: 'mock-only-test-secret-12345678901234567890' }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  for (const system of ['sales', 'purchasing', 'warehouse', 'configuration']) {
+    const route = base + `/api/${system}/auth/login`;
+    for (const body of ['[]', 'null', 'true', '{broken', '{}']) {
+      const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body });
+      assert.equal(response.status, 400, system + ' must validate JSON and credentials before querying SQL');
+      assert.ok((await response.json()).message);
+    }
+    const badType = await fetch(route, { method: 'POST', headers: { Origin: base }, body: '{}' });
+    assert.equal(badType.status, 415);
+    const huge = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ text: 'x'.repeat(MAX_BODY) }) });
+    assert.equal(huge.status, 413);
+    const session = await fetch(base + `/api/${system}/auth/session`);
+    assert.equal(session.status, 401);
+    assert.equal(session.headers.get('cache-control'), 'no-store');
+    assert.equal(session.headers.get('x-content-type-options'), 'nosniff');
+    const hostile = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://unrelated.example' }, body: '{}' });
+    assert.equal(hostile.status, 403);
+  }
+  assert.equal((await fetch(base + '/api/purchasing/purchase-orders/1/post', { method: 'POST', headers: { Origin: base } })).status, 401, 'Bodyless posting routes must reach authentication');
+  assert.equal((await fetch(base + '/api/auth/session')).status, 404);
 });

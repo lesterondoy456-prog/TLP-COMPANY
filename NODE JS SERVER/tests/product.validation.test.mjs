@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateProduct } from '../components/product-validation.js';
+import { validateProduct } from '../../SalesSystem/src/helper/validation.js';
 
 const product = () => ({ sku: 'P-001', description: 'Finished Product', unit: 'pcs', currency: 'PHP', secondaryUnit: 'box', quantityPerSecondaryUnit: 12, linkedSupplies: [{ suppliesId: 10, quantity: 0.123456, unit: 'kg' }] });
-const invalid = input => assert.throws(() => validateProduct(input), error => error.status === 400);
+const invalid = input => assert.throws(() => validateProduct(input), error => error.name === 'FormValidationError');
 
 test('product links preserve six-place material quantities without creating finished-product stock', () => {
   const result = validateProduct(product());

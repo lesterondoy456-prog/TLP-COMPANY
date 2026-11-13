@@ -3,8 +3,7 @@ ENV NODE_ENV=production HOST=0.0.0.0 PORT=5189
 WORKDIR /app/server
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --omit=optional --no-audit --no-fund
-COPY server.js database.js services.js customers.js products.js purchasing-masters.js purchasing.js receiving.js inventory.js audit.js configuration.js accounts.js ./
-COPY components/ ./components/
+COPY server.js db.js ./
 COPY Api/ ./Api/
 COPY migration/ ./migration/
 USER node

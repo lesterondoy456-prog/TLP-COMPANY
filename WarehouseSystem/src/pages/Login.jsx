@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Icon } from '../components/Icons.jsx';
 import { APP } from '../appSettings.js';
+import { validateLoginForm } from '../helper/validation.js';
 
 export default function Login({ onLogin, initialError }) {
   const [username, setUsername] = useState('');
@@ -16,6 +17,7 @@ export default function Login({ onLogin, initialError }) {
     setBusy(true);
     setError('');
     try {
+      validateLoginForm({ username, password });
       await onLogin({ username: username.trim(), password, remember });
     } catch (error) {
       setError(error.message);

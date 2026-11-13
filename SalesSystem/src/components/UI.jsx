@@ -1,3 +1,4 @@
+import { validatePhotoFile } from '../helper/validation.js';
 ﻿import React, { useEffect, useRef } from 'react';
 import { Icon } from './Icons.jsx';
 
