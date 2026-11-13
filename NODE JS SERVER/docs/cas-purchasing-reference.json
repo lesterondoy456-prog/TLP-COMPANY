@@ -2,6 +2,7 @@
   "observedAt": "2026-11-13",
   "method": "Read-only inspection of the native CAS application through Windows UI. Blank forms and existing monitoring rows were inspected without typing, saving, posting, cancelling, deleting, or printing business records.",
   "scope": ["SalesSystem", "PurchasingSystem", "WarehouseSystem inventory view", "ConfigurationSystem"],
+  "ttiDifference": "Observed CAS Office checkboxes are omitted from TTI Product and Supplies forms. A single company uses the systems, so office links are not saved.",
   "excluded": ["Production", "Supplies Adjustment", "Supplies Issuance", "Supplies Return"],
   "product": {
     "tabs": ["Basic Info", "Customer", "Inventory Sched", "Link Supplies"],
@@ -59,7 +60,7 @@
     "VAT": ["Code", "Description", "Type", "Class", "Rate (%)", "Prod. VAT Ind.", "Deleted Date", "Account Code"],
     "Warehouse": ["Code", "Description", "Deleted Date"],
     "Warehouse Location": ["Code", "Description", "Deleted Date"],
-    "Audit Trail": "Read-only changes recorded by the TLP web application; CAS business data is not imported."
+    "Audit Trail": "Read-only changes recorded by the TTI web application; CAS business data is not imported."
   },
   "limitations": [
     "CAS financial calculations, printing, posting, unposting, cancellation and persistence were not executed.",

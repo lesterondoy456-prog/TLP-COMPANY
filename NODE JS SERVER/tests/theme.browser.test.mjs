@@ -11,6 +11,22 @@ const projects = [
   { project: 'ConfigurationSystem', system: 'configuration', heading: 'ATC', initial: '/api/configuration/atc', next: 'Bank', count: 14, form: 'New record' },
 ];
 
+const companyName = 'TTI Laguna Philippines Inc.';
+
+async function assertCompanyFits(page, selector, containerSelector) {
+  const brand = page.locator(selector);
+  await expect(brand).toHaveText(companyName);
+  await expect(brand).toBeVisible();
+  const fits = await brand.evaluate((element, containerSelector) => {
+    const container = element.closest(containerSelector).getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return [...range.getClientRects()].every(line => line.left >= container.left - 1 && line.right <= container.right + 1)
+      && document.documentElement.scrollWidth <= innerWidth;
+  }, containerSelector);
+  assert.ok(fits, 'The full company name must wrap within its container without horizontal overflow.');
+}
+
 async function settled(page) {
   await page.evaluate(async () => {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -34,7 +50,7 @@ function fixtures(system) {
 for (const specification of projects) {
   test(`${specification.project} supports persistent matte themes, flat navigation, loading motion and a 375px form`, { timeout: 90000 }, async t => {
     const { project, system } = specification;
-    const admin = { id: 1, system, name: 'Alex Santos', username: 'admin', role: 'admin', email: 'admin@tlp.test', cpnumber: '', photo: '', isActive: true };
+    const admin = { id: 1, system, name: 'Alex Santos', username: 'admin', role: 'admin', email: 'admin@tti.test', cpnumber: '', photo: '', isActive: true };
     const records = fixtures(system);
     const modules = system === 'configuration' ? loadApi('configuration').configurationMetadata() : [];
     let release;
@@ -48,7 +64,7 @@ for (const specification of projects) {
       if (pathname === '/api/configuration') return { json: { modules } };
       if (pathname === '/api/users') return { json: { records: [admin] } };
       if (pathname === '/api/customer-options') return { json: { salesInCharges: [], countriesOfOrigin: [], countries: [], paymentTerms: [], categories: [], taxCodes: [] } };
-      if (pathname.endsWith('options')) return { json: { users: [admin], suppliers: [], supplies: [], products: [], headers: [], units: [], currencies: [], categories: [], warehouses: [], locations: [], offices: [], shipments: [], customers: [] } };
+      if (pathname.endsWith('options')) return { json: { users: [admin], suppliers: [], supplies: [], products: [], headers: [], units: [], currencies: [], categories: [], warehouses: [], locations: [], shipments: [], customers: [] } };
       return { json: { records: records[pathname] || [] } };
     }, { project, viewport: { width: 1440, height: 1000 } });
     const { page, origin } = app;
@@ -75,12 +91,13 @@ for (const specification of projects) {
     await expect(page.locator('.sidebar .nav-item')).toHaveCount(specification.count);
     await expect(page.locator('.sidebar .nav-item:visible')).toHaveCount(specification.count);
     await expect(page.locator('.sales-group')).toHaveCount(0);
+    await assertCompanyFits(page, '.sidebar .brand strong', '.sidebar');
     const darkSurface = await page.locator('body').evaluate(element => getComputedStyle(element).backgroundColor);
     assert.equal(await page.locator('.sidebar').evaluate(element => getComputedStyle(element).backgroundImage), 'none');
     await app.screenshot(`${system}-theme-dark-desktop.png`);
     await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await expect.poll(() => page.evaluate(() => localStorage.getItem('tlp-theme'))).toBe('light');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('tti-theme'))).toBe('light');
     await settled(page);
     const lightSurface = await page.locator('body').evaluate(element => getComputedStyle(element).backgroundColor);
     assert.notEqual(lightSurface, darkSurface, 'Changing theme must change the rendered page surface.');
@@ -110,6 +127,8 @@ for (const specification of projects) {
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
     await expect(page.locator('.sidebar')).toHaveClass(/open/);
     await expect(page.getByRole('button', { name: 'Close navigation', exact: true })).toBeVisible();
+    await assertCompanyFits(page, '.sidebar .brand strong', '.sidebar');
+    await app.screenshot(`${system}-brand-mobile-sidebar.png`);
     await page.locator('.sidebar').getByRole('button', { name: specification.next, exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: specification.next, exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Close navigation', exact: true })).toHaveCount(0);
@@ -132,8 +151,15 @@ for (const specification of projects) {
     await page.reload();
     await expect(page.locator('input[type="password"]')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await assertCompanyFits(page, '.login-story .brand strong', '.login-story');
+    await app.screenshot(`${system}-brand-login-mobile-light.png`);
     await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await app.screenshot(`${system}-brand-login-mobile-dark.png`);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await settled(page);
+    await assertCompanyFits(page, '.login-story .brand strong', '.login-story');
+    await app.screenshot(`${system}-brand-login-desktop.png`);
     app.assertSafe();
   });
 }

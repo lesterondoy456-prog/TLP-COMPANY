@@ -71,7 +71,7 @@ export default function App() {
     setError('');
   }
 
-  if (checking) return <div className="boot-screen" role="status"><div className="brand-mark">T</div><strong>TLP COMPANY</strong><span>Opening {APP.appName}…</span></div>;
+  if (checking) return <div className="boot-screen" role="status"><div className="brand-mark">T</div><strong>TTI Laguna Philippines Inc.</strong><span>Opening {APP.appName}…</span></div>;
   return user
     ? <Layout user={user} onUser={setUser} onLogout={logout} app={APP} tabs={tabs} pages={pages} AccountPage={ConfigurationUserLogin} ProfilePage={Profile} />
     : <Login onLogin={login} initialError={error} />;

@@ -15,7 +15,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     currencies: [{ id: 1, code: 'PHP', description: 'Philippine Peso', isActive: true }],
     categories: [{ id: 1, name: 'Packaging', isActive: true }],
     customers: [{ id: 10, code: 'C-001', name: 'Mock Customer A', isActive: true }, { id: 11, code: 'C-002', name: 'Mock Customer B', isActive: true }],
-    headers: [header], offices: ['TLP COMPANY', 'Branch A'], processes: ['Printing', 'Cutting'],
+    headers: [header], processes: ['Printing', 'Cutting'],
     supplies: [{ id: 30, code: 'RM-001', name: 'Paper', description: 'Paper Roll', unit: 'kg', isActive: true }],
   };
   const { page, origin, screenshot, assertSafe } = await mockBrowser(t, async ({ method, pathname, body }) => {
@@ -23,7 +23,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     if (method === 'GET' && pathname === '/api/configuration') return { json: { modules: configurationMetadata() } };
     if (method === 'GET' && pathname === '/api/product-options') return { json: options };
     if (method === 'GET' && pathname === '/api/products') return { json: { records } };
-    if (method === 'GET' && /^\/api\/products\/\d+$/.test(pathname)) return { json: { record: { ...records.find(record => record.id === Number(pathname.split('/').pop())), inventorySchedules: [{ scheduleDate: '2026-11-13', month: 'Legacy editable schedule' }] } } };
+    if (method === 'GET' && /^\/api\/products\/\d+$/.test(pathname)) return { json: { record: { ...records.find(record => record.id === Number(pathname.split('/').pop())), offices: [{ name: 'Legacy Office' }], inventorySchedules: [{ scheduleDate: '2026-11-13', month: 'Legacy editable schedule' }] } } };
     if (method === 'GET' && ['/api/customers', '/api/sales-orders', '/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [admin] : [] } };
     if ((method === 'POST' && pathname === '/api/products') || (method === 'PUT' && /^\/api\/products\/\d+$/.test(pathname))) {
       writes.push({ method, pathname, body });
@@ -54,6 +54,8 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   for (const tab of Object.values(tabs)) await expect(tab).toBeVisible();
   for (const label of ['Code *', 'Rev', 'Description', 'UOP *', 'UOP2', 'Qty per UOP2', 'MOQ', 'SPQ', 'Unit Cost', 'Selling Price', 'Currency *', 'Model', 'Category', 'Plan Type', 'Color', 'Divisor', 'Thickness', 'Weight', 'Product Header', 'Remarks', 'Tag Color']) await expect(field(label)).toBeVisible();
   await expect(field('Product Id')).toHaveCount(0);
+  await expect(panel('Basic Info').getByRole('heading', { name: 'Office', exact: true })).toHaveCount(0);
+  await expect(panel('Basic Info').getByRole('checkbox')).toHaveCount(0);
   await expect(field('Rev')).toHaveValue('');
   await expect(field('Selling Price')).toHaveValue('');
   await expect(field('MOQ')).toHaveValue('');
@@ -95,7 +97,6 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     await panel('Basic Info').getByRole('button', { name: 'Add process', exact: true }).click();
     await panel('Basic Info').getByLabel('Process ' + (index + 1), { exact: true }).fill(name);
   }
-  for (const name of ['TLP COMPANY', 'Branch A']) await panel('Basic Info').getByRole('checkbox', { name, exact: true }).check();
   await screenshot('product-basic-info-mocked.png');
   await tabs.Customer.click();
   await panel('Customer').getByRole('button', { name: 'Add customer', exact: true }).click();
@@ -148,7 +149,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     sku: 'MOCK-PRODUCT', revision: '1', description: 'Mock Product Description', unit: 'pcs', secondaryUnit: 'box', currency: 'PHP',
     model: 'Model X', category: 'Packaging', planType: 'Make to order', color: 'Blue', remarks: 'Mock product remarks', tagColor: '#33ccff',
     quantityPerSecondaryUnit: 12.000001, moq: 100, spq: 10, unitCost: 5.123456, price: 12.34, divisor: 2.5, thickness: 0.25, weight: 3.000001,
-    vatMode: 'inclusive', productHeaderId: 20, processes: [{ name: 'Printing' }, { name: 'Cutting' }], offices: [{ name: 'TLP COMPANY' }, { name: 'Branch A' }],
+    vatMode: 'inclusive', productHeaderId: 20, processes: [{ name: 'Printing' }, { name: 'Cutting' }],
     customerApprovals: [{ customerId: 10, approvalDate: '2026-11-13', eolDate: '2026-12-31', approvalRemarks: 'Approved sample', eolRemarks: 'Review at year end' }, { customerId: 11, approvalDate: null, eolDate: null, approvalRemarks: null, eolRemarks: null }],
     inventorySetup: 'monthly',
     linkedSupplies: [{ suppliesId: 30, quantity: 1.234567, unit: 'kg' }], isActive: true,
@@ -156,6 +157,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   assert.equal(writes.length, 1);
   assert.equal(writes[0].body.isActive, true, 'New products are always active.');
   assert.deepEqual(writes[0].body, expected);
+  assert.equal(Object.hasOwn(writes[0].body, 'offices'), false, 'Product saves must never include company or Office associations.');
   assert.equal(Object.hasOwn(writes[0].body, 'stock'), false, 'Product metadata and raw-material links must not create finished-goods stock.');
   assert.equal(Object.hasOwn(writes[0].body, 'inventorySchedules'), false, 'Static display schedules must never be submitted for persistence.');
   assert.equal(header.stock, 50);
@@ -167,6 +169,8 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await expect(activeProduct).toBeChecked();
   await activeProduct.uncheck();
   await expect(field('Product Id')).toHaveCount(0);
+  await expect(panel('Basic Info').getByRole('heading', { name: 'Office', exact: true })).toHaveCount(0);
+  await expect(panel('Basic Info').getByRole('checkbox')).toHaveCount(0);
   await expect(field('Code *')).toHaveValue('MOCK-PRODUCT');
   await expect(field('Qty per UOP2')).toHaveValue('12.000001');
   await tabs.Customer.click();

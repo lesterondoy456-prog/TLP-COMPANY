@@ -1,11 +1,11 @@
-# TLP Company Systems
+# TTI Laguna Philippines Inc. Systems
 
-Four independent React projects connect to one Node.js backend and the SQL Server database **TLPCompany**. Every frontend has its own package, entry point, build output, development server, port, and Docker container. Each system authenticates against its own user table and has its own session cookie and API namespace.
+Four independent React projects connect to one Node.js backend and the SQL Server database **TTICompany**. Every frontend has its own package, entry point, build output, development server, port, and Docker container. Each system authenticates against its own user table and has its own session cookie and API namespace.
 
 ## Folders
 
 ```text
-TLP COMPANY/
+TTI COMPANY/
   NODE JS SERVER/   Shared Node.js backend and local .env
     Api/            LoginApiSystem.js plus the four business API routers
     migration/      SQL schemas, database/schema checks, runner, and CLI
@@ -45,7 +45,7 @@ The four frontend ports and the API port are set directly in `compose.yaml`. Bro
 
 Sign in separately to each app with its existing administrator account. User accounts and salted password hashes are stored in `SalesUserLogin`, `PurchasingUserLogin`, `WarehouseUserLogin`, and `ConfigurationUserLogin`. Startup does not create or reset accounts; administrator credentials are not kept in `.env`.
 
-Docker uses the existing Windows SQL Server instance at `host.docker.internal:1433`, database `TLPCompany`. Its dedicated SQL login is scoped to that database; credentials and session configuration come from the local `.env`, which is excluded from the Docker build context and Git. SQL Server must remain running. Business data remains in SQL Server when the app container is restarted or rebuilt.
+Docker uses the existing Windows SQL Server instance at `host.docker.internal:1433`, database `TTICompany`. Its dedicated SQL login is scoped to that database; credentials and session configuration come from the local `.env`, which is excluded from the Docker build context and Git. SQL Server must remain running. Business data remains in SQL Server when the app container is restarted or rebuilt.
 
 ```powershell
 docker compose logs --tail 50
@@ -102,6 +102,8 @@ A relative Sales route such as `/customers` is available at `/api/sales/customer
 
 All SQL files and database/schema checking live under `migration/`: `table-values.sql`, `schema.sql`, `system-accounts.sql`, `configuration-schema.sql`, `erp-schema.sql`, `text-max.sql`, and `run.js`. Backend startup applies these idempotent migrations in one transaction before listening; a failed batch rolls back the schema update. Run `npm run migrate` to apply migrations without starting HTTP. Migrations only manage the database schema; they do not create administrator accounts or business records. A new installation needs its department accounts provisioned in the database before users can sign in. Backend startup uses the same migration runner. The backend contains the actual local `.env`; no `.env.example` is required.
 
+One company uses these systems. Product and Supplies forms have no Office selection, and their APIs do not save office links.
+
 ## Appearance
 
 All four apps have matte navy and light themes with blue navigation accents. Use the sun/moon button on the login page or top bar to switch; each app remembers the preference in the browser. Sidebar modules are direct buttons without expandable groups. Page changes use a short transition, initial record loads use animated skeletons, and new table rows fade into place. Realtime refreshes retain loaded records and open drafts. Reduced-motion browser preferences disable these animations. Printed documents remain white with dark text.
@@ -116,7 +118,7 @@ Purchasing receipt changes refresh Warehouse inventory and receiving movements, 
 
 ## Administrator and configuration
 
-The local `.env` contains only `PORT`, `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `SESSION_SECRET`. `PORT` is the local Node API port; `DB_SERVER` is `localhost` and `DB_NAME` is `TLPCompany`. The SQL login authenticates the backend to SQL Server; it is separate from department user accounts. `SESSION_SECRET` signs JWTs. Docker overrides the SQL hostname to `host.docker.internal` and uses its fixed API port. The `.env` file is excluded from Git and Docker images; keep a private backup when moving the application to another computer.
+The local `.env` contains only `PORT`, `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `SESSION_SECRET`. `PORT` is the local Node API port; `DB_SERVER` is `localhost` and `DB_NAME` is `TTICompany`. The SQL login authenticates the backend to SQL Server; it is separate from department user accounts. `SESSION_SECRET` signs JWTs. Docker overrides the SQL hostname to `host.docker.internal` and uses its fixed API port. The `.env` file is excluded from Git and Docker images; keep a private backup when moving the application to another computer.
 
 The initial administrator is named Lester. Add your mobile number, email, and profile photo through each app's own profile form. Administrators manage accounts in that app's UserLogin screen. Sales retains the following account permissions:
 

@@ -149,15 +149,13 @@
   font-size: 11px;
 }
 
-.purchase-radio-group,
-.purchase-office-list {
+.purchase-radio-group {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 20px;
 }
 
-.purchase-radio-group > legend,
-.purchase-office-list > legend {
+.purchase-radio-group > legend {
   margin-bottom: 11px;
   padding: 0;
   font-size: 11px;
@@ -180,7 +178,6 @@
   accent-color: var(--teal);
 }
 
-.purchase-office-list input[type=checkbox],
 .purchase-source-picker input[type=checkbox] {
   padding: 0;
 }

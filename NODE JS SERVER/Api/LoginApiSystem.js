@@ -8,30 +8,30 @@ const AUTH_SYSTEMS = {
   sales: {
     table: 'SalesUserLogin',
     roles: ["admin", "saleshead", "sales"],
-    cookie: 'tlp_sales_session',
+    cookie: 'tti_sales_session',
     path: '/api/sales',
-    audience: 'tlp-company-sales'
+    audience: 'tti-company-sales'
   },
   purchasing: {
     table: 'PurchasingUserLogin',
     roles: ["admin", "purchasing"],
-    cookie: 'tlp_purchasing_session',
+    cookie: 'tti_purchasing_session',
     path: '/api/purchasing',
-    audience: 'tlp-company-purchasing'
+    audience: 'tti-company-purchasing'
   },
   warehouse: {
     table: 'WarehouseUserLogin',
     roles: ["admin", "warehouse"],
-    cookie: 'tlp_warehouse_session',
+    cookie: 'tti_warehouse_session',
     path: '/api/warehouse',
-    audience: 'tlp-company-warehouse'
+    audience: 'tti-company-warehouse'
   },
   configuration: {
     table: 'ConfigurationUserLogin',
     roles: ["admin", "configuration"],
-    cookie: 'tlp_configuration_session',
+    cookie: 'tti_configuration_session',
     path: '/api/configuration',
-    audience: 'tlp-company-configuration'
+    audience: 'tti-company-configuration'
   }
 };
 const HEADER = Buffer.from(JSON.stringify({
@@ -87,7 +87,7 @@ router.post('/:system/auth/login', async (req, res) => {
   const row = result.recordset[0];
   const [kind, salt, encoded] = (row?.passwordHash || '').split('$');
   const storedHashValid = kind === 'scrypt' && /^[a-f0-9]{32}$/.test(salt || '') && /^[a-f0-9]{128}$/.test(encoded || '');
-  const actualHash = await promisify(scrypt)(input.password, storedHashValid ? salt : 'tlp-missing-user-constant-salt', 64);
+  const actualHash = await promisify(scrypt)(input.password, storedHashValid ? salt : 'tti-missing-user-constant-salt', 64);
   const expectedHash = storedHashValid ? Buffer.from(encoded, 'hex') : Buffer.alloc(64);
   const correct = storedHashValid && actualHash.length === expectedHash.length && timingSafeEqual(actualHash, expectedHash);
   if (!row?.isActive || !correct || !definition.roles.includes(row.role)) {
@@ -123,7 +123,7 @@ router.post('/:system/auth/login', async (req, res) => {
   const lifetime = input.remember === true ? 7 * 86400 : 8 * 3600;
   const payload = Buffer.from(JSON.stringify({ sub: user.id, system, aud: definition.audience, iat: issued, exp: issued + lifetime, jti: randomUUID() })).toString('base64url');
   const value = `${HEADER}.${payload}`;
-  const signingKey = createHmac('sha256', secret).update(`tlp-session:${system}`).digest();
+  const signingKey = createHmac('sha256', secret).update(`tti-session:${system}`).digest();
   const signature = createHmac('sha256', signingKey).update(value).digest('base64url');
   const token = `${value}.${signature}`;
   res.setHeader('Set-Cookie', `${definition.cookie}=${token}; Path=${definition.path}; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}${input.remember === true ? `; Max-Age=${lifetime}` : ''}`);
@@ -157,7 +157,7 @@ router.use('/:system', async (req, res, next) => {
     error.status = 503;
     throw error;
   }
-  const signingKey = createHmac('sha256', secret).update(`tlp-session:${system}`).digest();
+  const signingKey = createHmac('sha256', secret).update(`tti-session:${system}`).digest();
   let payload;
   try {
     if (typeof token !== 'string' || token.length > 2048) throw new Error();

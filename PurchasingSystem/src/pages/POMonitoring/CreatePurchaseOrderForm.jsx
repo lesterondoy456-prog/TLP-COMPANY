@@ -70,7 +70,7 @@ export function CreatePurchaseOrderForm({ record, requests, options, user, onClo
   return <Modal title={record ? 'Edit purchase order' : 'New purchase order'} subtitle="Load posted purchase request lines and prepare the supplier order." className="purchase-document-modal" onClose={onClose} busy={editor.busy}>
     <form onSubmit={submit} noValidate><div className="modal-body purchase-form-body"><ErrorNotice message={editor.error} /><fieldset disabled={editor.busy}>
       <section className="purchase-section"><h3>Purchase Order</h3><div className="purchase-header-grid">
-        <ReadonlyField label="Branch *" value="TLP COMPANY" /><ReadonlyField label="PO #" value={record?.number || ''} />
+        <ReadonlyField label="Branch *" value="TTI Laguna Philippines Inc." /><ReadonlyField label="PO #" value={record?.number || ''} />
         {choice('supplierId', 'Supplier', (options.suppliers || []).map(row => ({ value: row.id, label: row.name })), { required: true, onChange: value => {
           const selected = (options.suppliers || []).find(row => Number(row.id) === Number(value));
           editor.set('supplierId', value);

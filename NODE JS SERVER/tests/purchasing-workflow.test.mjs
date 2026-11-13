@@ -3,10 +3,55 @@ import test from 'node:test';
 import { memoryReceivingRepository, receivingFixture, receivingRouteWorkflow } from './helpers/receiving-memory-repository.mjs';
 import { priceOnRoute } from './helpers/purchasing-sql-memory.mjs';
 import { calculateTotals as purchasePreview } from '../../PurchasingSystem/src/purchaseMath.js';
+import { invokeRoute, loadRouterWithDatabase } from './helpers/load-api.mjs';
 
 const admin = { id: 1, role: 'admin', name: 'Mock Administrator' };
 const balance = snapshot => Object.values(snapshot.inventory).reduce((sum, value) => sum + value, 0n);
 const line = (quantity, unitPrice, discountRate = 0) => ({ quantity, unitPrice, discountRate });
+
+test('Supplies routes retain schedules and suppliers while ignoring retired Office payloads', async () => {
+  const supply = { id: 30, code: 'S-00000030', name: 'Mock Supply', unit: 'pc', isActive: true, productId: null, inventorySetup: null };
+  const schedule = { suppliesId: 30, scheduleDate: '2026-03-01', month: 'March' };
+  const supplier = { suppliesId: 30, supplierId: 50, supplierName: 'Mock Supplier', moq: null, price: null, currency: null, remarks: null };
+  const database = {
+    sql: new Proxy({}, { get: () => () => ({}) }),
+    transaction: async work => work({}),
+    request: () => ({
+      input() { return this; },
+      async query(statement) {
+        assert.doesNotMatch(statement, /SupplyOffices/i, 'No Supplies handler may query or modify the retired Office table.');
+        if (statement.startsWith('SELECT s.id')) return { recordsets: [[{ ...supply }], [{ ...schedule }], [{ ...supplier }]] };
+        if (statement.startsWith('SELECT id,description,shortName')) return { recordsets: Array.from({ length: 11 }, () => []) };
+        if (statement.startsWith('SELECT id,code,')) return { recordset: [{ id: 50, name: 'Mock Supplier', isActive: true }] };
+        if (statement.startsWith('SELECT id FROM dbo.ConfigUnits')) return { recordset: [{ id: 1 }] };
+        if (statement.startsWith('SELECT id,isActive FROM dbo.Suppliers')) return { recordset: [{ id: 50, isActive: true }] };
+        if (statement.startsWith('INSERT INTO dbo.Supplies(')) return { recordset: [{ id: 30 }] };
+        if (/^(UPDATE |DELETE |INSERT INTO dbo\.(SupplyInventorySchedules|SupplySuppliers|AuditTrail))/.test(statement)) return { recordset: [] };
+        throw new Error('Unexpected isolated Supplies SQL: ' + statement.slice(0, 80));
+      },
+    }),
+  };
+  const router = loadRouterWithDatabase('purchasing', database);
+  const check = record => {
+    assert.equal(Object.hasOwn(record, 'offices'), false);
+    assert.deepEqual(record.inventorySchedules, [{ scheduleDate: '2026-03-01', month: 'March' }]);
+    assert.equal(record.suppliers[0].supplierName, 'Mock Supplier');
+    assert.equal(record.suppliers[0].supplierId, 50);
+  };
+  for (const path of ['/supplies', '/supplies/:id', '/options', '/purchasing-options']) {
+    const response = await invokeRoute(router, 'GET', path, { params: { id: '30' } });
+    const result = response.body;
+    assert.equal(Object.hasOwn(result, 'offices'), false);
+    check(result.record || result.records?.[0] || result.supplies[0]);
+  }
+  for (const method of ['POST', 'PUT']) {
+    const response = await invokeRoute(router, method, method === 'POST' ? '/supplies' : '/supplies/:id', {
+      params: { id: '30' }, get: () => 'application/json', purchasingUser: { ...admin, system: 'purchasing' },
+      body: { name: supply.name, unit: supply.unit, offices: { stale: 'must be ignored' }, inventorySchedules: [{ scheduleDate: schedule.scheduleDate, month: schedule.month }], suppliers: [{ supplierId: 50, moq: null, price: null, currency: null, remarks: null }] },
+    });
+    check(response.body.record);
+  }
+});
 
 test('purchase-order save routes calculate exact rounding, discounts and inclusive/exclusive VAT', async () => {
   const exclusive = await priceOnRoute([line(1, 100, 10)], { vatRate: 12 });

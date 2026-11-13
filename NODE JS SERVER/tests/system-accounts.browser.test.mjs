@@ -51,7 +51,7 @@ for (const settings of systems) {
       if (method === 'GET' && accountMatch?.[1]) return { json: { record: accounts.find(record => record.id === Number(accountMatch[1])) } };
       if (method === 'GET' && pathname === '/api/configuration') return { json: { modules: configurationMetadata() } };
       if (method === 'GET' && pathname.startsWith('/api/configuration/')) return { json: { records: [] } };
-      if (method === 'GET' && pathname === '/api/purchasing-options') return { json: { suppliers: [], supplies: [], users: [], products: [], offices: [], units: [], currencies: [], paymentTerms: [], vatCodes: [], taxCodes: [], countries: [], suppliesCategories: [], warehouses: [], locations: [] } };
+      if (method === 'GET' && pathname === '/api/purchasing-options') return { json: { suppliers: [], supplies: [], users: [], products: [], units: [], currencies: [], paymentTerms: [], vatCodes: [], taxCodes: [], countries: [], suppliesCategories: [], warehouses: [], locations: [] } };
       if (method === 'GET' && ['/api/suppliers', '/api/supplies', '/api/purchase-requests', '/api/purchase-orders', '/api/receivings', '/api/inventory'].includes(pathname)) return { json: { records: [] } };
     }, { project: settings.project, screenshotName: `${settings.system}-own-accounts-mocked.png` });
 

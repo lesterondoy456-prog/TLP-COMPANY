@@ -130,7 +130,7 @@ export function CreateReceivingReceiptForm({ record, orders, options, user, onCl
       <div className="modal-body purchase-form-body"><ErrorNotice message={editor.error} /><fieldset disabled={editor.busy}>
         <div role="tabpanel" id={editor.id + '-panel-info'} aria-labelledby={editor.id + '-tab-info'} hidden={tab !== 'info'}>
           <section className="purchase-section"><h3>Supplies RR</h3><div className="purchase-header-grid">
-            <ReadonlyField label="Branch *" value="TLP COMPANY" /><ReadonlyField label="SRR #" value={record?.number || ''} />
+            <ReadonlyField label="Branch *" value="TTI Laguna Philippines Inc." /><ReadonlyField label="SRR #" value={record?.number || ''} />
             {input('srrDate', 'SRR Date', { type: 'date', required: true })}{input('drNumber', 'DR #', { maxLength: 80 })}
             {editor.choice('purchaseOrderId', 'PO Ref #', eligibleOrders.map(row => ({ value: row.id, label: row.number + ' · ' + row.supplierName })), { onChange: chooseOrder })}
             <ReadonlyField label="Supplier *" value={order?.supplierName || record?.supplierName || ''} /><ReadonlyField label="Address" value={order?.supplierAddress || record?.supplierAddress || supplier?.address || ''} />

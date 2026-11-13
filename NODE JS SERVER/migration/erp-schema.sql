@@ -39,14 +39,6 @@ BEGIN
   );
 END;
 
-IF OBJECT_ID(N'dbo.SupplyOffices', N'U') IS NULL
-BEGIN
-  CREATE TABLE dbo.SupplyOffices (
-    suppliesId INT NOT NULL REFERENCES dbo.Supplies(id) ON DELETE CASCADE,position INT NOT NULL,name NVARCHAR(150) NOT NULL,
-    CONSTRAINT PK_SupplyOffices PRIMARY KEY(suppliesId,position)
-  );
-END;
-
 IF OBJECT_ID(N'dbo.SupplyInventorySchedules', N'U') IS NULL
 BEGIN
   CREATE TABLE dbo.SupplyInventorySchedules (
@@ -228,15 +220,6 @@ BEGIN
     position INT NOT NULL,
     name NVARCHAR(150) NOT NULL,
     CONSTRAINT PK_ProductProcesses PRIMARY KEY(productId,position)
-  );
-END;
-IF OBJECT_ID(N'dbo.ProductOffices', N'U') IS NULL
-BEGIN
-  CREATE TABLE dbo.ProductOffices (
-    productId INT NOT NULL REFERENCES dbo.Products(id) ON DELETE CASCADE,
-    position INT NOT NULL,
-    name NVARCHAR(150) NOT NULL,
-    CONSTRAINT PK_ProductOffices PRIMARY KEY(productId,position)
   );
 END;
 IF OBJECT_ID(N'dbo.ProductCustomerApprovals', N'U') IS NULL

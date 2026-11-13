@@ -20,7 +20,7 @@ for (const [project, system] of Object.entries(systems)) {
     const upgrades = [];
     const upgradeSockets = new Set();
     let origin;
-    const cookie = `tlp_${system}_session=mock-only-${system}; Path=/api/${system}; HttpOnly; SameSite=Strict`;
+    const cookie = `tti_${system}_session=mock-only-${system}; Path=/api/${system}; HttpOnly; SameSite=Strict`;
     const fakeApi = createServer(async (incoming, response) => {
       const chunks = [];
       for await (const chunk of incoming) chunks.push(chunk);
@@ -77,7 +77,7 @@ for (const [project, system] of Object.entries(systems)) {
     assert.equal(script.status, 200);
     assert.match(script.headers.get('content-type'), /javascript/);
 
-    const requestCookie = `tlp_${system}_session=mock-own-token; tlp_unrelated_session=mock-other-token`;
+    const requestCookie = `tti_${system}_session=mock-own-token; tti_unrelated_session=mock-other-token`;
     const sessionPath = `/api/${system}/auth/session?probe=own-system`;
     const session = await fetch(origin + sessionPath, { headers: { Cookie: requestCookie } });
     assert.equal(session.status, 200);

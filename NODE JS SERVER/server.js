@@ -8,7 +8,7 @@ const MAX_BODY = 1024 * 1024;
 const SYSTEMS = ['sales', 'purchasing', 'warehouse', 'configuration'];
 
 function sessionFingerprint(req, system) {
-  const cookie = `tlp_${system}_session=`;
+  const cookie = `tti_${system}_session=`;
   const token = String(req.get('cookie') || '').split(';').map(part => part.trim()).find(part => part.startsWith(cookie))?.slice(cookie.length);
   return token ? createHash('sha256').update(token).digest('hex') : null;
 }
@@ -95,7 +95,7 @@ function checkOrigin(request) {
   }
   if (request.get('Sec-Fetch-Site') === 'cross-site' || !validOrigin) {
     {
-      const error = new Error('Open this request from your TLP Company workspace.');
+      const error = new Error('Open this request from your TTI Laguna Philippines Inc. workspace.');
       error.status = 403;
       throw error;
     }
@@ -134,13 +134,13 @@ function createApp(env = process.env, options = {}) {
     next();
   });
   app.use(express.json({ limit: MAX_BODY }));
-  app.get('/', (req, res) => res.json({ name: 'TLP Company API', systems: ['sales', 'purchasing', 'warehouse', 'configuration'] }));
+  app.get('/', (req, res) => res.json({ name: 'TTI Laguna Philippines Inc. API', systems: ['sales', 'purchasing', 'warehouse', 'configuration'] }));
   app.get('/api/health', async (req, res) => {
     try {
       const result = await db().request().query('SELECT DB_NAME() AS name');
-      res.json({ ok: true, service: 'TLP Company API', database: { status: 'connected', name: result.recordset[0].name } });
+      res.json({ ok: true, service: 'TTI Laguna Philippines Inc. API', database: { status: 'connected', name: result.recordset[0].name } });
     } catch {
-      res.status(503).json({ ok: false, service: 'TLP Company API', database: { status: 'disconnected', name: env.DB_NAME || 'TLPCompany' } });
+      res.status(503).json({ ok: false, service: 'TTI Laguna Philippines Inc. API', database: { status: 'disconnected', name: env.DB_NAME || 'TTICompany' } });
     }
   });
   app.use('/api', require('./Api/LoginApiSystem'));
@@ -188,11 +188,11 @@ async function start() {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.');
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) throw new Error('Set SESSION_SECRET to at least 32 random characters in NODE JS SERVER/.env.');
   await initializeDatabase();
-  console.log(`SQL Server connected: ${process.env.DB_NAME || 'TLPCompany'}`);
+  console.log(`SQL Server connected: ${process.env.DB_NAME || 'TTICompany'}`);
   const app = createApp();
   const server = createServer(app);
   const io = attachRealtime(server, app);
-  server.listen(port, host, () => console.log(`TLP Company API: http://${host}:${port}`));
+  server.listen(port, host, () => console.log(`TTI Laguna Philippines Inc. API: http://${host}:${port}`));
   server.requestTimeout = 30000;
   server.headersTimeout = 15000;
   server.on('error', async error => { console.error('Server failed:', error.code || error.message); await closeDatabase(); process.exit(1); });

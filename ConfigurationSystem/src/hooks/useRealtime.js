@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { api } from '../api.js';
 
 const SYSTEM = 'configuration';
-const CHANGE_EVENT = 'tlp:configuration:data-changed';
+const CHANGE_EVENT = 'tti:configuration:data-changed';
 
 // One connection belongs to one signed-in app identity. Events only invalidate
 // HTTP data; they never replace form values or contain business records.

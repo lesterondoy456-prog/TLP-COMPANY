@@ -44,7 +44,11 @@ test('independent Purchasing and Warehouse apps share mocked receipt state witho
     for (const marker of await emptyMaster.locator('.required-mark').all()) {
       assert.equal(await marker.evaluate(element => getComputedStyle(element).color), 'rgb(255, 113, 130)', 'CAS-required master markers must be red in dark mode.');
     }
-    if (master.page === 'Supplies') for (const label of ['Minimum Stock', 'Thickness', 'Net Weight']) await expect(emptyMaster.getByLabel(label, { exact: true })).toHaveValue('');
+    if (master.page === 'Supplies') {
+      for (const label of ['Minimum Stock', 'Thickness', 'Net Weight']) await expect(emptyMaster.getByLabel(label, { exact: true })).toHaveValue('');
+      await expect(emptyMaster.getByRole('group', { name: 'Office', exact: true })).toHaveCount(0);
+      await expect(emptyMaster.getByRole('checkbox', { name: 'TTI Laguna Philippines Inc.', exact: true })).toHaveCount(0);
+    }
     await emptyMaster.getByRole('button', { name: master.save, exact: true }).click();
     await expect(emptyMaster).toBeVisible();
     await expect(emptyMaster.getByLabel('Name *', { exact: true })).toBeFocused();

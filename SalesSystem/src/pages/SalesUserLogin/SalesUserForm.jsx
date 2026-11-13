@@ -23,7 +23,7 @@ export default function SalesUserForm({ record, profile = false, actorRole = 'sa
     if (!profile) { body.role = canAssignRoles ? form.role : 'sales'; body.isActive = record ? form.isActive : true; if (form.password) body.password = form.password; }
     save(() => api(profile ? '/api/sales/auth/profile' : record ? '/api/sales/users/' + record.id : '/api/sales/users', { method: profile || record ? 'PUT' : 'POST', body }));
   }
-  return <Modal title={profile ? 'My profile' : record ? 'Edit user account' : 'New user account'} subtitle={profile ? 'Your details in the TLP Company workspace.' : 'Manage access to your sales system.'} onClose={onClose} busy={busy}>
+  return <Modal title={profile ? 'My profile' : record ? 'Edit user account' : 'New user account'} subtitle={profile ? 'Your details in the TTI Laguna Philippines Inc. workspace.' : 'Manage access to your sales system.'} onClose={onClose} busy={busy}>
     <form onSubmit={submit}><div className="modal-body"><ErrorNotice message={error} /><fieldset disabled={busy} className="form-grid">
       <PhotoField value={form.photo} name={form.name} onChange={value => set('photo', value)} />
       <Field label="Full name *"><input required maxLength={150} value={form.name} onChange={e => set('name', e.target.value)} autoComplete="name" /></Field>

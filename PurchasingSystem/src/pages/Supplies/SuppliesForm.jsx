@@ -9,7 +9,6 @@ export function SuppliesForm({ record, options, onClose, onSaved }) {
   const editor = useMasterForm(() => ({
     ...textValues(SUPPLIES_TEXT, record),
     productId: record?.productId ?? '',
-    offices: (record?.offices || []).map(row => ({ name: row.name })),
     minimumStock: record?.minimumStock ?? '',
     thickness: record?.thickness ?? '',
     netWeight: record?.netWeight ?? '',
@@ -20,7 +19,6 @@ export function SuppliesForm({ record, options, onClose, onSaved }) {
   }), SUPPLIES_TEXT);
   const [tab, setTab] = useState('basic');
   const { form, setForm, set, props, errorFor, textField, choiceField, numberField } = editor;
-  const officeNames = [...new Set(['TLP COMPANY', ...(options.supplies || []).flatMap(row => (row.offices || []).map(office => office.name)), ...form.offices.map(row => row.name)])].filter(Boolean);
 
   useEffect(() => {
     if (!editor.focusTarget) return;
@@ -58,7 +56,6 @@ export function SuppliesForm({ record, options, onClose, onSaved }) {
     const body = {
       ...Object.fromEntries(Object.keys(SUPPLIES_TEXT).map(key => [key, String(form[key] ?? '').trim() || null])),
       productId: form.productId === '' ? null : Number(form.productId),
-      offices: form.offices.map(row => ({ name: row.name })),
       minimumStock: String(form.minimumStock ?? '').trim() === '' ? null : Number(form.minimumStock), thickness: String(form.thickness ?? '').trim() === '' ? null : Number(form.thickness), netWeight: String(form.netWeight ?? '').trim() === '' ? null : Number(form.netWeight),
       inventorySetup: form.inventorySetup || null,
       inventorySchedules: form.inventorySchedules.map(row => ({ scheduleDate: row.scheduleDate || null, month: (row.month || '').trim() || null })),
@@ -88,7 +85,6 @@ export function SuppliesForm({ record, options, onClose, onSaved }) {
               <label className="field"><span>Supplies Id</span><input readOnly value={record?.id ?? ''} /></label>
               <label className="field"><span>Product Link</span><select {...props('productId', 'Product Link')} value={form.productId} onChange={event => set('productId', event.target.value)}><option value="">None</option>{form.productId && !(options.products || []).some(row => Number(row.id) === Number(form.productId)) && <option value={form.productId} disabled>Current product</option>}{(options.products || []).map(row => <option key={row.id} value={row.id}>{row.sku} · {row.name}</option>)}</select></label>
               {textField('maker')}{textField('name', { wide: true })}{textField('description', { wide: true, multiline: true })}{textField('remarks', { wide: true, multiline: true })}
-              <fieldset className="purchase-office-list purchase-span-2" aria-label="Office"><legend>Office</legend>{officeNames.map(name => <label className="checkbox" key={name}><input type="checkbox" checked={form.offices.some(row => row.name === name)} onChange={event => set('offices', event.target.checked ? [...form.offices, { name }] : form.offices.filter(row => row.name !== name))} />{name}</label>)}</fieldset>
             </div></section>
             <section className="purchase-section"><h3>Other Information</h3><div className="purchase-fields">
               {numberField('minimumStock', 'Minimum Stock')}{textField('color')}{numberField('thickness', 'Thickness')}

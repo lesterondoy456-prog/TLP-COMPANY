@@ -506,14 +506,12 @@ router.get('/products', async (req, res) => {
     FROM dbo.Products p
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId  ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses  ORDER BY productId,position;
-SELECT productId,name FROM dbo.ProductOffices  ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals  ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId  ORDER BY l.productId,l.position;`);
   const productsById = new Map(recordsResult.recordsets[0].map(productRow => [productRow.id, {
     ...productRow,
     processes: [],
-    offices: [],
     customerApprovals: [],
     linkedSupplies: []
   }]));
@@ -524,15 +522,11 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordsResult.recordsets[2]) productsById.get(linkedProductId)?.["offices"].push(productRow);
+  } of recordsResult.recordsets[2]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordsResult.recordsets[3]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
-  for (const {
-    productId: linkedProductId,
-    ...productRow
-  } of recordsResult.recordsets[4]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  } of recordsResult.recordsets[3]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordsRows = [...productsById.values()];
   const records = recordsRows;
   res.json({
@@ -553,14 +547,12 @@ router.get('/products/:id', async (req, res) => {
     FROM dbo.Products p
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
-SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
   const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
     ...productRow,
     processes: [],
-    offices: [],
     customerApprovals: [],
     linkedSupplies: []
   }]));
@@ -571,15 +563,11 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["offices"].push(productRow);
+  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
-  for (const {
-    productId: linkedProductId,
-    ...productRow
-  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
   if (!recordRows.length) {
     const error = new Error('The product could not be found.');
@@ -599,8 +587,7 @@ router.get('/product-options', async (req, res) => {
     SELECT id,sku,name,description FROM dbo.Products WHERE isActive=1 ORDER BY sku;
     SELECT id,code,name,description,unit,isActive FROM dbo.Supplies WHERE isActive=1 ORDER BY name;
     SELECT id,code,name FROM dbo.Customers WHERE isActive=1 ORDER BY name;
-    SELECT DISTINCT name FROM dbo.ProductProcesses ORDER BY name;
-    SELECT DISTINCT name FROM dbo.ProductOffices ORDER BY name;`);
+    SELECT DISTINCT name FROM dbo.ProductProcesses ORDER BY name;`);
   res.json({
     units: result.recordsets[0],
     currencies: result.recordsets[1],
@@ -608,8 +595,7 @@ router.get('/product-options', async (req, res) => {
     headers: result.recordsets[3],
     supplies: result.recordsets[4],
     customers: result.recordsets[5],
-    processes: result.recordsets[6].map(row => row.name),
-    offices: [...new Set([process.env.COMPANY_NAME || 'TLP COMPANY', ...result.recordsets[7].map(row => row.name)])]
+    processes: result.recordsets[6].map(row => row.name)
   });
 });
 router.post('/products', async (req, res) => {
@@ -635,14 +621,12 @@ router.post('/products', async (req, res) => {
     FROM dbo.Products p WITH (UPDLOCK,HOLDLOCK)
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
-SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
       const productsById2 = new Map(currentResult.recordsets[0].map(productRow => [productRow.id, {
         ...productRow,
         processes: [],
-        offices: [],
         customerApprovals: [],
         linkedSupplies: []
       }]));
@@ -653,15 +637,11 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
       for (const {
         productId: linkedProductId,
         ...productRow
-      } of currentResult.recordsets[2]) productsById2.get(linkedProductId)?.["offices"].push(productRow);
+      } of currentResult.recordsets[2]) productsById2.get(linkedProductId)?.["customerApprovals"].push(productRow);
       for (const {
         productId: linkedProductId,
         ...productRow
-      } of currentResult.recordsets[3]) productsById2.get(linkedProductId)?.["customerApprovals"].push(productRow);
-      for (const {
-        productId: linkedProductId,
-        ...productRow
-      } of currentResult.recordsets[4]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
+      } of currentResult.recordsets[3]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
       const currentRows = [...productsById2.values()];
       if (!currentRows.length) {
         const error = new Error('The product could not be found.');
@@ -680,7 +660,6 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
       stock: 0,
       isActive: true,
       processes: [],
-      offices: [],
       customerApprovals: [],
       linkedSupplies: [],
       inventorySetup: null,
@@ -716,19 +695,17 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
       }
       product.productHeaderId = parsedProductHeaderId;
     }
-    for (const [key, limit] of [['processes', 100], ['offices', 50]]) {
-      if (Object.hasOwn(input, key) && input[key] !== undefined) {
-        if (!Array.isArray(input[key]) || input[key].length > limit) {
-          const error = new Error('The submitted collection exceeds the supported size.');
-          error.status = 400;
-          throw error;
-        }
-        product[key] = input[key].map(row => {
-          return {
-            name: typeof row.name === 'string' ? row.name.trim() : ''
-          };
-        });
+    if (Object.hasOwn(input, 'processes') && input.processes !== undefined) {
+      if (!Array.isArray(input.processes) || input.processes.length > 100) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
       }
+      product.processes = input.processes.map(row => {
+        return {
+          name: typeof row.name === 'string' ? row.name.trim() : ''
+        };
+      });
     }
     if (Object.hasOwn(input, 'customerApprovals') && input['customerApprovals'] !== undefined) {
       if (!Array.isArray(input.customerApprovals) || input.customerApprovals.length > 100) {
@@ -900,12 +877,6 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
         await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.ProductProcesses(productId,position,name) VALUES(@id,@position,@name)');
       }
     }
-    if (!current || Object.hasOwn(input, 'offices') && input.offices !== undefined) {
-      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductOffices WHERE productId=@id');
-      for (const [position, row] of product.offices.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.ProductOffices(productId,position,name) VALUES(@id,@position,@name)');
-      }
-    }
     if (!current || Object.hasOwn(input, 'customerApprovals') && input.customerApprovals !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductCustomerApprovals WHERE productId=@id');
       for (const [position, row] of product.customerApprovals.entries()) {
@@ -927,14 +898,12 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
     FROM dbo.Products p
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
-SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
   const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
     ...productRow,
     processes: [],
-    offices: [],
     customerApprovals: [],
     linkedSupplies: []
   }]));
@@ -945,15 +914,11 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["offices"].push(productRow);
+  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
-  for (const {
-    productId: linkedProductId,
-    ...productRow
-  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
   if (!recordRows.length) {
     const error = new Error('The product could not be found.');
@@ -994,14 +959,12 @@ router.put('/products/:id', async (req, res) => {
     FROM dbo.Products p WITH (UPDLOCK,HOLDLOCK)
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
-SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
       const productsById2 = new Map(currentResult.recordsets[0].map(productRow => [productRow.id, {
         ...productRow,
         processes: [],
-        offices: [],
         customerApprovals: [],
         linkedSupplies: []
       }]));
@@ -1012,15 +975,11 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
       for (const {
         productId: linkedProductId,
         ...productRow
-      } of currentResult.recordsets[2]) productsById2.get(linkedProductId)?.["offices"].push(productRow);
+      } of currentResult.recordsets[2]) productsById2.get(linkedProductId)?.["customerApprovals"].push(productRow);
       for (const {
         productId: linkedProductId,
         ...productRow
-      } of currentResult.recordsets[3]) productsById2.get(linkedProductId)?.["customerApprovals"].push(productRow);
-      for (const {
-        productId: linkedProductId,
-        ...productRow
-      } of currentResult.recordsets[4]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
+      } of currentResult.recordsets[3]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
       const currentRows = [...productsById2.values()];
       if (!currentRows.length) {
         const error = new Error('The product could not be found.');
@@ -1039,7 +998,6 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
       stock: 0,
       isActive: true,
       processes: [],
-      offices: [],
       customerApprovals: [],
       linkedSupplies: [],
       inventorySetup: null,
@@ -1076,19 +1034,17 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
       }
       product.productHeaderId = parsedProductHeaderId;
     }
-    for (const [key, limit] of [['processes', 100], ['offices', 50]]) {
-      if (Object.hasOwn(input, key) && input[key] !== undefined) {
-        if (!Array.isArray(input[key]) || input[key].length > limit) {
-          const error = new Error('The submitted collection exceeds the supported size.');
-          error.status = 400;
-          throw error;
-        }
-        product[key] = input[key].map(row => {
-          return {
-            name: typeof row.name === 'string' ? row.name.trim() : ''
-          };
-        });
+    if (Object.hasOwn(input, 'processes') && input.processes !== undefined) {
+      if (!Array.isArray(input.processes) || input.processes.length > 100) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
       }
+      product.processes = input.processes.map(row => {
+        return {
+          name: typeof row.name === 'string' ? row.name.trim() : ''
+        };
+      });
     }
     if (Object.hasOwn(input, 'customerApprovals') && input['customerApprovals'] !== undefined) {
       if (!Array.isArray(input.customerApprovals) || input.customerApprovals.length > 100) {
@@ -1260,12 +1216,6 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
         await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.ProductProcesses(productId,position,name) VALUES(@id,@position,@name)');
       }
     }
-    if (!current || Object.hasOwn(input, 'offices') && input.offices !== undefined) {
-      await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductOffices WHERE productId=@id');
-      for (const [position, row] of product.offices.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.ProductOffices(productId,position,name) VALUES(@id,@position,@name)');
-      }
-    }
     if (!current || Object.hasOwn(input, 'customerApprovals') && input.customerApprovals !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductCustomerApprovals WHERE productId=@id');
       for (const [position, row] of product.customerApprovals.entries()) {
@@ -1287,14 +1237,12 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
     FROM dbo.Products p
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
-SELECT productId,name FROM dbo.ProductOffices WHERE productId=@id ORDER BY productId,position;
 SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate,CONVERT(varchar(10),eolDate,23) AS eolDate,approvalRemarks,eolRemarks FROM dbo.ProductCustomerApprovals WHERE productId=@id ORDER BY productId,position;
     SELECT l.productId,l.suppliesId,s.code,s.name,s.description,l.quantity,l.unit
     FROM dbo.ProductSupplies l JOIN dbo.Supplies s ON s.id=l.suppliesId WHERE l.productId=@id ORDER BY l.productId,l.position;`);
   const productsById = new Map(recordResult.recordsets[0].map(productRow => [productRow.id, {
     ...productRow,
     processes: [],
-    offices: [],
     customerApprovals: [],
     linkedSupplies: []
   }]));
@@ -1305,15 +1253,11 @@ SELECT productId,customerId,CONVERT(varchar(10),approvalDate,23) AS approvalDate
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["offices"].push(productRow);
+  } of recordResult.recordsets[2]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
   for (const {
     productId: linkedProductId,
     ...productRow
-  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.["customerApprovals"].push(productRow);
-  for (const {
-    productId: linkedProductId,
-    ...productRow
-  } of recordResult.recordsets[4]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
+  } of recordResult.recordsets[3]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
   if (!recordRows.length) {
     const error = new Error('The product could not be found.');

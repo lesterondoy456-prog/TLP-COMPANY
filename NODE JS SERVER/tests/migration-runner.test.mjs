@@ -96,5 +96,6 @@ test('schema migrations never create database defaults, check rules or computed 
     assert.doesNotMatch(source, /\bDEFAULT\s+(?:N?'|[0-9(]|SYSUTCDATETIME)/i, filename);
     assert.doesNotMatch(source, /\bCHECK\s*\(/i, filename);
     assert.doesNotMatch(source, /\bPERSISTED\b/i, filename);
+    assert.doesNotMatch(source, /\bCREATE\s+TABLE\s+dbo\.(?:ProductOffices|SupplyOffices)\b/i, filename);
   }
 });

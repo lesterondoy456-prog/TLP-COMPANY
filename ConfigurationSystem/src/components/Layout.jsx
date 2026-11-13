@@ -63,7 +63,7 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
   return <div className="app-shell">
     {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
     <aside className={'sidebar ' + (menuOpen ? 'open' : '')}>
-      <div className="brand"><div className="brand-mark">T</div><div><strong>TLP COMPANY</strong><span>{app.appName}</span></div></div>
+      <div className="brand"><div className="brand-mark">T</div><div><strong>TTI Laguna Philippines Inc.</strong><span>{app.appName}</span></div></div>
       <p className="nav-label">{app.label.toUpperCase()}</p>
       <nav aria-label={app.navLabel}>
         {tabs.map(item => <button key={item.id} className={'nav-item ' + (tab === item.id ? 'active' : '')} aria-current={tab === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon name={item.icon} size={18} /><span>{item.title}</span></button>)}

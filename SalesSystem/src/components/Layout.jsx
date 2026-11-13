@@ -24,7 +24,7 @@ export default function Layout({ user, page, pages, data, loaded, onPage, onProf
   return <div className="app-shell">
     {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
     <aside id="sales-sidebar" className={'sidebar ' + (menuOpen ? 'open' : '')}>
-      <div className="brand"><div className="brand-mark">T</div><div><strong>TLP COMPANY</strong><span>SalesSystem</span></div></div>
+      <div className="brand"><div className="brand-mark">T</div><div><strong>TTI Laguna Philippines Inc.</strong><span>SalesSystem</span></div></div>
       <p className="nav-label">WORKSPACE</p>
       <nav aria-label="Sales system">
         {pages.filter(item => item.id !== 'users').map(item => <button key={item.id} className={'nav-item ' + (page === item.id ? 'active' : '')} aria-current={page === item.id ? 'page' : undefined} onClick={() => { onPage(item.id); setMenuOpen(false); }}>

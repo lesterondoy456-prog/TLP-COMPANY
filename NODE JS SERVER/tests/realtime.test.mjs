@@ -13,9 +13,9 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function cookie(system, id = 1, expires = Math.floor(Date.now() / 1000) + 3600) {
   const issued = Math.floor(Date.now() / 1000) - 1;
-  const value = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ sub: id, system, aud: `tlp-company-${system}`, iat: issued, exp: expires, jti: randomUUID() })).toString('base64url');
-  const key = createHmac('sha256', secret).update(`tlp-session:${system}`).digest();
-  return `tlp_${system}_session=${value}.${createHmac('sha256', key).update(value).digest('base64url')}`;
+  const value = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ sub: id, system, aud: `tti-company-${system}`, iat: issued, exp: expires, jti: randomUUID() })).toString('base64url');
+  const key = createHmac('sha256', secret).update(`tti-session:${system}`).digest();
+  return `tti_${system}_session=${value}.${createHmac('sha256', key).update(value).digest('base64url')}`;
 }
 
 // These adapters are the only database reachable by the real HTTP/router code.

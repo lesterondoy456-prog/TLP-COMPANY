@@ -208,12 +208,11 @@ router.get('/supplies', async (req, res) => {
   const scope = undefined;
   const recordsData = await request(scope).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
       FROM dbo.Supplies s   ORDER BY s.name,s.id;
-      SELECT suppliesId,name FROM dbo.SupplyOffices  ORDER BY suppliesId,position;
       SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules  ORDER BY suppliesId,position;
       SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
       FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId  ORDER BY l.suppliesId,l.position;`);
-  const recordsRows = new Map(recordsData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
-  ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+  const recordsRows = new Map(recordsData.recordsets[0].map(row => [row.id, { ...row, inventorySchedules: [], suppliers: [] }]));
+  ['inventorySchedules', 'suppliers'].forEach((key, index) => {
     for (const { suppliesId, ...row } of recordsData.recordsets[index + 1]) recordsRows.get(suppliesId)?.[key].push(row);
   });
   const records = [...recordsRows.values()];
@@ -230,12 +229,11 @@ router.get('/supplies/:id', async (req, res) => {
   }
   const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
       FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
-      SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
       SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id ORDER BY suppliesId,position;
       SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
       FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId WHERE l.suppliesId=@id ORDER BY l.suppliesId,l.position;`);
-  const recordRows = new Map(recordData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
-  ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+  const recordRows = new Map(recordData.recordsets[0].map(row => [row.id, { ...row, inventorySchedules: [], suppliers: [] }]));
+  ['inventorySchedules', 'suppliers'].forEach((key, index) => {
     for (const { suppliesId, ...row } of recordData.recordsets[index + 1]) recordRows.get(suppliesId)?.[key].push(row);
   });
   const record = [...recordRows.values()][0];
@@ -266,7 +264,7 @@ router.post('/supplies', async (req, res) => {
       error.status = 400;
       throw error;
     }
-    const value = { productId: null, inventorySetup: null, offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: null, thickness: null, netWeight: null, ...input };
+    const value = { productId: null, inventorySetup: null, inventorySchedules: [], suppliers: [], isActive: true, minimumStock: null, thickness: null, netWeight: null, ...input };
     for (const key of ['maker', 'name', 'description', 'remarks', 'color', 'unit', 'weightUnit', 'category']) {
       const entered = value[key] ?? '';
       if (typeof entered !== 'string' || entered.includes('\0')) {
@@ -347,7 +345,7 @@ router.post('/supplies', async (req, res) => {
         throw error;
       }
     }
-    for (const key of ['offices', 'inventorySchedules', 'suppliers']) {
+    for (const key of ['inventorySchedules', 'suppliers']) {
       if (!Array.isArray(value[key]) || value[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
         const error = new Error('Send master detail rows as objects.');
         error.status = 400;
@@ -405,19 +403,6 @@ router.post('/supplies', async (req, res) => {
     const savedId = inserted.recordset[0].id;
     await request(scope).input('id', sql.Int, savedId).input('code', sql.NVarChar(sql.MAX), 'S-' + String(savedId).padStart(8, '0').slice(-8))
       .query('UPDATE dbo.Supplies SET code=@code WHERE id=@id');
-    await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyOffices WHERE suppliesId=@id');
-    for (const [position, row] of value.offices.entries()) {
-      for (const key of ['name']) {
-        const entered = row[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) {
-          const error = new Error(`${key} must be text without null characters.`);
-          error.status = 400;
-          throw error;
-        }
-        row[key] = entered.trim() || null;
-      }
-      await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.SupplyOffices(suppliesId,position,name) VALUES(@id,@position,@name)');
-    }
     await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id');
     for (const [position, row] of value.inventorySchedules.entries()) {
       for (const key of ['month']) {
@@ -485,12 +470,11 @@ router.post('/supplies', async (req, res) => {
       .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, savedId).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
         FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
-        SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
         SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id ORDER BY suppliesId,position;
         SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
         FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId WHERE l.suppliesId=@id ORDER BY l.suppliesId,l.position;`);
-    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
-    ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, inventorySchedules: [], suppliers: [] }]));
+    ['inventorySchedules', 'suppliers'].forEach((key, index) => {
       for (const { suppliesId, ...row } of savedData.recordsets[index + 1]) savedRows.get(suppliesId)?.[key].push(row);
     });
     const saved = [...savedRows.values()][0];
@@ -526,12 +510,11 @@ router.put('/supplies/:id', async (req, res) => {
   const record = await transaction(async scope => {
     const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
         FROM dbo.Supplies s WITH (UPDLOCK,HOLDLOCK) WHERE s.id=@id ORDER BY s.name,s.id;
-        SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
         SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id ORDER BY suppliesId,position;
         SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
         FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId WHERE l.suppliesId=@id ORDER BY l.suppliesId,l.position;`);
-    const currentRows = new Map(currentData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
-    ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+    const currentRows = new Map(currentData.recordsets[0].map(row => [row.id, { ...row, inventorySchedules: [], suppliers: [] }]));
+    ['inventorySchedules', 'suppliers'].forEach((key, index) => {
       for (const { suppliesId, ...row } of currentData.recordsets[index + 1]) currentRows.get(suppliesId)?.[key].push(row);
     });
     const current = [...currentRows.values()][0];
@@ -545,7 +528,7 @@ router.put('/supplies/:id', async (req, res) => {
       error.status = 400;
       throw error;
     }
-    const value = { productId: null, inventorySetup: null, offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: null, thickness: null, netWeight: null, ...current, ...input };
+    const value = { productId: null, inventorySetup: null, inventorySchedules: [], suppliers: [], isActive: true, minimumStock: null, thickness: null, netWeight: null, ...current, ...input };
     for (const key of ['maker', 'name', 'description', 'remarks', 'color', 'unit', 'weightUnit', 'category']) {
       const entered = value[key] ?? '';
       if (typeof entered !== 'string' || entered.includes('\0')) {
@@ -634,7 +617,7 @@ router.put('/supplies/:id', async (req, res) => {
         throw error;
       }
     }
-    for (const key of ['offices', 'inventorySchedules', 'suppliers']) {
+    for (const key of ['inventorySchedules', 'suppliers']) {
       if (!Array.isArray(value[key]) || value[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
         const error = new Error('Send master detail rows as objects.');
         error.status = 400;
@@ -690,21 +673,6 @@ router.put('/supplies/:id', async (req, res) => {
     write.input('productId', sql.Int, value.productId).input('inventorySetup', sql.NVarChar(sql.MAX), value.inventorySetup).input('isActive', sql.Bit, value.isActive);
     await write.input('id', sql.Int, id).query(`UPDATE dbo.Supplies SET [maker]=@maker,[name]=@name,[description]=@description,[remarks]=@remarks,[color]=@color,[unit]=@unit,[weightUnit]=@weightUnit,[category]=@category,[minimumStock]=@minimumStock,[thickness]=@thickness,[netWeight]=@netWeight,[productId]=@productId,[inventorySetup]=@inventorySetup,[isActive]=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
     const savedId = id;
-    if (Object.hasOwn(input, 'offices')) {
-      await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyOffices WHERE suppliesId=@id');
-      for (const [position, row] of value.offices.entries()) {
-        for (const key of ['name']) {
-          const entered = row[key] ?? '';
-          if (typeof entered !== 'string' || entered.includes('\0')) {
-            const error = new Error(`${key} must be text without null characters.`);
-            error.status = 400;
-            throw error;
-          }
-          row[key] = entered.trim() || null;
-        }
-        await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.SupplyOffices(suppliesId,position,name) VALUES(@id,@position,@name)');
-      }
-    }
     if (Object.hasOwn(input, 'inventorySchedules')) {
       await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id');
       for (const [position, row] of value.inventorySchedules.entries()) {
@@ -776,12 +744,11 @@ router.put('/supplies/:id', async (req, res) => {
       .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, savedId).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
         FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
-        SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
         SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules WHERE suppliesId=@id ORDER BY suppliesId,position;
         SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
         FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId WHERE l.suppliesId=@id ORDER BY l.suppliesId,l.position;`);
-    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
-    ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+    const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, inventorySchedules: [], suppliers: [] }]));
+    ['inventorySchedules', 'suppliers'].forEach((key, index) => {
       for (const { suppliesId, ...row } of savedData.recordsets[index + 1]) savedRows.get(suppliesId)?.[key].push(row);
     });
     const saved = [...savedRows.values()][0];
@@ -823,12 +790,11 @@ router.get('/options', async (req, res) => {
   const supplierData = await request().query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers ORDER BY name,id`);
   const suppliesData = await request(scope).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
       FROM dbo.Supplies s   ORDER BY s.name,s.id;
-      SELECT suppliesId,name FROM dbo.SupplyOffices  ORDER BY suppliesId,position;
       SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules  ORDER BY suppliesId,position;
       SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
       FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId  ORDER BY l.suppliesId,l.position;`);
-  const suppliesRows = new Map(suppliesData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
-  ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+  const suppliesRows = new Map(suppliesData.recordsets[0].map(row => [row.id, { ...row, inventorySchedules: [], suppliers: [] }]));
+  ['inventorySchedules', 'suppliers'].forEach((key, index) => {
     for (const { suppliesId, ...row } of suppliesData.recordsets[index + 1]) suppliesRows.get(suppliesId)?.[key].push(row);
   });
   const supplies = [...suppliesRows.values()];
@@ -851,7 +817,7 @@ router.get('/options', async (req, res) => {
     currencies: currencies.filter(row => row.isActive).map(row => ({ ...row, code: row.shortName, description: row.name })),
     paymentTerms: terms.filter(row => row.isActive).filter(row => row.forSupplier), vatCodes: vatCodes.filter(row => row.isActive), taxCodes: taxCodes.filter(row => row.isActive),
     countries: countries.filter(row => row.isActive), suppliesCategories: categories.filter(row => row.isActive), warehouses: warehouses.filter(row => row.isActive), locations: locations.filter(row => row.isActive),
-    shipments: ['By Air', 'By Land', 'By Boat', 'N/A'], offices: [process.env.COMPANY_NAME || 'TLP COMPANY'],
+    shipments: ['By Air', 'By Land', 'By Boat', 'N/A'],
   });
 });
 
@@ -860,12 +826,11 @@ router.get('/purchasing-options', async (req, res) => {
   const supplierData = await request().query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers ORDER BY name,id`);
   const suppliesData = await request(scope).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
       FROM dbo.Supplies s   ORDER BY s.name,s.id;
-      SELECT suppliesId,name FROM dbo.SupplyOffices  ORDER BY suppliesId,position;
       SELECT suppliesId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM dbo.SupplyInventorySchedules  ORDER BY suppliesId,position;
       SELECT l.suppliesId,l.supplierId,s.name AS supplierName,CONVERT(varchar(60),l.moq) AS moq,CONVERT(varchar(60),l.price) AS price,l.currency,l.remarks
       FROM dbo.SupplySuppliers l JOIN dbo.Suppliers s ON s.id=l.supplierId  ORDER BY l.suppliesId,l.position;`);
-  const suppliesRows = new Map(suppliesData.recordsets[0].map(row => [row.id, { ...row, offices: [], inventorySchedules: [], suppliers: [] }]));
-  ['offices', 'inventorySchedules', 'suppliers'].forEach((key, index) => {
+  const suppliesRows = new Map(suppliesData.recordsets[0].map(row => [row.id, { ...row, inventorySchedules: [], suppliers: [] }]));
+  ['inventorySchedules', 'suppliers'].forEach((key, index) => {
     for (const { suppliesId, ...row } of suppliesData.recordsets[index + 1]) suppliesRows.get(suppliesId)?.[key].push(row);
   });
   const supplies = [...suppliesRows.values()];
@@ -888,7 +853,7 @@ router.get('/purchasing-options', async (req, res) => {
     currencies: currencies.filter(row => row.isActive).map(row => ({ ...row, code: row.shortName, description: row.name })),
     paymentTerms: terms.filter(row => row.isActive).filter(row => row.forSupplier), vatCodes: vatCodes.filter(row => row.isActive), taxCodes: taxCodes.filter(row => row.isActive),
     countries: countries.filter(row => row.isActive), suppliesCategories: categories.filter(row => row.isActive), warehouses: warehouses.filter(row => row.isActive), locations: locations.filter(row => row.isActive),
-    shipments: ['By Air', 'By Land', 'By Boat', 'N/A'], offices: [process.env.COMPANY_NAME || 'TLP COMPANY'],
+    shipments: ['By Air', 'By Land', 'By Boat', 'N/A'],
   });
 });
 
@@ -1190,7 +1155,7 @@ router.post('/purchase-requests', async (req, res) => {
     for (const field of ['requestedBy', 'requestedDept', 'checkedBy', 'approvedBy', 'approvedBy2']) req.input(field, sql.NVarChar(sql.MAX), value[field]);
     req.input('remarks', sql.NVarChar(sql.MAX), value.remarks);
     let saved;
-    const result = await req.input('branch', sql.NVarChar(sql.MAX), process.env.COMPANY_NAME || 'TLP COMPANY').input('preparedById', sql.Int, user.id).input('preparedBy', sql.NVarChar(sql.MAX), user.name)
+    const result = await req.input('branch', sql.NVarChar(sql.MAX), process.env.COMPANY_NAME || 'TTI Laguna Philippines Inc.').input('preparedById', sql.Int, user.id).input('preparedBy', sql.NVarChar(sql.MAX), user.name)
       .query(`INSERT INTO dbo.PurchaseRequests(number,prDate,neededDate,requestedBy,requestedDept,checkedBy,approvedBy,approvedBy2,remarks,branch,preparedById,preparedBy,status,createdAt,updatedAt) OUTPUT INSERTED.id
         VALUES(@number,@prDate,@neededDate,@requestedBy,@requestedDept,@checkedBy,@approvedBy,@approvedBy2,@remarks,@branch,@preparedById,@preparedBy,'draft',SYSUTCDATETIME(),SYSUTCDATETIME())`);
     saved = result.recordset[0].id;
@@ -1758,7 +1723,7 @@ router.post('/purchase-orders', async (req, res) => {
       .input('vatInclusive', sql.Bit, settings.vatInclusive).input('decimalInPrice', sql.Int, supplier.decimalInPrice).input('decimalInTotalPrice', sql.Int, supplier.decimalInTotalPrice)
       .input('deliveryAddress', sql.NVarChar(sql.MAX), value.deliveryAddress).input('remarks', sql.NVarChar(sql.MAX), value.remarks);
     let saved;
-    const result = await req.input('branch', sql.NVarChar(sql.MAX), process.env.COMPANY_NAME || 'TLP COMPANY').input('preparedById', sql.Int, user.id).input('preparedBy', sql.NVarChar(sql.MAX), user.name)
+    const result = await req.input('branch', sql.NVarChar(sql.MAX), process.env.COMPANY_NAME || 'TTI Laguna Philippines Inc.').input('preparedById', sql.Int, user.id).input('preparedBy', sql.NVarChar(sql.MAX), user.name)
       .query(`INSERT INTO dbo.PurchaseOrders(supplierId,supplierName,supplierAddress,supplierContactPerson,poDate,deliveryDate,currency,rate,paymentTerm,shipment,suppliesCategory,vatCode,vatRate,vatInclusive,decimalInPrice,decimalInTotalPrice,deliveryAddress,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount,branch,preparedById,preparedBy,status,createdAt,updatedAt) OUTPUT INSERTED.id VALUES(@supplierId,@supplierName,@supplierAddress,@supplierContactPerson,@poDate,@deliveryDate,@currency,@rate,@paymentTerm,@shipment,@suppliesCategory,@vatCode,@vatRate,@vatInclusive,@decimalInPrice,@decimalInTotalPrice,@deliveryAddress,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@branch,@preparedById,@preparedBy,'draft',SYSUTCDATETIME(),SYSUTCDATETIME())`);
     saved = result.recordset[0].id;
     await request(scope).input('id', sql.Int, saved).input('number', sql.NVarChar(sql.MAX), 'PO-' + String(saved).padStart(8, '0').slice(-8))

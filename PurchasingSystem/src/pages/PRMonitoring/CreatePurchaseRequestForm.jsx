@@ -46,7 +46,7 @@ export function CreatePurchaseRequestForm({ record, options, user, onClose, onSa
   return <Modal title={record ? 'Edit purchase request' : 'New purchase request'} subtitle="Prepare a supplies request, then post it from PR Monitoring when it is ready." className="purchase-document-modal" onClose={onClose} busy={editor.busy}>
     <form onSubmit={submit} noValidate><div className="modal-body purchase-form-body"><ErrorNotice message={editor.error} /><fieldset disabled={editor.busy}>
       <section className="purchase-section"><h3>Purchase Request</h3><div className="purchase-header-grid">
-        <ReadonlyField label="Branch" value="TLP COMPANY" />{input('number', 'PR #', { maxLength: 40 })}
+        <ReadonlyField label="Branch" value="TTI Laguna Philippines Inc." />{input('number', 'PR #', { maxLength: 40 })}
         {input('prDate', 'PR Date', { type: 'date', required: true })}{input('neededDate', 'PR Needed Date', { type: 'date', required: true })}
         <ActorField label="Prepared By" name={record?.preparedBy || user.name} />
         {input('requestedBy', 'Requested By', { maxLength: 150, list: editor.id + '-users' })}{input('requestedDept', 'Requested Dept', { maxLength: 150 })}

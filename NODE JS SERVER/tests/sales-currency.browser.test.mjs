@@ -150,7 +150,7 @@ test('empty or removed Configuration currencies cannot create or update an order
   await expect(dialog.getByRole('alert')).toContainText('Choose an active currency');
   assert.equal(writes.length, 0);
 
-  const invalidateOptions = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('tlp:sales:data-changed', { detail: { system: 'sales', resources: ['options'] } })));
+  const invalidateOptions = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('tti:sales:data-changed', { detail: { system: 'sales', resources: ['options'] } })));
   configured = [{ id: 1, code: 'USD', description: 'US Dollar', isActive: true }, { id: 2, code: 'GBP', description: 'Inactive Sterling', isActive: false }];
   await invalidateOptions();
   await expect.poll(() => currency.locator('option').evaluateAll(options => options.map(option => option.value))).toEqual(['', 'USD']);

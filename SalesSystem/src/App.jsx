@@ -16,7 +16,7 @@ export default function App() {
     window.addEventListener('session-expired', expire);
     return () => { active = false; window.removeEventListener('session-expired', expire); };
   }, []);
-  if (checking) return <div className="boot-screen"><div className="brand-mark">T</div><strong>TLP COMPANY</strong><span>Opening SalesSystem…</span></div>;
+  if (checking) return <div className="boot-screen"><div className="brand-mark">T</div><strong>TTI Laguna Philippines Inc.</strong><span>Opening SalesSystem…</span></div>;
   return user
     ? <SalesApp user={user} onUser={setUser} onLogout={async () => { await api('/api/sales/auth/logout', { method: 'POST' }); setUser(null); setError(''); }} />
     : <Login initialError={error} onLogin={async credentials => { const result = await api('/api/sales/auth/login', { method: 'POST', body: credentials }); setUser(result.user); setError(''); }} />;

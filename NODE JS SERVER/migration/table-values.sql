@@ -7,6 +7,20 @@ SET CONCAT_NULL_YIELDS_NULL ON;
 SET ARITHABORT ON;
 SET NUMERIC_ROUNDABORT OFF;
 
+-- A single company uses the systems; no Product/Supplies office links are saved.
+IF OBJECT_ID(N'dbo.ProductOffices',N'U') IS NOT NULL
+BEGIN
+  IF EXISTS(SELECT 1 FROM dbo.ProductOffices)
+    THROW 51000, 'Product office links must be archived before removing their table.', 1;
+  DROP TABLE dbo.ProductOffices;
+END;
+IF OBJECT_ID(N'dbo.SupplyOffices',N'U') IS NOT NULL
+BEGIN
+  IF EXISTS(SELECT 1 FROM dbo.SupplyOffices)
+    THROW 51000, 'Supply office links must be archived before removing their table.', 1;
+  DROP TABLE dbo.SupplyOffices;
+END;
+
 -- Values and business rules are supplied by the API requests.
 -- Identity keys, indexes, unique keys and foreign keys remain in the database.
 DECLARE @rules TABLE (tableName SYSNAME, constraintName SYSNAME);

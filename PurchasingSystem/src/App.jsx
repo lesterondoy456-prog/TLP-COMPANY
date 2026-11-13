@@ -55,7 +55,7 @@ export default function App() {
     setError('');
   }
 
-  if (checking) return <div className="boot-screen" role="status"><div className="brand-mark">T</div><strong>TLP COMPANY</strong><span>Opening {APP.appName}…</span></div>;
+  if (checking) return <div className="boot-screen" role="status"><div className="brand-mark">T</div><strong>TTI Laguna Philippines Inc.</strong><span>Opening {APP.appName}…</span></div>;
   return user
     ? <Layout user={user} onLogout={logout} app={APP} tabs={[{ id: 'purchase-requests', title: 'PR Monitoring', icon: 'file' }, { id: 'purchase-orders', title: 'PO Monitoring', icon: 'bag' }, { id: 'suppliers', title: 'Supplier', icon: 'users' }, { id: 'supplies', title: 'Supplies', icon: 'box' }, { id: 'receivings', title: 'Receiving Receipt', icon: 'shipping' }]} page={page} onNavigate={setPage} onProfile={() => setProfileOpen(true)} notice={notice} onNotice={setNotice}>
         {page === 'purchase-requests' && <PRMonitoring user={user} onNotice={setNotice} />}

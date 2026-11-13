@@ -33,7 +33,7 @@ export default function Login({ onLogin, initialError }) {
   return <main className="login-page">
     <ThemeToggle />
     <section className="login-story">
-      <div className="brand"><div className="brand-mark">T</div><div><strong>TLP COMPANY</strong><span>{APP.appName}</span></div></div>
+      <div className="brand"><div className="brand-mark">T</div><div><strong>TTI Laguna Philippines Inc.</strong><span>{APP.appName}</span></div></div>
       <div className="login-story-body">
         <span className="eyebrow">{APP.eyebrow}</span>
         <h1>{APP.headline[0]}<br />{APP.headline[1]}</h1>
@@ -41,7 +41,7 @@ export default function Login({ onLogin, initialError }) {
         <div className="workflow-visual">{APP.steps.map((step, index) => <React.Fragment key={step.label}>{index > 0 && <i />}<div><Icon name={step.icon} /><span>{step.label}</span></div></React.Fragment>)}</div>
         <div className="login-caption"><Icon name="shield" size={18} /><span>Your company account. Your dedicated workspace.</span></div>
       </div>
-      <span className="login-footer">TLP Company · {APP.appName}</span>
+      <span className="login-footer">TTI Laguna Philippines Inc. · {APP.appName}</span>
     </section>
     <section className="login-form-side"><div className="login-card">
       <span className="eyebrow">WELCOME BACK</span><h2>Sign in to {APP.appName}</h2><p>Use your ConfigurationSystem account.</p>

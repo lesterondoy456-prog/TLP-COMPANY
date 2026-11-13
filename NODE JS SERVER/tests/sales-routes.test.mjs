@@ -21,6 +21,7 @@ function routeFixture(steps, initial = {}) {
       return {
         input(key, _type, value) { values[key] = value; return this; },
         async query(query) {
+          assert.doesNotMatch(query, /dbo\.ProductOffices\b/, 'Product Office associations must never be queried or saved.');
           const next = pending.shift();
           assert.ok(next, 'Unexpected SQL: ' + query);
           assert.match(query, next.match);
@@ -55,7 +56,7 @@ const product = {
   id: 7, sku: 'P7', name: 'Product', description: 'Old', unit: 'PCS', secondaryUnit: '', currency: 'USD',
   category: '', stock: 5, price: '0.115300', productHeaderId: null, inventorySetup: 'monthly', isActive: true,
 };
-const productResult = record => ({ recordsets: [[record], [{ productId: 7, name: 'Cut' }], [{ productId: 7, name: 'TLP COMPANY' }], [], []] });
+const productResult = record => ({ recordsets: [[record], [{ productId: 7, name: 'Cut' }], [], []] });
 
 test('customer creation allocates its generated code and ordered delivery addresses atomically', async () => {
   const fixture = routeFixture([
@@ -106,12 +107,12 @@ test('partial Product edits preserve child rows, its historical stock and six-pl
     step(/UPDATE dbo\.Products/, [], values => { assert.equal(values.stock, 5); assert.equal(values.price, '0.115300'); assert.equal(values.description, 'Updated'); assert.equal(values.isActive, false); assert.equal(values.inventorySetup, 'monthly'); }),
     audit(), step(/SELECT p\.id/, productResult({ ...product, description: 'Updated', name: 'Updated', isActive: false })),
   ]);
-  const response = await fixture.invoke('put', '/products/:id', { description: 'Updated', productHeaderId: null, isActive: false, inventorySchedules: 'ignored stale client payload' });
+  const response = await fixture.invoke('put', '/products/:id', { description: 'Updated', productHeaderId: null, isActive: false, offices: 'ignored stale client payload', inventorySchedules: 'ignored stale client payload' });
   assert.equal(response.body.record.stock, 5);
   assert.equal(response.body.record.price, '0.115300');
   assert.equal(response.body.record.isActive, false);
   assert.deepEqual(response.body.record.processes, [{ name: 'Cut' }]);
-  assert.deepEqual(response.body.record.offices, [{ name: 'TLP COMPANY' }]);
+  assert.equal(Object.hasOwn(response.body.record, 'offices'), false);
   assert.equal(response.body.record.inventorySetup, 'monthly');
   assert.equal(Object.hasOwn(response.body.record, 'inventorySchedules'), false);
   fixture.done();
@@ -187,13 +188,13 @@ test('payment handlers reject negative, overprecision and excessive payments wit
 test('Product creation writes each named child table with its own literal SQL and preserves the linked supply unit', async () => {
   const input = {
     sku: 'P7', description: 'Product', unit: 'PCS', currency: 'USD', price: 0.1153, isActive: false,
-    processes: [{ name: 'Cut' }], offices: [{ name: 'TLP COMPANY' }],
+    processes: [{ name: 'Cut' }], offices: [{ name: 'TTI Laguna Philippines Inc.' }],
     customerApprovals: [{ customerId: 2, approvalDate: '2026-11-13', eolDate: null, approvalRemarks: 'Approved', eolRemarks: null }],
     inventorySetup: 'quarterly', inventorySchedules: [{ scheduleDate: 'not-a-date', month: 'ignored stale row' }],
     linkedSupplies: [{ suppliesId: 4, quantity: 0.000001, unit: 'KG' }],
   };
   const returned = { recordsets: [
-    [{ ...product, stock: 0, inventorySetup: input.inventorySetup }], [{ productId: 7, name: 'Cut' }], [{ productId: 7, name: 'TLP COMPANY' }],
+    [{ ...product, stock: 0, inventorySetup: input.inventorySetup }], [{ productId: 7, name: 'Cut' }],
     [{ productId: 7, ...input.customerApprovals[0] }], [{ productId: 7, ...input.linkedSupplies[0] }],
   ] };
   const fixture = routeFixture([
@@ -201,7 +202,6 @@ test('Product creation writes each named child table with its own literal SQL an
     step(/FROM dbo.Customers/, [{ id: 2 }]), step(/FROM dbo.Supplies/, [{ unit: 'KG', isActive: true }]),
     step(/INSERT INTO dbo.Products/, [{ id: 7 }], (values, _state, query) => { assert.equal(values.price, '0.1153'); assert.equal(values.stock, 0); assert.equal(values.isActive, true); assert.equal(values.inventorySetup, 'quarterly'); assert.equal(values.revision, null); assert.equal(values.moq, null); assert.equal(values.vatMode, null); assert.match(query, /createdAt,updatedAt/); }),
     step(/DELETE FROM dbo.ProductProcesses/), step(/INSERT INTO dbo.ProductProcesses/, [], values => assert.equal(values.name, 'Cut')),
-    step(/DELETE FROM dbo.ProductOffices/), step(/INSERT INTO dbo.ProductOffices/, [], values => assert.equal(values.name, 'TLP COMPANY')),
     step(/DELETE FROM dbo.ProductCustomerApprovals/), step(/INSERT INTO dbo.ProductCustomerApprovals/, [], values => { assert.equal(values.customerId, 2); assert.equal(values.approvalDate, '2026-11-13'); }),
     step(/DELETE FROM dbo.ProductSupplies/), step(/INSERT INTO dbo.ProductSupplies/, [], values => { assert.equal(values.suppliesId, 4); assert.equal(values.quantity, 0.000001); assert.equal(values.unit, 'KG'); }),
     audit(), step(/SELECT p.id/, returned),
@@ -209,6 +209,7 @@ test('Product creation writes each named child table with its own literal SQL an
   const response = await fixture.invoke('post', '/products', input);
   assert.equal(response.statusCode, 201);
   assert.deepEqual(response.body.record.customerApprovals, input.customerApprovals);
+  assert.equal(Object.hasOwn(response.body.record, 'offices'), false);
   assert.equal(response.body.record.inventorySetup, 'quarterly');
   assert.equal(Object.hasOwn(response.body.record, 'inventorySchedules'), false);
   assert.deepEqual(response.body.record.linkedSupplies, input.linkedSupplies);
@@ -218,11 +219,21 @@ test('Product creation writes each named child table with its own literal SQL an
     const reader = routeFixture([step(/SELECT p.id/, returned)]);
     const read = await reader.invoke('get', path, {});
     const record = path === '/products' ? read.body.records[0] : read.body.record;
-    assert.deepEqual(record.linkedSupplies, input.linkedSupplies, 'Supplies must map from the shifted fifth recordset.');
+    assert.deepEqual(record.customerApprovals, input.customerApprovals, 'Approvals must map from the shifted third recordset.');
+    assert.deepEqual(record.linkedSupplies, input.linkedSupplies, 'Supplies must map from the shifted fourth recordset.');
+    assert.equal(Object.hasOwn(record, 'offices'), false);
     assert.equal(record.inventorySetup, 'quarterly');
     assert.equal(Object.hasOwn(record, 'inventorySchedules'), false);
     reader.done();
   }
+  const optionSets = [[{ id: 1, name: 'PCS' }], [{ id: 1, code: 'USD' }], [], [], [], [], [{ name: 'Cut' }]];
+  const optionsReader = routeFixture([step(/SELECT id,shortName AS name/, { recordsets: optionSets })]);
+  const options = await optionsReader.invoke('get', '/product-options', {});
+  assert.deepEqual(options.body.units, optionSets[0]);
+  assert.deepEqual(options.body.currencies, optionSets[1]);
+  assert.deepEqual(options.body.processes, ['Cut']);
+  assert.equal(Object.hasOwn(options.body, 'offices'), false);
+  optionsReader.done();
 });
 
 

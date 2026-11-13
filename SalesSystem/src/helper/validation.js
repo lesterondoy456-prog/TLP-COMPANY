@@ -141,7 +141,7 @@ function validateProduct(input, current) {
     ...Object.fromEntries(PRODUCT_QUANTITIES.map(key => [key, null])),
     revision: null, vatMode: null, productHeaderId: null,
     price: null, stock: 0, isActive: true,
-    processes: [], offices: [], customerApprovals: [], linkedSupplies: [],
+    processes: [], customerApprovals: [], linkedSupplies: [],
     inventorySetup: null,
     ...(current || {}),
   };
@@ -172,7 +172,6 @@ function validateProduct(input, current) {
   }
   if (result.secondaryUnit && result.quantityPerSecondaryUnit <= 0) throw new ApiError(400, 'Qty per UOP2 must be greater than zero when UOP2 is selected.');
   if (has(input, 'processes')) result.processes = namedRows(input.processes, 'Processes', 100);
-  if (has(input, 'offices')) result.offices = namedRows(input.offices, 'Offices', 50);
   if (has(input, 'customerApprovals')) {
     const customers = new Set();
     result.customerApprovals = rows(input.customerApprovals, 'Customer approvals', 100).map(row => {
@@ -379,7 +378,7 @@ const PRODUCT_FORM_NUMBERS = {
   weight: { label: 'Weight', places: 6 },
 };
 
-const PRODUCT_FORM_ROW_LIMITS = { processes: 100, offices: 50, customerApprovals: 100, linkedSupplies: 200 };
+const PRODUCT_FORM_ROW_LIMITS = { processes: 100, customerApprovals: 100, linkedSupplies: 200 };
 
 function dateIsValid(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -421,9 +420,6 @@ export function validateProductForm(form) {
   });
   form.processes.forEach((row, index) => {
     if (!row.name.trim() || row.name.trim().length > 150) errors['processes.' + index + '.name'] = 'Enter a process name with up to 150 characters.';
-  });
-  form.offices.forEach((row, index) => {
-    if (row.selected && (!row.name.trim() || row.name.trim().length > 150)) errors['offices.' + index + '.name'] = 'Enter an office name with up to 150 characters.';
   });
   const seenSupplies = new Set();
   form.linkedSupplies.forEach((row, index) => {

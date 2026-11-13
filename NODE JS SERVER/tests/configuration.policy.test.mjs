@@ -53,7 +53,7 @@ test('unit precision and payment-term calendar controls accept only supported va
 
 test('bank and currency fields roundtrip without accepting writable audit or identity fields', () => {
   const bank = validateConfiguration('banks', {
-    name: ' Bank Name ', shortName: ' BN ', accountNo: '001234567890', accountName: 'TLP COMPANY', swiftCode: 'SWIFT123',
+    name: ' Bank Name ', shortName: ' BN ', accountNo: '001234567890', accountName: 'TTI Laguna Philippines Inc.', swiftCode: 'SWIFT123',
     branchName: 'Makati', address: 'Office Address', accountType: 'Current', currency: 'PHP', account: '1010',
     id: 999, deletedDate: 'forged', createdAt: 'forged', isActive: false,
   });

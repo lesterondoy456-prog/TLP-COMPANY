@@ -1,7 +1,7 @@
-name: tlp-company
+name: tti-company
 services:
   nodejs-server:
-    image: tlp-company-nodejs-server:local
+    image: tti-company-nodejs-server:local
     build:
       context: .
       dockerfile: Dockerfile
@@ -15,7 +15,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
   sales-system:
-    image: tlp-company-sales-system:local
+    image: tti-company-sales-system:local
     build:
       context: ../SalesSystem
     restart: unless-stopped
@@ -27,7 +27,7 @@ services:
       nodejs-server:
         condition: service_healthy
   warehouse-system:
-    image: tlp-company-warehouse-system:local
+    image: tti-company-warehouse-system:local
     build:
       context: ../WarehouseSystem
     restart: unless-stopped
@@ -39,7 +39,7 @@ services:
       nodejs-server:
         condition: service_healthy
   purchasing-system:
-    image: tlp-company-purchasing-system:local
+    image: tti-company-purchasing-system:local
     build:
       context: ../PurchasingSystem
     restart: unless-stopped
@@ -51,7 +51,7 @@ services:
       nodejs-server:
         condition: service_healthy
   configuration-system:
-    image: tlp-company-configuration-system:local
+    image: tti-company-configuration-system:local
     build:
       context: ../ConfigurationSystem
     restart: unless-stopped

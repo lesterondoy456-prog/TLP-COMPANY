@@ -28,9 +28,9 @@ function storedBody(body) {
 
 export function mockPurchasing(actor, warehouseActor) {
   const supplier = { id: 50, code: 'SUP-MOCK', name: 'Mock Supplier', shortName: 'Mock', businessStyle: 'Wholesale', address: 'Supplier Office', contactPerson: 'Supplier Contact', paymentTerm: '30 DAYS', vatCode: 'VS', vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, isActive: true };
-  const supplies = { id: 30, code: 'S-MOCK', name: 'Mock Paper', description: 'Paper Roll', unit: 'kg', minimumStock: '1.000000', category: 'Raw Materials', stock: '0.000000', isActive: true, suppliers: [{ supplierId: 50, price: '5.000000', currency: 'PHP', moq: '0.000000', remarks: '' }], offices: [], inventorySchedules: [] };
+  const supplies = { id: 30, code: 'S-MOCK', name: 'Mock Paper', description: 'Paper Roll', unit: 'kg', minimumStock: '1.000000', category: 'Raw Materials', stock: '0.000000', isActive: true, suppliers: [{ supplierId: 50, price: '5.000000', currency: 'PHP', moq: '0.000000', remarks: '' }], inventorySchedules: [] };
   const options = {
-    suppliers: [supplier], supplies: [supplies], users: [actor], products: [], offices: ['TLP COMPANY'], shipments: ['By Air', 'By Land', 'By Boat', 'N/A'],
+    suppliers: [supplier], supplies: [supplies], users: [actor], products: [], shipments: ['By Air', 'By Land', 'By Boat', 'N/A'],
     units: [{ id: 1, name: 'kg', description: 'Kilogram', forSupplies: true, isActive: true }], currencies: [{ id: 1, code: 'PHP', description: 'Philippine Peso', isDefault: true, isActive: true }],
     paymentTerms: [{ id: 1, description: '30 DAYS', forSupplier: true, isActive: true }], vatCodes: [{ id: 1, code: 'VS', description: 'Vatable Sales', rate: 12, isActive: true }],
     taxCodes: [], countries: [], suppliesCategories: [{ id: 1, name: 'Raw Materials', isActive: true }],
@@ -83,7 +83,7 @@ export function mockPurchasing(actor, warehouseActor) {
         }
         if (kind === 'purchase-requests' && method === 'POST' && !rawId) {
           const values = storedBody(body);
-          const record = { ...values, id: 1, number: 'PR-MOCK-001', branch: 'TLP COMPANY', status: 'draft', preparedBy: actor.name, preparedById: actor.id, items: values.items.map((item, index) => ({ ...item, id: 100 + index, requestId: 1, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit })) };
+          const record = { ...values, id: 1, number: 'PR-MOCK-001', branch: 'TTI Laguna Philippines Inc.', status: 'draft', preparedBy: actor.name, preparedById: actor.id, items: values.items.map((item, index) => ({ ...item, id: 100 + index, requestId: 1, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit })) };
           requests.push(record);
           return { status: 201, json: { record: requestRows()[0] } };
         }
@@ -94,7 +94,7 @@ export function mockPurchasing(actor, warehouseActor) {
             return { ...item, suppliesId: source.suppliesId, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit, requestNumber: source.requestNumber, requestId: 1 };
           });
           const totals = calculatePurchaseTotals(items, { vatRate: 12, vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2 });
-          const record = { ...values, ...totals, id: 1, number: 'PO-MOCK-001', branch: 'TLP COMPANY', status: 'draft', supplierName: supplier.name, supplierAddress: supplier.address, supplierContactPerson: supplier.contactPerson, vatRate: '12.000000', vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, preparedBy: actor.name, preparedById: actor.id, items: totals.items.map((item, index) => ({ ...item, id: 200 + index, orderId: 1, receivedQuantity: '0.000000' })) };
+          const record = { ...values, ...totals, id: 1, number: 'PO-MOCK-001', branch: 'TTI Laguna Philippines Inc.', status: 'draft', supplierName: supplier.name, supplierAddress: supplier.address, supplierContactPerson: supplier.contactPerson, vatRate: '12.000000', vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, preparedBy: actor.name, preparedById: actor.id, items: totals.items.map((item, index) => ({ ...item, id: 200 + index, orderId: 1, receivedQuantity: '0.000000' })) };
           orders.push(record);
           return { status: 201, json: { record: orderRows()[0] } };
         }

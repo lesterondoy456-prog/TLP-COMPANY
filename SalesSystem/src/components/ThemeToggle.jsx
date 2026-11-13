@@ -4,11 +4,11 @@ export default function ThemeToggle() {
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('tlp-theme', theme); } catch { /* Private browser storage can be unavailable. */ }
+    try { localStorage.setItem('tti-theme', theme); } catch { /* Private browser storage can be unavailable. */ }
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0b1322' : '#f3f6fc');
   }, [theme]);
   useEffect(() => {
-    const sync = event => { if (event.key === 'tlp-theme' && ['dark', 'light'].includes(event.newValue)) setTheme(event.newValue); };
+    const sync = event => { if (event.key === 'tti-theme' && ['dark', 'light'].includes(event.newValue)) setTheme(event.newValue); };
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
   }, []);

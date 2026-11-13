@@ -79,10 +79,6 @@ export function validateSupplies(form, fields = SUPPLIES_TEXT) {
     if ((row.month || '').length > 40) invalid[key + '.month'] = 'Use 40 characters or fewer.';
   });
   if (!['', 'monthly', 'quarterly'].includes(form.inventorySetup)) invalid.inventorySetup = 'Choose Monthly or Quarterly.';
-  if (form.offices.length > 50) invalid.offices = 'Use no more than 50 offices.';
-  form.offices.forEach((row, index) => {
-    if (!String(row.name || '').trim() || row.name.length > 150) invalid['offices.' + index + '.name'] = 'Enter an office name up to 150 characters.';
-  });
   if (form.suppliers.length > 100) invalid.suppliers = 'Use no more than 100 supplier rows.';
   if (form.inventorySchedules.length > 100) invalid.inventorySchedules = 'Use no more than 100 schedule rows.';
   return invalid;

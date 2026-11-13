@@ -37,7 +37,7 @@ const NUMBER_FIELDS = {
   thickness: { label: 'Thickness', places: 6 },
   weight: { label: 'Weight', places: 6 },
 };
-const ROW_LIMITS = { processes: 100, offices: 50, customerApprovals: 100, linkedSupplies: 200 };
+const ROW_LIMITS = { processes: 100, customerApprovals: 100, linkedSupplies: 200 };
 const MONTHLY_SCHEDULE = [
   { sched: 'Apr-30', month: 'April' },
   { sched: 'Aug-31', month: 'August' },
@@ -68,7 +68,6 @@ function initialValues(record) {
     vatMode: record?.vatMode ?? '',
     productHeaderId: record?.productHeaderId ?? '',
     processes: (record?.processes || []).map(row => ({ name: row.name || '' })),
-    offices: (record?.offices || []).map(row => ({ name: row.name || '', selected: true })),
     customerApprovals: (record?.customerApprovals || []).map(row => ({ ...row, approvalDate: dateInput(row.approvalDate), eolDate: dateInput(row.eolDate) })),
     inventorySetup: record?.inventorySetup ?? '',
     linkedSupplies: (record?.linkedSupplies || []).map(row => ({ ...row })),
@@ -110,7 +109,6 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
   const categories = (options.categories || []).filter(row => row.isActive !== false);
   const supplies = (options.supplies || []).filter(row => row.isActive !== false);
   const headers = (options.headers || []).filter(row => Number(row.id) !== Number(record?.id));
-  const officeNames = [...new Set(['TLP COMPANY', ...(options.offices || []), ...form.offices.map(row => row.name)])].filter(Boolean);
   const inventorySchedule = form.inventorySetup === 'monthly' ? MONTHLY_SCHEDULE : form.inventorySetup === 'quarterly' ? QUARTERLY_SCHEDULE : [];
 
   function set(key, value) {
@@ -222,7 +220,6 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
     body.vatMode = form.vatMode || null;
     body.productHeaderId = form.productHeaderId === '' ? null : Number(form.productHeaderId);
     body.processes = form.processes.map(row => ({ name: row.name.trim() }));
-    body.offices = form.offices.filter(row => row.selected).map(row => ({ name: row.name.trim() }));
     body.customerApprovals = form.customerApprovals.map(row => ({
         customerId: Number(row.customerId),
         approvalDate: row.approvalDate || null,
@@ -294,10 +291,6 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
                   {!form.processes.length && <p className="product-empty-rows">No processes added.</p>}
                 </div>
                 <datalist id={formId + '-process-options'}>{(options.processes || []).map(name => <option key={name} value={name} />)}</datalist>
-              </section>
-              <section className="product-section">
-                <h3>Office</h3>
-                <div className="product-office-grid">{officeNames.map(name => <label className="checkbox" key={name}><input type="checkbox" checked={form.offices.some(row => row.name === name && row.selected)} disabled={!form.offices.some(row => row.name === name && row.selected) && form.offices.length >= ROW_LIMITS.offices} onChange={event => set('offices', event.target.checked ? [...form.offices.filter(row => row.name !== name), { name, selected: true }] : form.offices.filter(row => row.name !== name))} />{name}</label>)}</div>
               </section>
             </div>
           </div>

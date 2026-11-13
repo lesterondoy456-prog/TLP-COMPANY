@@ -53,7 +53,7 @@ function fixture(overrides = {}) {
 
 function signedToken(system, payload, header = { alg: 'HS256', typ: 'JWT' }) {
   const value = Buffer.from(JSON.stringify(header)).toString('base64url') + '.' + Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const key = createHmac('sha256', secret).update(`tlp-session:${system}`).digest();
+  const key = createHmac('sha256', secret).update(`tti-session:${system}`).digest();
   return value + '.' + createHmac('sha256', key).update(value).digest('base64url');
 }
 
@@ -63,7 +63,7 @@ test('actual login handlers issue isolated JWT cookies using each system login t
     const result = await api.login(system);
     const cookie = result.headers['Set-Cookie'];
     const token = cookie.split(';')[0].split('=')[1];
-    assert.match(cookie, new RegExp(`^tlp_${system}_session=`));
+    assert.match(cookie, new RegExp(`^tti_${system}_session=`));
     assert.ok(cookie.includes(`Path=/api/${system}; HttpOnly; SameSite=Lax`));
     assert.ok(!cookie.includes('Max-Age='));
     assert.equal(result.body.user.system, system);
@@ -71,7 +71,7 @@ test('actual login handlers issue isolated JWT cookies using each system login t
     assert.equal(token.split('.').length, 3);
     const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
     assert.equal(payload.sub, 1);
-    assert.equal(payload.aud, `tlp-company-${system}`);
+    assert.equal(payload.aud, `tti-company-${system}`);
     assert.equal(payload.system, system);
     assert.equal(payload.exp - payload.iat, 8 * 3600);
     assert.ok(payload.jti);
@@ -83,7 +83,7 @@ test('actual login handlers issue isolated JWT cookies using each system login t
     for (const other of systems.filter(value => value !== system)) {
       const before = api.calls.length;
       await assert.rejects(api.session(other, cookie), unauthorized);
-      await assert.rejects(api.session(other, `tlp_${other}_session=${token}`), unauthorized);
+      await assert.rejects(api.session(other, `tti_${other}_session=${token}`), unauthorized);
       assert.equal(api.calls.length, before, 'Foreign JWTs must be rejected before SQL.');
     }
     await assert.rejects(api.session(system, cookie, secret + '-wrong'), unauthorized);
@@ -99,7 +99,7 @@ test('remembered login and logout use the correct system cookie, expiry and secu
     const payload = JSON.parse(Buffer.from(cookie.split('.')[1], 'base64url'));
     assert.equal(payload.exp - payload.iat, 7 * 86400);
     const logout = await api.logout(system);
-    assert.equal(logout.headers['Set-Cookie'], `tlp_${system}_session=; Path=/api/${system}; HttpOnly; SameSite=Lax; Max-Age=0; Secure`);
+    assert.equal(logout.headers['Set-Cookie'], `tti_${system}_session=; Path=/api/${system}; HttpOnly; SameSite=Lax; Max-Age=0; Secure`);
     assert.equal(logout.body.success, true);
   }
 });
@@ -111,13 +111,13 @@ test('actual authentication middleware rejects expired, tampered or incorrectly 
   const original = JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
   const before = api.calls.length;
   for (const changes of [
-    { system: 'sales' }, { system: undefined }, { aud: 'tlp-company-sales' }, { aud: undefined },
+    { system: 'sales' }, { system: undefined }, { aud: 'tti-company-sales' }, { aud: undefined },
     { sub: 0 }, { sub: 1.5 }, { sub: '1' }, { sub: 2147483648 },
     { exp: original.iat }, { exp: original.iat - 1 }, { iat: original.iat + 120 },
-  ]) await assert.rejects(api.session(system, `tlp_${system}_session=${signedToken(system, { ...original, ...changes })}`), unauthorized);
-  await assert.rejects(api.session(system, `tlp_${system}_session=${signedToken(system, original, { alg: 'none', typ: 'JWT' })}`), unauthorized);
+  ]) await assert.rejects(api.session(system, `tti_${system}_session=${signedToken(system, { ...original, ...changes })}`), unauthorized);
+  await assert.rejects(api.session(system, `tti_${system}_session=${signedToken(system, original, { alg: 'none', typ: 'JWT' })}`), unauthorized);
   for (const malformed of ['', 'not-a-jwt', token + '.extra', token.slice(0, -8), 'x'.repeat(2049)]) {
-    await assert.rejects(api.session(system, `tlp_${system}_session=${malformed}`), unauthorized);
+    await assert.rejects(api.session(system, `tti_${system}_session=${malformed}`), unauthorized);
   }
   assert.equal(api.calls.length, before);
 });
