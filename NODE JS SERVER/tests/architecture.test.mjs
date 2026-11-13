@@ -22,6 +22,7 @@ for (const [project, port] of Object.entries(systems)) {
     assert.ok(packageJson.dependencies?.react && packageJson.dependencies?.['react-dom']);
     assert.ok(packageJson.devDependencies?.vite);
     assert.match(packageJson.scripts?.build || '', /\bvite\s+build\b/);
+    assert.match(packageJson.scripts?.start || '', /^vite\s+preview\b/);
     assert.doesNotMatch(packageJson.scripts?.start || '', /NODE JS SERVER|(?:Sales|Purchasing|Warehouse|Configuration)System/);
     const lock = JSON.parse(await readFile(path.join(directory, 'package-lock.json'), 'utf8'));
     assert.equal(lock.name, packageJson.name);
@@ -30,8 +31,9 @@ for (const [project, port] of Object.entries(systems)) {
     await access(path.join(directory, 'src', 'main.jsx'));
     await access(path.join(directory, 'src', 'App.jsx'));
     const config = await readFile(path.join(directory, 'vite.config.js'), 'utf8');
-    assert.match(config, new RegExp('\\bport\\s*:\\s*' + port + '\\b'));
-    assert.match(config, /['"]\/api['"][\s\S]*?target\s*:\s*['"]http:\/\/127\.0\.0\.1:5189['"]/);
+    for (const mode of ['server', 'preview']) assert.match(config, new RegExp('\\b' + mode + '\\s*:\\s*\\{[^}]*\\bport\\s*:\\s*' + port + '\\b'));
+    assert.match(config, /process\.env\.API_PROXY_TARGET\s*\|\|\s*['"]http:\/\/localhost:5189['"]/);
+    assert.match(config, /['"]\/api['"][\s\S]*?target\s*:/);
     assert.match(config, /changeOrigin\s*:\s*false/);
     const files = [...await sourceFiles(path.join(directory, 'src')), path.join(directory, 'vite.config.js')];
     for (const filename of files) {
@@ -48,8 +50,22 @@ for (const [project, port] of Object.entries(systems)) {
     const asset = builtHtml.match(/src=["']\/(assets\/[^"']+\.js)["']/)?.[1];
     assert.ok(asset, `${project} must have its own built JavaScript entry.`);
     await access(path.join(directory, 'dist', asset));
+    await assert.rejects(access(path.join(directory, 'nginx.conf')), error => error.code === 'ENOENT');
+    const dockerfile = await readFile(path.join(directory, 'Dockerfile'), 'utf8');
+    assert.match(dockerfile, /FROM\s+node:/i);
+    assert.match(dockerfile, /npm\s+run\s+build/);
+    assert.match(dockerfile, new RegExp('\\bEXPOSE\\s+' + port + '\\b'));
+    assert.match(dockerfile, /CMD\s*\[\s*"npm"\s*,\s*"start"\s*\]/);
+    assert.doesNotMatch(dockerfile, /nginx/i);
   });
 }
+
+test('frontend containers use their own Vite ports and the shared API proxy target without Nginx', async () => {
+  const compose = await readFile(path.join(backend, 'compose.yaml'), 'utf8');
+  assert.doesNotMatch(compose, /nginx/i);
+  assert.equal([...compose.matchAll(/API_PROXY_TARGET:\s*["']?http:\/\/nodejs-server:5189/g)].length, 4);
+  for (const port of Object.values(systems)) assert.match(compose, new RegExp(':' + port + '["\']?\\s*$', 'm'));
+});
 
 test('native backend entry wires four independent APIs without the old ClientApi or router', async () => {
   await assert.rejects(access(path.join(backend, 'Api', 'ClientApi.js')), error => error.code === 'ENOENT');

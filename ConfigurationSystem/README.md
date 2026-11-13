@@ -1,25 +1,35 @@
-﻿# ConfigurationSystem
+# ConfigurationSystem
 
-Independent React/Vite application for TLP Company configuration.
+Independent React/Vite project on port **5192**. Company reference masters and the read-only audit trail. It owns its source, dependencies, login, shell, and `dist`.
 
-## Run locally
+## Development
 
-Start the shared Node.js API on port 5189. From this folder:
+Start the common Node.js API on port 5189. Then, from this folder:
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:5192 or **http://192.168.1.5:5192**. Sign in with an account from `ConfigurationUserLogin`. This app has its own login and session, using `/api/configuration/auth/...`.
+Open **http://localhost:5192**. For LAN access, use this computer's LAN IP address in place of `localhost`.
 
-## Build and start
+## Built app
+
+Stop this app's development server, then run:
 
 ```powershell
 npm run build
 npm start
 ```
 
-The built app runs on port 5192. Both development and preview proxy `/api` to the shared backend on port 5189. This project owns its dependencies, source, login, shell, styles, and `dist`; it does not import another frontend project.
+`npm start` serves `dist` with Vite preview on the same port. Development and preview both proxy `/api` to `API_PROXY_TARGET`, which defaults to `http://localhost:5189`. Docker runs the built Vite app in its own Node container and sets the target to `http://nodejs-server:5189`.
 
-Reference masters use `/api/configuration/masters` in `NODE JS SERVER/Api/ConfigurationApi.js`. Only administrators change masters or manage accounts; the Configuration role has read-only master access and its own profile. ConfigurationUserLogin stores these accounts. Audit Trail identifies the actor's system for events across all four systems. Dockerfile and nginx.conf build and serve this project independently. SQL and migrations remain in `NODE JS SERVER/migration`.
+## Accounts and API
+
+Sign in with this app's account from **ConfigurationUserLogin**. Its API namespace is `/api/configuration`, with separate login, session, profile, and user endpoints. Its session does not sign in to another system. Only administrators change masters or manage this app's accounts. Configuration users read reference records and edit their own profiles.
+
+## Workflow
+
+The menus contain ATC, Audit Trail, Bank, Country, Currency, Customer Category, Payment Term, Product Category, Supplies Category, Unit of Product, VAT, Warehouse, and Warehouse Location. Deactivation preserves referenced records. Audit Trail identifies each event's system and actor. Master routes use `/api/configuration/masters`.
+
+SQL, migrations, and the backend's local `.env` remain in `NODE JS SERVER`. See its README for backend startup and Docker commands.

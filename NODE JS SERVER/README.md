@@ -18,7 +18,7 @@ TLP COMPANY/
 
 ## Run
 
-Requires Node.js 22 or later, SQL Server, and Microsoft ODBC Driver 18 for SQL Server. The configured local instance is `.\MSSQLSERVER01` using your Windows account.
+Requires Node.js 22 or later and SQL Server. Windows integrated authentication also needs Microsoft ODBC Driver 18. The configured local instance is `.\MSSQLSERVER01`.
 
 ## Docker and LAN access
 
@@ -29,17 +29,17 @@ docker compose up -d --build --remove-orphans
 docker compose ps
 ```
 
-Open each project separately from this computer or another device on the same Wi-Fi/LAN:
+Each frontend container runs its own built React app with Vite preview. The Node API runs separately on port 5189. Open each app on this computer:
 
-| Project | LAN address |
+| Project | Address |
 | --- | --- |
-| SalesSystem | http://192.168.1.5:5188 |
-| Shared Node API | http://192.168.1.5:5189/api/health |
-| WarehouseSystem | http://192.168.1.5:5190 |
-| PurchasingSystem | http://192.168.1.5:5191 |
-| ConfigurationSystem | http://192.168.1.5:5192 |
+| SalesSystem | http://localhost:5188 |
+| Shared Node API | http://localhost:5189/api/health |
+| WarehouseSystem | http://localhost:5190 |
+| PurchasingSystem | http://localhost:5191 |
+| ConfigurationSystem | http://localhost:5192 |
 
-These are the computer's current LAN address and configured default ports. Each frontend serves only its own system. Its `/api` proxy connects to the shared Node server; no frontend imports another project's source or build. Ports can be configured in the server's local `.env`. If Windows Firewall blocks LAN clients, `allow-lan.ps1` permits only these five TCP ports from the local subnet when run as Administrator.
+For another device on the same LAN, replace `localhost` with this computer's LAN IP address. Each Vite app keeps its own port and serves only its own system. Its `/api` proxy uses `API_PROXY_TARGET`, defaulting to `http://localhost:5189`; Docker sets it to `http://nodejs-server:5189`. The proxy preserves the request host and the per-system API paths and cookies. No frontend imports another project's source or build. Docker host ports can be configured in this server's local `.env`. If Windows Firewall blocks LAN clients, `allow-lan.ps1` permits only these five TCP ports from the local subnet when run as Administrator.
 
 Sign in separately to each app with its local administrator account. Startup creates an administrator from the server's local `.env` only when that system has none. User accounts and salted password hashes are stored in `SalesUserLogin`, `PurchasingUserLogin`, `WarehouseUserLogin`, and `ConfigurationUserLogin`. Credentials remain in the local environment file.
 
@@ -55,25 +55,25 @@ docker compose down
 
 ## Local development
 
+From this backend folder:
+
 ```powershell
-cd "NODE JS SERVER"
 npm ci
-npm --prefix ../SalesSystem ci
-npm --prefix ../WarehouseSystem ci
-npm --prefix ../PurchasingSystem ci
-npm --prefix ../ConfigurationSystem ci
-npm run dev:all
+npm run dev
 ```
 
-The same five ports apply in development. `npm run dev` inside this backend folder starts only the Node API. Each React project can also run independently with its own `npm run dev`, `npm start`, or `npm run build`. `dev:all` is a convenience launcher for the backend and four independent Vite processes.
+In separate terminals, run `npm ci` and `npm run dev` inside each frontend folder. The same ports listed above apply. Each app's Vite development server proxies its own `/api` requests to the backend.
 
-Build all four independent frontends from this backend folder:
+To serve a built frontend, stop its development server and run these commands inside that frontend folder:
 
 ```powershell
 npm run build
+npm start
 ```
 
-`npm start` here starts only the Node API. Production frontend hosting is handled by each project's Dockerfile and Nginx configuration.
+`npm start` runs Vite preview on that app's own port, with the same API proxy. Each frontend Dockerfile uses this built-app flow directly in a Node container.
+
+The optional backend commands `npm run dev:all` and `npm run build` launch all five development processes or build the four frontends after their dependencies have been installed. `npm start` inside this backend folder starts only the Node API.
 
 ## Per-system APIs and migrations
 

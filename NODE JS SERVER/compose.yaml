@@ -32,7 +32,9 @@ services:
       context: ../SalesSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${SALES_PORT:-5188}:80"
+      - "0.0.0.0:${SALES_PORT:-5188}:5188"
+    environment:
+      API_PROXY_TARGET: http://nodejs-server:5189
     depends_on:
       nodejs-server:
         condition: service_healthy
@@ -42,7 +44,9 @@ services:
       context: ../WarehouseSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${WAREHOUSE_PORT:-5190}:80"
+      - "0.0.0.0:${WAREHOUSE_PORT:-5190}:5190"
+    environment:
+      API_PROXY_TARGET: http://nodejs-server:5189
     depends_on:
       nodejs-server:
         condition: service_healthy
@@ -52,7 +56,9 @@ services:
       context: ../PurchasingSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${PURCHASING_PORT:-5191}:80"
+      - "0.0.0.0:${PURCHASING_PORT:-5191}:5191"
+    environment:
+      API_PROXY_TARGET: http://nodejs-server:5189
     depends_on:
       nodejs-server:
         condition: service_healthy
@@ -62,7 +68,9 @@ services:
       context: ../ConfigurationSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${CONFIGURATION_PORT:-5192}:80"
+      - "0.0.0.0:${CONFIGURATION_PORT:-5192}:5192"
+    environment:
+      API_PROXY_TARGET: http://nodejs-server:5189
     depends_on:
       nodejs-server:
         condition: service_healthy

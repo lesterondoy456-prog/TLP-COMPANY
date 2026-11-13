@@ -1,25 +1,41 @@
-﻿# PurchasingSystem
+# PurchasingSystem
 
-Independent React/Vite application for TLP Company purchasing.
+Independent React/Vite project on port **5191**. Supplier and Supplies masters, PR Monitoring, PO Monitoring, and Receiving Receipt. It owns its source, dependencies, login, shell, and `dist`.
 
-## Run locally
+## Development
 
-Start the shared Node.js API on port 5189. From this folder:
+Start the common Node.js API on port 5189. Then, from this folder:
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:5191 or **http://192.168.1.5:5191**. Sign in with an account from `PurchasingUserLogin`. This app has its own login and session, using `/api/purchasing/auth/...`.
+Open **http://localhost:5191**. For LAN access, use this computer's LAN IP address in place of `localhost`.
 
-## Build and start
+## Built app
+
+Stop this app's development server, then run:
 
 ```powershell
 npm run build
 npm start
 ```
 
-The built app runs on port 5191. Both development and preview proxy `/api` to the shared backend on port 5189. This project owns its dependencies, source, login, shell, styles, and `dist`; it does not import another frontend project.
+`npm start` serves `dist` with Vite preview on the same port. Development and preview both proxy `/api` to `API_PROXY_TARGET`, which defaults to `http://localhost:5189`. Docker runs the built Vite app in its own Node container and sets the target to `http://nodejs-server:5189`.
 
-Supplier, Supplies, PR Monitoring, PO Monitoring, and Receiving Receipt use `NODE JS SERVER/Api/PurchasingApi.js`. Posting a fully allocated receipt adds supplies inventory. Administrators manage this app's accounts in PurchasingUserLogin; roles are Administrator and Purchasing. Dockerfile and nginx.conf build and serve this project independently. SQL and migrations remain in `NODE JS SERVER/migration`.
+## Accounts and API
+
+Sign in with this app's account from **PurchasingUserLogin**. Its API namespace is `/api/purchasing`, with separate login, session, profile, and user endpoints. Its session does not sign in to another system. Administrators manage this app's accounts. Purchasing users work with purchasing records and edit their own profiles.
+
+## Workflow
+
+1. Maintain Supplier and Supplies records.
+2. Save and post a Purchase Request.
+3. Load open, posted PR lines into a Purchase Order and post it.
+4. Save a Receiving Receipt from the posted PO. Partial receipts are supported.
+5. Allocate every received quantity to a warehouse and location, then post the receipt to add supplies stock.
+
+Saving a draft does not change stock. Posting checks source balances, allocation quantities, and configured destinations. Supplies stock remains separate from finished-product stock.
+
+SQL, migrations, and the backend's local `.env` remain in `NODE JS SERVER`. See its README for backend startup and Docker commands.
