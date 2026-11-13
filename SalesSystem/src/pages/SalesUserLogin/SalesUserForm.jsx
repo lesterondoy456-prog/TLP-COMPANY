@@ -19,7 +19,7 @@ export default function SalesUserForm({ record, profile = false, actorRole = 'sa
       return;
     }
     const body = trimFields({ name: form.name, username: form.username, cpnumber: form.cpnumber, email: form.email, photo: form.photo });
-    if (!profile) { body.role = canAssignRoles ? form.role : 'sales'; body.isActive = form.isActive; if (form.password) body.password = form.password; }
+    if (!profile) { body.role = canAssignRoles ? form.role : 'sales'; body.isActive = record ? form.isActive : true; if (form.password) body.password = form.password; }
     save(() => api(profile ? '/api/sales/auth/profile' : record ? '/api/sales/users/' + record.id : '/api/sales/users', { method: profile || record ? 'PUT' : 'POST', body }));
   }
   return <Modal title={profile ? 'My profile' : record ? 'Edit user account' : 'New user account'} subtitle={profile ? 'Your details in the TLP Company workspace.' : 'Manage access to your sales system.'} onClose={onClose} busy={busy}>
@@ -32,7 +32,7 @@ export default function SalesUserForm({ record, profile = false, actorRole = 'sa
       {profile ? <Field label="Role" wide><input value={roleLabel(form.role)} disabled /></Field> : <>
         <Field label="Role *"><select value={canAssignRoles ? form.role : 'sales'} disabled={!canAssignRoles} onChange={e => set('role', e.target.value)}><option value="sales">Sales</option>{canAssignRoles && <><option value="saleshead">Sales Head</option><option value="admin">Administrator</option></>}</select></Field>
         <Field label={record ? 'New password (optional)' : 'Password *'} hint={record ? 'Leave blank to keep the current password. New passwords need at least 6 characters.' : 'Use at least 6 characters.'}><input type="password" minLength={6} maxLength={128} required={!record} value={form.password} onChange={e => set('password', e.target.value)} autoComplete="new-password" /></Field>
-        <label className="checkbox span-2"><input type="checkbox" checked={Boolean(form.isActive)} onChange={e => set('isActive', e.target.checked)} />Account is active</label>
+        {record && <label className="checkbox span-2"><input type="checkbox" checked={Boolean(form.isActive)} onChange={e => set('isActive', e.target.checked)} />Account is active</label>}
       </>}
     </fieldset></div><FormFooter onClose={onClose} busy={busy} label={profile ? 'Save profile' : 'Save user'} /></form>
   </Modal>;

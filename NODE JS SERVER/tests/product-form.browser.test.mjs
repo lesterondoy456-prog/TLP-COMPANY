@@ -39,6 +39,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await page.getByRole('button', { name: 'Product', exact: true }).click();
   await page.getByRole('button', { name: 'New product', exact: false }).click();
   const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('checkbox', { name: 'Active product', exact: true })).toHaveCount(0);
   const tabs = Object.fromEntries(['Basic Info', 'Customer', 'Inventory Sched', 'Link Supplies'].map(name => [name, dialog.getByRole('tab', { name, exact: true })]));
   const panel = name => dialog.getByRole('tabpanel', { name, exact: true });
   const field = name => panel('Basic Info').getByLabel(name, { exact: true });
@@ -129,12 +130,17 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     linkedSupplies: [{ suppliesId: 30, quantity: 1.234567, unit: 'kg' }], isActive: true,
   };
   assert.equal(writes.length, 1);
+  assert.equal(writes[0].body.isActive, true, 'New products are always active.');
   assert.deepEqual(writes[0].body, expected);
   assert.equal(Object.hasOwn(writes[0].body, 'stock'), false, 'Product metadata and raw-material links must not create finished-goods stock.');
   assert.equal(header.stock, 50);
   await page.reload();
   await page.getByRole('button', { name: 'Product', exact: true }).click();
   await page.getByRole('row').filter({ hasText: 'Mock Product Description' }).getByRole('button', { name: 'Edit', exact: true }).click();
+  const activeProduct = dialog.getByRole('checkbox', { name: 'Active product', exact: true });
+  await expect(activeProduct).toBeVisible();
+  await expect(activeProduct).toBeChecked();
+  await activeProduct.uncheck();
   await expect(field('Product Id')).toHaveValue('101');
   await expect(field('Code *')).toHaveValue('MOCK-PRODUCT');
   await expect(field('Qty per UOP2')).toHaveValue('12.000001');
@@ -150,6 +156,10 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await expect(dialog).toHaveCount(0);
   assert.equal(writes.length, 2);
   assert.equal(writes[1].method, 'PUT');
-  assert.deepEqual(writes[1].body, { ...expected, revision: '2' });
+  assert.deepEqual(writes[1].body, { ...expected, revision: '2', isActive: false });
+  await page.getByRole('row').filter({ hasText: 'Mock Product Description' }).getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(activeProduct).toBeVisible();
+  await expect(activeProduct).not.toBeChecked();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   assertSafe();
 });

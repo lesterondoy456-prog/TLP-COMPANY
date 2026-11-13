@@ -19,7 +19,7 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
     const formElement = event.currentTarget;
     setError('');
     try {
-      const body = validateAccountForm(form, { existing: Boolean(record) });
+      const body = validateAccountForm({ ...form, isActive: record ? form.isActive : true }, { existing: Boolean(record) });
       setBusy(true);
       const result = await api('/api/configuration/users' + (record ? '/' + record.id : ''), { method: record ? 'PUT' : 'POST', body });
       if (result.record?.system !== SYSTEM) throw new Error('The server returned an account for another application.');
@@ -43,7 +43,7 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
           <Field label="Email"><input name="email" type="email" maxLength={254} value={form.email || ''} onChange={event => set('email', event.target.value)} /></Field>
           <Field label="Role *"><select name="role" value={form.role} onChange={event => set('role', event.target.value)}><option value={APP.workerRole}>{APP.workerLabel}</option><option value="admin">Administrator</option></select></Field>
           <Field label={record ? 'New password (optional)' : 'Password *'} hint={record ? 'Leave blank to keep the current password.' : 'Use at least 6 characters.'}><input name="password" type="password" minLength={6} maxLength={128} required={!record} autoComplete="new-password" value={form.password} onChange={event => set('password', event.target.value)} /></Field>
-          <label className="checkbox span-2"><input name="isActive" type="checkbox" checked={Boolean(form.isActive)} onChange={event => set('isActive', event.target.checked)} />Account is active</label>
+          {record && <label className="checkbox span-2"><input name="isActive" type="checkbox" checked={Boolean(form.isActive)} onChange={event => set('isActive', event.target.checked)} />Account is active</label>}
         </fieldset>
       </div>
       <FormFooter onClose={onClose} busy={busy} label="Save user" />

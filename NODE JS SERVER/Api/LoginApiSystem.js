@@ -306,7 +306,7 @@ router.post('/:system/users', async (req, res) => {
       throw error;
     }
     const role = input.role;
-    const isActive = input.isActive ?? true;
+    const isActive = true;
     const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(sql.MAX), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
     query.input('passwordHash', sql.VarChar(sql.MAX), passwordHash);
     const inserted = await query.query(`INSERT INTO dbo.${definition.table}(name,username,cpnumber,email,photo,role,isActive,passwordHash) OUTPUT INSERTED.id VALUES(@name,@username,@cpnumber,@email,@photo,@role,@isActive,@passwordHash)`);

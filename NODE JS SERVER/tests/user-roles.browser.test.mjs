@@ -66,6 +66,7 @@ test('admin can create all three account roles and edit existing accounts', { ti
   for (const role of ['admin', 'saleshead', 'sales']) {
     await page.getByRole('button', { name: 'New user', exact: false }).click();
     const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('checkbox', { name: 'Account is active', exact: true })).toHaveCount(0);
     const roleSelect = dialog.getByRole('combobox', { name: 'Role *', exact: true });
     await expect(roleSelect).toBeEnabled();
     assert.deepEqual(await roleSelect.locator('option').evaluateAll(options => options.map(option => option.value).sort()), ['admin', 'sales', 'saleshead']);
@@ -83,10 +84,14 @@ test('admin can create all three account roles and edit existing accounts', { ti
     await expect(page.getByRole('button', { name: 'Refresh records', exact: true })).toBeEnabled();
     assert.equal(writes.at(-1).method, 'POST');
     assert.equal(writes.at(-1).body.role, role);
+    assert.equal(writes.at(-1).body.isActive, true, 'New accounts must start active.');
     assert.equal(writes.at(-1).body.password, 'Mock12', 'Exactly six characters must be accepted for new accounts.');
   }
   await page.getByRole('row').filter({ hasText: 'Mock Sales User' }).getByRole('button', { name: 'Edit', exact: true }).click();
   const edit = page.getByRole('dialog');
+  const active = edit.getByRole('checkbox', { name: 'Account is active', exact: true });
+  await expect(active).toBeChecked();
+  await active.uncheck();
   await edit.getByLabel('Full name *', { exact: true }).fill('Edited Sales User');
   await edit.getByRole('combobox', { name: 'Role *', exact: true }).selectOption('saleshead');
   await edit.getByRole('button', { name: 'Save user', exact: true }).click();
@@ -95,14 +100,18 @@ test('admin can create all three account roles and edit existing accounts', { ti
   assert.equal(writes.at(-1).method, 'PUT');
   assert.equal(writes.at(-1).pathname, '/api/users/3');
   assert.equal(writes.at(-1).body.role, 'saleshead');
+  assert.equal(writes.at(-1).body.isActive, false, 'Existing accounts can be made inactive.');
   assert.equal(Object.hasOwn(writes.at(-1).body, 'password'), false, 'Editing a profile must preserve a blank optional password.');
   await page.getByRole('row').filter({ hasText: 'Edited Sales User' }).getByRole('button', { name: 'Edit', exact: true }).click();
   const reset = page.getByRole('dialog');
+  await expect(reset.getByRole('checkbox', { name: 'Account is active', exact: true })).not.toBeChecked();
+  await reset.getByRole('checkbox', { name: 'Account is active', exact: true }).check();
   await reset.getByLabel(/^New password \(optional\)/).fill('Mock12');
   await reset.getByRole('button', { name: 'Save user', exact: true }).click();
   await expect(reset).toHaveCount(0);
   assert.equal(writes.length, 5);
   assert.equal(writes.at(-1).method, 'PUT');
+  assert.equal(writes.at(-1).body.isActive, true);
   assert.equal(writes.at(-1).body.password, 'Mock12', 'Exactly six characters must be accepted when resetting passwords.');
   assertSafe();
 });
@@ -118,6 +127,7 @@ test('Sales Head sees Sales accounts and creates only Sales without edit control
   await expect(page.getByRole('columnheader', { name: 'Actions', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'New user', exact: false }).click();
   const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('checkbox', { name: 'Account is active', exact: true })).toHaveCount(0);
   const roleSelect = dialog.getByRole('combobox', { name: 'Role *', exact: true });
   await expect(roleSelect).toBeDisabled();
   await expect(roleSelect).toHaveValue('sales');
@@ -134,6 +144,7 @@ test('Sales Head sees Sales accounts and creates only Sales without edit control
   assert.equal(writes.length, 1);
   assert.equal(writes[0].method, 'POST');
   assert.equal(writes[0].body.role, 'sales');
+  assert.equal(writes[0].body.isActive, true);
   assert.equal(writes[0].body.password, 'Mock12');
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   assertSafe();

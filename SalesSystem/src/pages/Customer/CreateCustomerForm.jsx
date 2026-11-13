@@ -173,7 +173,7 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
     body.discountType = form.discountType;
     body.includePoInInvoice = form.includePoInInvoice;
     body.vatInclusive = form.vatInclusive;
-    body.isActive = form.isActive;
+    body.isActive = record ? form.isActive : true;
     if (form.salesInChargeId !== '__legacy__') body.salesInChargeId = form.salesInChargeId === '' ? null : Number(form.salesInChargeId);
     setBusy(true);
     try { const result = await api(record ? '/api/sales/customers/' + record.id : '/api/sales/customers', { method: record ? 'PUT' : 'POST', body }); onSaved(result); }
@@ -237,7 +237,7 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
           </div>
         </fieldset>
       </div>
-      <div className="modal-footer customer-form-footer"><label className="checkbox"><input type="checkbox" checked={form.isActive} disabled={busy} onChange={event => set('isActive', event.target.checked)} />Active customer</label><div><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancel</button><button className="button primary" disabled={busy}>{busy ? 'Saving…' : 'Save customer'}<Icon name="check" size={17} /></button></div></div>
+      <div className="modal-footer customer-form-footer" style={record ? undefined : { justifyContent: 'flex-end' }}>{record && <label className="checkbox"><input type="checkbox" checked={form.isActive} disabled={busy} onChange={event => set('isActive', event.target.checked)} />Active customer</label>}<div><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancel</button><button className="button primary" disabled={busy}>{busy ? 'Saving…' : 'Save customer'}<Icon name="check" size={17} /></button></div></div>
     </form>
   </Modal>;
 }

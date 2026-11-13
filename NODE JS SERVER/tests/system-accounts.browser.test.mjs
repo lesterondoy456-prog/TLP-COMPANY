@@ -67,6 +67,7 @@ for (const settings of systems) {
     for (const role of ['admin', settings.system]) {
       await page.getByRole('button', { name: 'New user', exact: false }).click();
       const dialog = page.getByRole('dialog');
+      await expect(dialog.getByRole('checkbox', { name: 'Account is active', exact: true })).toHaveCount(0);
       const select = dialog.getByRole('combobox', { name: 'Role *', exact: true });
       assert.deepEqual(await select.locator('option').evaluateAll(options => options.map(option => option.value).sort()), ['admin', settings.system].sort());
       await dialog.getByLabel('Full name *', { exact: true }).fill('New ' + role);
@@ -83,23 +84,31 @@ for (const settings of systems) {
       await dialog.getByRole('button', { name: 'Save user', exact: true }).click();
       await expect(dialog).toHaveCount(0);
       assert.equal(writes.at(-1).body.role, role);
+      assert.equal(writes.at(-1).body.isActive, true, 'New accounts must start active.');
       assert.equal(writes.at(-1).body.password, password, 'Exactly six characters must be accepted for new accounts.');
     }
     await page.getByRole('row').filter({ hasText: 'Mock Local Worker' }).getByRole('button', { name: 'Edit', exact: true }).click();
     const edit = page.getByRole('dialog');
+    const active = edit.getByRole('checkbox', { name: 'Account is active', exact: true });
+    await expect(active).toBeChecked();
+    await active.uncheck();
     await edit.getByLabel('Full name *', { exact: true }).fill('Edited Local Worker');
     await edit.getByRole('button', { name: 'Save user', exact: true }).click();
     await expect(edit).toHaveCount(0);
     assert.equal(writes.at(-1).method, 'PUT');
     assert.equal(writes.at(-1).body.role, settings.system);
+    assert.equal(writes.at(-1).body.isActive, false, 'Existing accounts can be made inactive.');
     assert.equal(Object.hasOwn(writes.at(-1).body, 'password'), false);
 
     await page.getByRole('row').filter({ hasText: 'Edited Local Worker' }).getByRole('button', { name: 'Edit', exact: true }).click();
     const reset = page.getByRole('dialog');
+    await expect(reset.getByRole('checkbox', { name: 'Account is active', exact: true })).not.toBeChecked();
+    await reset.getByRole('checkbox', { name: 'Account is active', exact: true }).check();
     await reset.getByLabel(/^New password \(optional\)/).fill(password);
     await reset.getByRole('button', { name: 'Save user', exact: true }).click();
     await expect(reset).toHaveCount(0);
     assert.equal(writes.at(-1).method, 'PUT');
+    assert.equal(writes.at(-1).body.isActive, true);
     assert.equal(writes.at(-1).body.password, password, 'Exactly six characters must be accepted when resetting passwords.');
 
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();

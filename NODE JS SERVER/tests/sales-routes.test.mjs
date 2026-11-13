@@ -59,14 +59,14 @@ test('customer creation allocates its generated code and ordered delivery addres
   const fixture = routeFixture([
     step(/TABLOCKX,HOLDLOCK/, [{ total: 0 }]), step(/sys\.identity_columns/, [{ nextId: 7 }]),
     step(/WHERE code=@code/, []),
-    step(/INSERT INTO dbo\.Customers/, [{ id: 7 }], values => assert.equal(values.code, 'C-00000007')),
+    step(/INSERT INTO dbo\.Customers/, [{ id: 7 }], values => { assert.equal(values.code, 'C-00000007'); assert.equal(values.isActive, true); }),
     step(/DELETE FROM dbo\.CustomerDeliveryAddresses/),
     step(/INSERT INTO dbo\.CustomerDeliveryAddresses/, [], values => { assert.equal(values.position, 0); assert.equal(values.address, 'Delivery A'); }),
     step(/INSERT INTO dbo\.CustomerDeliveryAddresses/, [], values => { assert.equal(values.position, 1); assert.equal(values.address, 'Delivery B'); }),
     audit(), step(/FROM dbo\.Customers/, [customer]),
     step(/FROM dbo\.CustomerDeliveryAddresses/, [{ address: 'Delivery A' }, { address: 'Delivery B' }]),
   ]);
-  const response = await fixture.invoke('post', '/customers', { ...customer, code: '', deliveryAddresses: ['Delivery A', 'Delivery B'] });
+  const response = await fixture.invoke('post', '/customers', { ...customer, code: '', isActive: false, deliveryAddresses: ['Delivery A', 'Delivery B'] });
   assert.equal(response.statusCode, 201);
   assert.deepEqual(response.body.record.deliveryAddresses, ['Delivery A', 'Delivery B']);
   assert.equal(fixture.state.commits, 1);
@@ -77,11 +77,12 @@ test('partial customer edits preserve legacy assignments and omitted address col
   const legacy = { ...customer, salesInCharge: 'Legacy Person', _salesInChargeSnapshot: 'Legacy Person' };
   const fixture = routeFixture([
     step(/UPDLOCK,HOLDLOCK/, [legacy]), step(/FROM dbo\.CustomerDeliveryAddresses/, [{ address: 'Preserved' }]),
-    step(/UPDATE dbo\.Customers/, [], values => { assert.equal(values.salesInCharge, 'Legacy Person'); assert.equal(values.salesInChargeId, null); assert.equal(values.shortName, 'C'); }),
-    audit(), step(/FROM dbo\.Customers/, [{ ...legacy, name: 'Renamed' }]), step(/FROM dbo\.CustomerDeliveryAddresses/, [{ address: 'Preserved' }]),
+    step(/UPDATE dbo\.Customers/, [], values => { assert.equal(values.salesInCharge, 'Legacy Person'); assert.equal(values.salesInChargeId, null); assert.equal(values.shortName, 'C'); assert.equal(values.isActive, false); }),
+    audit(), step(/FROM dbo\.Customers/, [{ ...legacy, name: 'Renamed', isActive: false }]), step(/FROM dbo\.CustomerDeliveryAddresses/, [{ address: 'Preserved' }]),
   ]);
-  const response = await fixture.invoke('put', '/customers/:id', { name: 'Renamed' });
+  const response = await fixture.invoke('put', '/customers/:id', { name: 'Renamed', isActive: false });
   assert.equal(response.body.record.salesInCharge, 'Legacy Person');
+  assert.equal(response.body.record.isActive, false);
   assert.deepEqual(response.body.record.deliveryAddresses, ['Preserved']);
   assert.equal(fixture.state.commits, 1);
   fixture.done();
@@ -100,12 +101,13 @@ test('changed Sales In-charge assignments reject inactive accounts inside the cu
 test('partial Product edits preserve child rows, its historical stock and six-place price', async () => {
   const fixture = routeFixture([
     step(/SELECT p\.id/, productResult(product)),
-    step(/UPDATE dbo\.Products/, [], values => { assert.equal(values.stock, 5); assert.equal(values.price, '0.115300'); assert.equal(values.description, 'Updated'); }),
-    audit(), step(/SELECT p\.id/, productResult({ ...product, description: 'Updated', name: 'Updated' })),
+    step(/UPDATE dbo\.Products/, [], values => { assert.equal(values.stock, 5); assert.equal(values.price, '0.115300'); assert.equal(values.description, 'Updated'); assert.equal(values.isActive, false); }),
+    audit(), step(/SELECT p\.id/, productResult({ ...product, description: 'Updated', name: 'Updated', isActive: false })),
   ]);
-  const response = await fixture.invoke('put', '/products/:id', { description: 'Updated', productHeaderId: null });
+  const response = await fixture.invoke('put', '/products/:id', { description: 'Updated', productHeaderId: null, isActive: false });
   assert.equal(response.body.record.stock, 5);
   assert.equal(response.body.record.price, '0.115300');
+  assert.equal(response.body.record.isActive, false);
   assert.deepEqual(response.body.record.processes, [{ name: 'Cut' }]);
   assert.deepEqual(response.body.record.offices, [{ name: 'TLP COMPANY' }]);
   fixture.done();
@@ -179,7 +181,7 @@ test('payment handlers reject negative, overprecision and excessive payments wit
 });
 test('Product creation writes each named child table with its own literal SQL and preserves the linked supply unit', async () => {
   const input = {
-    sku: 'P7', description: 'Product', unit: 'PCS', currency: 'USD', price: 0.1153,
+    sku: 'P7', description: 'Product', unit: 'PCS', currency: 'USD', price: 0.1153, isActive: false,
     processes: [{ name: 'Cut' }], offices: [{ name: 'TLP COMPANY' }],
     customerApprovals: [{ customerId: 2, approvalDate: '2026-11-13', eolDate: null, approvalRemarks: 'Approved', eolRemarks: '' }],
     inventorySchedules: [{ scheduleDate: '2026-11-13', month: 'November' }],
@@ -193,7 +195,7 @@ test('Product creation writes each named child table with its own literal SQL an
   const fixture = routeFixture([
     step(/ConfigUnits/, [{ id: 1 }]), step(/ConfigCurrencies/, [{ id: 1 }]),
     step(/FROM dbo.Customers/, [{ id: 2 }]), step(/FROM dbo.Supplies/, [{ unit: 'KG', isActive: true }]),
-    step(/INSERT INTO dbo.Products/, [{ id: 7 }], values => { assert.equal(values.price, '0.1153'); assert.equal(values.stock, 0); }),
+    step(/INSERT INTO dbo.Products/, [{ id: 7 }], values => { assert.equal(values.price, '0.1153'); assert.equal(values.stock, 0); assert.equal(values.isActive, true); }),
     step(/DELETE FROM dbo.ProductProcesses/), step(/INSERT INTO dbo.ProductProcesses/, [], values => assert.equal(values.name, 'Cut')),
     step(/DELETE FROM dbo.ProductOffices/), step(/INSERT INTO dbo.ProductOffices/, [], values => assert.equal(values.name, 'TLP COMPANY')),
     step(/DELETE FROM dbo.ProductCustomerApprovals/), step(/INSERT INTO dbo.ProductCustomerApprovals/, [], values => { assert.equal(values.customerId, 2); assert.equal(values.approvalDate, '2026-11-13'); }),

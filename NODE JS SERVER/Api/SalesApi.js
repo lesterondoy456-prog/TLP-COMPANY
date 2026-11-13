@@ -126,7 +126,7 @@ router.post('/customers', async (req, res) => {
       ...(current || {})
     };
     for (const key of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
-    for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === true;
+    for (const key of ['includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === true;
     for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
       if (!Number.isFinite(numericFieldValue)) {
@@ -703,7 +703,6 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       }
       product[key] = numericFieldValue;
     }
-    if (Object.hasOwn(input, 'isActive') && input['isActive'] !== undefined) product.isActive = input.isActive === true;
     for (const key of ['vatMode', 'inventorySetup']) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
     if (Object.hasOwn(input, 'productHeaderId') && input['productHeaderId'] !== undefined) if (input.productHeaderId === null) {
       product.productHeaderId = null;

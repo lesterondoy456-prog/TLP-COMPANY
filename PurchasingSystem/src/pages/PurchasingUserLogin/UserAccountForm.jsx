@@ -22,7 +22,7 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
     setError('');
     const body = {
       name: form.name.trim(), username: form.username.trim(), cpnumber: (form.cpnumber || '').trim(),
-      email: (form.email || '').trim(), photo: form.photo || '', role: form.role, isActive: form.isActive,
+      email: (form.email || '').trim(), photo: form.photo || '', role: form.role, isActive: record ? form.isActive : true,
     };
     if (form.password) body.password = form.password;
     try {
@@ -49,7 +49,7 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
           <Field label="Email"><input type="email" maxLength={254} value={form.email || ''} onChange={event => set('email', event.target.value)} /></Field>
           <Field label="Role *"><select value={form.role} onChange={event => set('role', event.target.value)}><option value={APP.workerRole}>{APP.workerLabel}</option><option value="admin">Administrator</option></select></Field>
           <Field label={record ? 'New password (optional)' : 'Password *'} hint={record ? 'Leave blank to keep the current password.' : 'Use at least 6 characters.'}><input type="password" minLength={6} maxLength={128} required={!record} autoComplete="new-password" value={form.password} onChange={event => set('password', event.target.value)} /></Field>
-          <label className="checkbox span-2"><input type="checkbox" checked={Boolean(form.isActive)} onChange={event => set('isActive', event.target.checked)} />Account is active</label>
+          {record && <label className="checkbox span-2"><input type="checkbox" checked={Boolean(form.isActive)} onChange={event => set('isActive', event.target.checked)} />Account is active</label>}
         </fieldset>
       </div>
       <FormFooter onClose={onClose} busy={busy} label="Save user" />

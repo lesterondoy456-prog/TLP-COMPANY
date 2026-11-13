@@ -213,7 +213,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
     body.inventorySetup = form.inventorySetup;
     body.inventorySchedules = form.inventorySchedules.map(row => ({ scheduleDate: row.scheduleDate || null, month: (row.month || '').trim() }));
     body.linkedSupplies = form.linkedSupplies.map(row => ({ suppliesId: Number(row.suppliesId), quantity: Number(row.quantity), unit: row.unit || '' }));
-    body.isActive = form.isActive;
+    body.isActive = record ? form.isActive : true;
     setBusy(true);
     try {
       const result = await api(record ? '/api/sales/products/' + record.id : '/api/sales/products', { method: record ? 'PUT' : 'POST', body });
@@ -327,7 +327,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
           </div>
         </fieldset>
       </div>
-      <div className="modal-footer product-form-footer"><label className="checkbox"><input type="checkbox" checked={form.isActive} disabled={busy} onChange={event => set('isActive', event.target.checked)} />Active product</label><div><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancel</button><button className="button primary" disabled={busy}>{busy ? 'Saving…' : 'Save product'}<Icon name="check" size={17} /></button></div></div>
+      <div className="modal-footer product-form-footer" style={record ? undefined : { justifyContent: 'flex-end' }}>{record && <label className="checkbox"><input type="checkbox" checked={form.isActive} disabled={busy} onChange={event => set('isActive', event.target.checked)} />Active product</label>}<div><button type="button" className="button secondary" onClick={onClose} disabled={busy}>Cancel</button><button className="button primary" disabled={busy}>{busy ? 'Saving…' : 'Save product'}<Icon name="check" size={17} /></button></div></div>
     </form>
   </Modal>;
 }

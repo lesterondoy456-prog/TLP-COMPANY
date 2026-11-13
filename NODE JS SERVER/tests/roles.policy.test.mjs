@@ -79,7 +79,7 @@ test('shared Sales Head creation allows Sales only and refuses every account edi
   await assert.rejects(invokeRoute(loadRouterWithDatabase('login', edit.database), 'PUT', '/:system/users/:id', requestFor(head, body('sales'))), error => error.status === 403);
   assert.equal(edit.calls.length, 0);
   const allowed = stagedDatabase(createPlan(head, 'sales'));
-  const result = await invokeRoute(loadRouterWithDatabase('login', allowed.database), 'POST', '/:system/users', requestFor(head, body('sales')));
+  const result = await invokeRoute(loadRouterWithDatabase('login', allowed.database), 'POST', '/:system/users', requestFor(head, { ...body('sales'), isActive: false }));
   assert.equal(result.statusCode, 201);
   assert.equal(result.body.record.role, 'sales');
   assert.equal(allowed.counters.commits, 1);
@@ -90,10 +90,22 @@ test('own-system administrators create permitted accounts while workers cannot m
   for (const system of ['sales', 'purchasing', 'warehouse', 'configuration']) {
     const admin = actor('admin', system);
     const stage = stagedDatabase(createPlan(admin, system));
-    const result = await invokeRoute(loadRouterWithDatabase('login', stage.database), 'POST', '/:system/users', requestFor(admin, body(system)));
+    const result = await invokeRoute(loadRouterWithDatabase('login', stage.database), 'POST', '/:system/users', requestFor(admin, { ...body(system), isActive: false }));
     assert.equal(result.body.record.system, system);
     assert.equal(result.body.record.role, system);
     stage.done();
+    const target = actor(system, system, 99);
+    const edit = stagedDatabase([
+      { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [admin] },
+      { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [target] },
+      { match: new RegExp(`UPDATE dbo\\.${tableFor(system)} SET`), inspect: ({ inputs }) => { assert.equal(inputs.id, target.id); assert.equal(inputs.isActive, false); } },
+      { match: /INSERT INTO dbo\.AuditTrail/ },
+      { match: /WHERE id=@id$/, rows: [{ ...target, isActive: false }] },
+    ]);
+    const updated = await invokeRoute(loadRouterWithDatabase('login', edit.database), 'PUT', '/:system/users/:id', requestFor(admin, { ...body(system), password: '', isActive: false }, target.id));
+    assert.equal(updated.body.record.isActive, false);
+    assert.equal(edit.counters.commits, 1);
+    edit.done();
     const worker = actor(system, system);
     for (const [method, path] of [['GET', '/:system/users'], ['POST', '/:system/users'], ['PUT', '/:system/users/:id']]) {
       const denied = stagedDatabase();

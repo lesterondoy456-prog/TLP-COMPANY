@@ -44,6 +44,7 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await expect(page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'New customer', exact: false }).click();
   const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('checkbox', { name: 'Active customer', exact: true })).toHaveCount(0);
   const basicTab = dialog.getByRole('tab', { name: 'Basic Info', exact: true });
   const salesTab = dialog.getByRole('tab', { name: 'Sales/DR', exact: true });
   const basic = dialog.getByRole('tabpanel', { name: 'Basic Info', exact: true });
@@ -175,6 +176,7 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await expect(dialog).toHaveCount(0);
   assert.equal(customerWrites.length, 1);
   assert.equal(customerWrites[0].method, 'POST');
+  assert.equal(customerWrites[0].body.isActive, true, 'New customers are always active.');
   const expected = {
     name: 'Mock CAS Customer', shortName: 'MOCK CAS', businessStyle: 'Wholesale supplier', salesInChargeId: 5,
     address: 'Makati headquarters', deliveryAddresses: ['Warehouse A', 'Warehouse C'], contactPerson: 'Casey Mock',
@@ -196,6 +198,10 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   const row = page.getByRole('row').filter({ hasText: expected.name });
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: 'Edit', exact: true }).click();
+  const activeCustomer = dialog.getByRole('checkbox', { name: 'Active customer', exact: true });
+  await expect(activeCustomer).toBeVisible();
+  await expect(activeCustomer).toBeChecked();
+  await activeCustomer.uncheck();
   await expect(dialog.getByLabel('Company Id', { exact: true })).toHaveCount(0);
   await expect(salesAssignee).toHaveValue('5');
   await expect(salesAssignee.locator('option[value="5"]')).toHaveText('Renamed Mock Salesperson (sales_b)');
@@ -222,16 +228,19 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   assert.equal(customerWrites[1].method, 'PUT');
   assert.equal(customerWrites[1].pathname, '/api/customers/101');
   const editBody = { ...customerWrites[1].body };
-  assert.deepEqual(editBody, { ...expected, name: 'Edited mock customer' });
+  const editedExpected = { ...expected, name: 'Edited mock customer', isActive: false };
+  assert.deepEqual(editBody, editedExpected);
   records[0] = { ...records[0], salesInChargeId: null, salesInCharge: 'Legacy salesperson' };
   await page.reload();
   await page.getByRole('row').filter({ hasText: 'Edited mock customer' }).getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(activeCustomer).toBeVisible();
+  await expect(activeCustomer).not.toBeChecked();
   await expect(salesAssignee).toHaveValue('__legacy__');
   await expect(salesAssignee.locator('option[value="__legacy__"]')).toBeDisabled();
   await save.click();
   await expect(dialog).toHaveCount(0);
   assert.equal(customerWrites.length, 3);
-  const preservedLegacy = { ...expected, name: 'Edited mock customer' };
+  const preservedLegacy = { ...editedExpected };
   delete preservedLegacy.salesInChargeId;
   assert.deepEqual(customerWrites[2].body, preservedLegacy, 'Unchanged historical text must not be reassigned or cleared by editing other fields.');
   await page.getByRole('row').filter({ hasText: 'Edited mock customer' }).getByRole('button', { name: 'Edit', exact: true }).click();
@@ -239,6 +248,6 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await save.click();
   await expect(dialog).toHaveCount(0);
   assert.equal(customerWrites.length, 4);
-  assert.deepEqual(customerWrites[3].body, { ...expected, name: 'Edited mock customer', salesInChargeId: null });
+  assert.deepEqual(customerWrites[3].body, { ...editedExpected, salesInChargeId: null });
   assertSafe();
 });
