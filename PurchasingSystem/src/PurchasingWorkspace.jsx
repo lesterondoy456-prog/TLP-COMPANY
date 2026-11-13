@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { api, dateLabel } from '../../SalesSystem/src/api.js';
-import { Badge, Empty, ErrorNotice, Modal } from '../../SalesSystem/src/components/UI.jsx';
-import { Icon } from '../../SalesSystem/src/components/Icons.jsx';
+import { api, dateLabel } from './api.js';
+import { Badge, Empty, ErrorNotice, Modal } from './components/UI.jsx';
+import { Icon } from './components/Icons.jsx';
 import { SupplierForm, SuppliesForm } from './MasterForms.jsx';
 import { DocumentActionDialog, PurchaseOrderForm, PurchaseRequestForm, PurchasingDocumentView, ReceivingForm, currencyLabel, quantityLabel, statusLabel } from './DocumentForms.jsx';
 import './purchasing.css';

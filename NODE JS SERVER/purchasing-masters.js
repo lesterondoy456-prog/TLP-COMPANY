@@ -158,7 +158,7 @@ export async function purchasingOptions() {
     listSuppliers(), listSupplies(), configuration.listConfiguration('units'), configuration.listConfiguration('currencies'),
     configuration.listConfiguration('payment-terms'), configuration.listConfiguration('vat-codes'), configuration.listConfiguration('atc'),
     configuration.listConfiguration('countries'), configuration.listConfiguration('supplies-categories'), configuration.listConfiguration('warehouses'), configuration.listConfiguration('locations'),
-    request().query('SELECT id,name,username,role FROM dbo.SalesUserLogin WHERE isActive=1 ORDER BY name,username'),
+    request().query('SELECT id,name,username,role FROM dbo.PurchasingUserLogin WHERE isActive=1 ORDER BY name,username'),
     request().query('SELECT id,sku,name,description FROM dbo.Products WHERE isActive=1 ORDER BY sku'),
   ]);
   const active = rows => rows.filter(row => row.isActive);

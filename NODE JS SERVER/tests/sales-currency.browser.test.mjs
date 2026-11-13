@@ -4,7 +4,7 @@ import { expect } from '@playwright/test';
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
 test('USD sales preserves micro-prices, rejects mixed currencies, and displays USD invoices and payments', { timeout: 60_000 }, async t => {
-  const actor = { id: 1, name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
+  const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
   const customer = { id: 20, code: 'C-MOCK', name: 'Mock USD Customer', isActive: true };
   const products = [
     { id: 10, sku: 'USD-MICRO', name: 'USD Micro Product', unit: 'pcs', price: '0.115300', currency: 'USD', stock: 0, isActive: true },
@@ -28,7 +28,7 @@ test('USD sales preserves micro-prices, rejects mixed currencies, and displays U
       orders.push(record);
       return { status: 201, json: { record } };
     }
-  }, { screenshotName: 'sales-currency-mock-last.png' });
+  }, { project: 'SalesSystem', screenshotName: 'sales-currency-mock-last.png' });
   await page.goto(origin);
   await expect(page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Sales Order', exact: true }).click();

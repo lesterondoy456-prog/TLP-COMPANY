@@ -3,9 +3,6 @@ import { api, money, unitMoney, dateLabel } from '../api.js';
 import { Icon } from '../components/Icons.jsx';
 import { Avatar, Badge, Empty, roleLabel } from '../components/UI.jsx';
 import { MasterForm, UserForm, OrderForm, DocumentForm, ShippingInvoiceForm, PaymentForm, DeleteDialog, DocumentView } from '../components/SalesForms.jsx';
-import PurchasingWorkspace, { PURCHASING_TABS } from '../../../PurchasingSystem/src/PurchasingWorkspace.jsx';
-import WarehouseWorkspace, { WAREHOUSE_TABS } from '../../../WarehouseSystem/src/WarehouseWorkspace.jsx';
-import ConfigurationWorkspace, { CONFIGURATION_TABS } from '../../../ConfigurationSystem/src/ConfigurationWorkspace.jsx';
 
 const TABS = [
   { id: 'customers', title: 'Customer', label: 'Customers', icon: 'users', description: 'Build better relationships. Keep every customer detail organized.', add: 'New customer' },
@@ -18,11 +15,6 @@ const TABS = [
 ];
 const EMPTY_DATA = Object.fromEntries(TABS.map(tab => [tab.id, []]));
 const count = value => new Intl.NumberFormat('en-PH', { maximumFractionDigits: 3 }).format(Number(value) || 0);
-const EXTERNAL_SYSTEMS = [
-  { id: 'purchasing', title: 'Purchasing', icon: 'bag', tabs: PURCHASING_TABS, Component: PurchasingWorkspace },
-  { id: 'warehouse', title: 'Warehouse', icon: 'box', tabs: WAREHOUSE_TABS, Component: WarehouseWorkspace },
-  { id: 'configuration', title: 'Configuration', icon: 'settings', tabs: CONFIGURATION_TABS, Component: ConfigurationWorkspace },
-];
 
 export default function Workspace({ user, onUser, onLogout }) {
   const [tab, setTab] = useState('customers');
@@ -36,7 +28,7 @@ export default function Workspace({ user, onUser, onLogout }) {
   const [dialog, setDialog] = useState(null);
   const [busyRow, setBusyRow] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [openGroups, setOpenGroups] = useState({ sales: true, purchasing: false, warehouse: false, configuration: false });
+  const [salesOpen, setSalesOpen] = useState(true);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const sequence = useRef(0);
   const detailSequence = useRef(0);
@@ -44,11 +36,8 @@ export default function Workspace({ user, onUser, onLogout }) {
   activeTab.current = tab;
   const isAdmin = user.role === 'admin';
   const canManageUsers = isAdmin || user.role === 'saleshead';
-  const activeSystem = EXTERNAL_SYSTEMS.find(system => system.tabs.some(item => item.id === tab));
-  const ExternalWorkspace = activeSystem?.Component;
-  const current = [...TABS, ...EXTERNAL_SYSTEMS.flatMap(system => system.tabs)].find(item => item.id === tab) || TABS[0];
+  const current = TABS.find(item => item.id === tab) || TABS[0];
   const salesTabs = TABS.filter(item => item.id !== 'users');
-  const navigation = [{ id: 'sales', title: 'Sales', icon: 'bag', tabs: salesTabs }, ...EXTERNAL_SYSTEMS];
   const reload = useCallback(async () => {
     const request = ++sequence.current;
     setLoading(true); setError('');
@@ -66,12 +55,8 @@ export default function Workspace({ user, onUser, onLogout }) {
   useEffect(() => { if (!canManageUsers && tab === 'users') { setTab('customers'); setDialog(null); } }, [canManageUsers, tab]);
   function saved(result) {
     if (dialog?.type === 'profile' && result.user) onUser(result.user);
-    else if (dialog?.kind === 'users' && result.record?.id === user.id) onUser(result.record);
+    else if (dialog?.kind === 'users' && result.record?.system === user.system && result.record?.id === user.id) onUser(result.record);
     setDialog(null); setNotice(dialog?.type === 'delete' ? 'Record deleted.' : 'Changes saved to the database.'); reload();
-  }
-  function externalNotice(message) {
-    setNotice(message || 'Changes saved.');
-    reload();
   }
   async function details(row, type = 'view') {
     const request = ++detailSequence.current;
@@ -85,7 +70,8 @@ export default function Workspace({ user, onUser, onLogout }) {
     setLogoutBusy(true); setError('');
     try { await onLogout(); } catch (error) { setError(error.message); setLogoutBusy(false); }
   }
-  const rows = tab === 'users' && !isAdmin ? data.users.filter(record => record.role === 'sales') : data[tab] || [];
+  const ownUsers = data.users.filter(record => record.system === user.system);
+  const rows = tab === 'users' ? isAdmin ? ownUsers : ownUsers.filter(record => record.role === 'sales') : data[tab] || [];
   const showRowActions = tab !== 'users' || isAdmin;
   const filtered = rows.filter(row => ['name', 'code', 'contactPerson', 'cpnumber', 'email', 'sku', 'description', 'number', 'customerName', 'orderNumber', 'invoiceNumber', 'carrier', 'trackingNumber', 'username', 'role', 'status', 'receivedBy'].some(key => String(row[key] || '').toLowerCase().includes(query.trim().toLowerCase())));
   const pages = Math.max(1, Math.ceil(filtered.length / 10));
@@ -106,12 +92,9 @@ export default function Workspace({ user, onUser, onLogout }) {
   return <div className="app-shell">
     {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
     <aside className={'sidebar ' + (menuOpen ? 'open' : '')}>
-      <div className="brand"><div className="brand-mark">T</div><div><strong>TLP COMPANY</strong><span>BUSINESS MANAGEMENT</span></div></div>
+      <div className="brand"><div className="brand-mark">T</div><div><strong>TLP COMPANY</strong><span>SalesSystem</span></div></div>
       <p className="nav-label">WORKSPACE</p>
-      <nav aria-label="Company systems">{navigation.map(system => <section className="system-navigation-group" key={system.id}>
-        <button className="sales-group" aria-expanded={Boolean(openGroups[system.id])} aria-controls={system.id + '-module-navigation'} onClick={() => setOpenGroups(current => ({ ...current, [system.id]: !current[system.id] }))}><Icon name={system.icon} size={18} /><span>{system.title}</span><Icon name="chevronDown" size={15} className={openGroups[system.id] ? '' : 'collapsed'} /></button>
-        <div id={system.id + '-module-navigation'} className="sales-navigation" hidden={!openGroups[system.id]}>{system.tabs.map(item => <button key={item.id} className={'nav-item ' + (tab === item.id ? 'active' : '')} aria-current={tab === item.id ? 'page' : undefined} onClick={() => { setTab(item.id); setMenuOpen(false); }}><Icon name={item.icon} size={17} /><span>{item.title}</span>{system.id === 'sales' && loaded && <span className="nav-count" aria-hidden="true">{count(data[item.id].length)}</span>}</button>)}</div>
-      </section>)}</nav>
+      <nav aria-label="Sales system"><button className="sales-group" aria-expanded={salesOpen} aria-controls="sales-module-navigation" onClick={() => setSalesOpen(open => !open)}><Icon name="bag" size={18} /><span>Sales</span><Icon name="chevronDown" size={15} className={salesOpen ? '' : 'collapsed'} /></button><div id="sales-module-navigation" className="sales-navigation" hidden={!salesOpen}>{salesTabs.map(item => <button key={item.id} className={'nav-item ' + (tab === item.id ? 'active' : '')} aria-current={tab === item.id ? 'page' : undefined} onClick={() => { setTab(item.id); setMenuOpen(false); }}><Icon name={item.icon} size={17} /><span>{item.title}</span>{loaded && <span className="nav-count" aria-hidden="true">{count(data[item.id].length)}</span>}</button>)}</div></nav>
       {canManageUsers && <><p className="nav-label administration">{isAdmin ? 'ADMINISTRATION' : 'TEAM'}</p><button className={'nav-item ' + (tab === 'users' ? 'active' : '')} aria-current={tab === 'users' ? 'page' : undefined} onClick={() => { setTab('users'); setMenuOpen(false); }}><Icon name="shield" size={19} /><span>SalesUserLogin</span></button></>}
       <div className="sidebar-bottom">
         <button className="account-button" onClick={() => { setDialog({ type: 'profile', record: user }); setMenuOpen(false); }}><Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span><Icon name="chevronRight" size={16} /></button>
@@ -122,7 +105,6 @@ export default function Workspace({ user, onUser, onLogout }) {
       <main className="workspace-content">
         {error && <div className="notice error" role="alert"><span>{error}{loaded && ' Displayed records may be out of date.'}</span><button className="text-button" disabled={loading} onClick={reload}>Try again</button></div>}
         {notice && <div className="toast" role="status"><Icon name="check" size={18} />{notice}<button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><Icon name="x" size={16} /></button></div>}
-        {ExternalWorkspace ? <ExternalWorkspace key={tab} tab={tab} user={user} onNotice={externalNotice} /> : <>
         <div className="page-heading"><div><span className="eyebrow">SALES WORKSPACE</span><h1>{current.title}</h1><p>{current.description}</p></div><button className="button primary" disabled={loading} onClick={() => setDialog({ type: 'new', kind: tab })}><span className="plus">+</span>{current.add}</button></div>
         <section className="stats-grid" aria-label="Sales overview">{stats.map(stat => <div className="stat-card" key={stat.label}><div><span>{stat.label}</span><div className={'stat-icon ' + stat.tone}><Icon name={stat.icon} size={19} /></div></div><strong>{loaded ? stat.value : '—'}</strong><small>{loaded ? stat.detail : 'Loading your records'}</small></div>)}</section>
         <section className="records-card" aria-label={current.title}>
@@ -143,14 +125,12 @@ export default function Workspace({ user, onUser, onLogout }) {
             {tab === 'sales-invoices' && <><td><strong className="document-number">{row.number}</strong><small>{row.orderNumber}</small></td><td>{row.customerName}</td><td className="nowrap">{dateLabel(row.dueDate)}</td><td className="numeric">{money(row.total, row.currency)}</td><td className="numeric">{money(Number(row.total) - Number(row.paidAmount), row.currency)}</td><td><Badge>{row.status}</Badge></td></>}
             {tab === 'delivery-receipts' && <><td><strong className="document-number">{row.number}</strong></td><td>{row.orderNumber}</td><td>{row.customerName}</td><td className="nowrap">{dateLabel(row.deliveryDate)}</td><td>{row.receivedBy || '—'}</td></>}
             {tab === 'shipping-invoices' && <><td><strong className="document-number">{row.number}</strong></td><td>{row.invoiceNumber}</td><td>{row.customerName}</td><td className="nowrap">{dateLabel(row.shippingDate)}</td><td><span>{row.carrier || '—'}</span>{row.trackingNumber && <small>{row.trackingNumber}</small>}</td><td className="numeric">{money(row.total, row.currency)}</td></>}
-            {tab === 'users' && <><td><div className="entity-cell"><Avatar user={row} /><div><strong>{row.name}{row.id === user.id && <span className="you-label">you</span>}</strong><small>{row.email || '—'}</small></div></div></td><td>{row.username}</td><td>{row.cpnumber || '—'}</td><td><Badge value={row.role}>{roleLabel(row.role)}</Badge></td><td><Badge value={row.isActive ? 'active' : 'inactive'}>{row.isActive ? 'Active' : 'Inactive'}</Badge></td></>}
+            {tab === 'users' && <><td><div className="entity-cell"><Avatar user={row} /><div><strong>{row.name}{row.system === user.system && row.id === user.id && <span className="you-label">you</span>}</strong><small>{row.email || '—'}</small></div></div></td><td>{row.username}</td><td>{row.cpnumber || '—'}</td><td><Badge value={row.role}>{roleLabel(row.role)}</Badge></td><td><Badge value={row.isActive ? 'active' : 'inactive'}>{row.isActive ? 'Active' : 'Inactive'}</Badge></td></>}
             {showRowActions && <td>{rowButtons(row)}</td>}
           </tr>)}</tbody></table></div>}
           <div className="table-footer"><span>{filtered.length ? ((safePage - 1) * 10 + 1) + '–' + Math.min(safePage * 10, filtered.length) : '0'} of {count(filtered.length)} records</span><div><button className="icon-button" aria-label="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" size={16} /></button><span>Page {safePage} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" size={16} /></button></div></div>
         </section>
         <footer className="workspace-footer"><span>TLP Company · SalesSystem</span><span>{tab === 'products' ? 'Product catalog and pricing' : 'Amounts use the document currency'}</span></footer>
-        </>}
-        {ExternalWorkspace && <footer className="workspace-footer"><span>TLP Company · {activeSystem.title}System</span><span>Connected company workspace</span></footer>}
       </main>
     </div>
     {dialog?.type === 'profile' && <UserForm profile actorRole={user.role} record={user} onClose={() => setDialog(null)} onSaved={saved} />}

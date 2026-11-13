@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { api, dateInput, dateLabel, today } from '../../SalesSystem/src/api.js';
-import { Badge, ErrorNotice, Modal, focusModalControl } from '../../SalesSystem/src/components/UI.jsx';
-import { Icon } from '../../SalesSystem/src/components/Icons.jsx';
+import { api, dateInput, dateLabel, today } from './api.js';
+import { Badge, ErrorNotice, Modal, focusModalControl } from './components/UI.jsx';
+import { Icon } from './components/Icons.jsx';
 import { calculateTotals, decimalString, decimalUnits, validDecimal } from './purchaseMath.js';
 
 export const documentTitle = kind => ({ 'purchase-requests': 'Purchase Request', 'purchase-orders': 'Purchase Order', receivings: 'Receiving Receipt' })[kind];

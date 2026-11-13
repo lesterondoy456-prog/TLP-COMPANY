@@ -7,7 +7,7 @@ const baseAccounts = [
   { id: 1, name: 'Mock Administrator', username: 'mock_admin', role: 'admin' },
   { id: 2, name: 'Mock Sales Head', username: 'mock_head', role: 'saleshead' },
   { id: 3, name: 'Mock Sales User', username: 'mock_sales', role: 'sales' },
-].map(account => ({ cpnumber: '', email: '', photo: '', isActive: true, ...account }));
+].map(account => ({ system: 'sales', cpnumber: '', email: '', photo: '', isActive: true, ...account }));
 const roleLabels = { admin: 'Administrator', saleshead: 'Sales Head', sales: 'Sales' };
 
 async function workspace(t, actorRole) {
@@ -24,7 +24,7 @@ async function workspace(t, actorRole) {
     if (method === 'POST' && pathname === '/api/users') {
       writes.push({ method, pathname, body });
       const { password, ...profile } = body;
-      const record = { id: accounts.length + 100, ...profile };
+      const record = { id: accounts.length + 100, system: 'sales', ...profile };
       accounts.push(record);
       return { status: 201, json: { record } };
     }
@@ -36,9 +36,10 @@ async function workspace(t, actorRole) {
       accounts[index] = record;
       return { json: { record } };
     }
-  }, { screenshotName: `user-roles-${actorRole}-mocked.png` });
+  }, { project: 'SalesSystem', screenshotName: `user-roles-${actorRole}-mocked.png` });
   await browser.page.goto(browser.origin);
   await expect(browser.page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
+  for (const title of ['PR Monitoring', 'Supplies Stock', 'Currency']) await expect(browser.page.getByRole('button', { name: title, exact: true })).toHaveCount(0);
   await expect(browser.page.getByRole('button', { name: 'Refresh records', exact: true })).toBeEnabled();
   return { ...browser, actor, writes, accounts };
 }

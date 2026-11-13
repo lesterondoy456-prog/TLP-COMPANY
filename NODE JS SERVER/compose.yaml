@@ -1,13 +1,13 @@
 name: tlp-company
 services:
-  sales:
-    image: tlp-company-sales:local
+  nodejs-server:
+    image: tlp-company-nodejs-server:local
     build:
-      context: ..
-      dockerfile: NODE JS SERVER/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${APP_PORT:-5189}:5189"
+      - "0.0.0.0:${API_PORT:-5189}:5189"
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -26,3 +26,43 @@ services:
       ADMIN_NAME: "${ADMIN_NAME:-Lester}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+  sales-system:
+    image: tlp-company-sales-system:local
+    build:
+      context: ../SalesSystem
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:${SALES_PORT:-5188}:80"
+    depends_on:
+      nodejs-server:
+        condition: service_healthy
+  warehouse-system:
+    image: tlp-company-warehouse-system:local
+    build:
+      context: ../WarehouseSystem
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:${WAREHOUSE_PORT:-5190}:80"
+    depends_on:
+      nodejs-server:
+        condition: service_healthy
+  purchasing-system:
+    image: tlp-company-purchasing-system:local
+    build:
+      context: ../PurchasingSystem
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:${PURCHASING_PORT:-5191}:80"
+    depends_on:
+      nodejs-server:
+        condition: service_healthy
+  configuration-system:
+    image: tlp-company-configuration-system:local
+    build:
+      context: ../ConfigurationSystem
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:${CONFIGURATION_PORT:-5192}:80"
+    depends_on:
+      nodejs-server:
+        condition: service_healthy

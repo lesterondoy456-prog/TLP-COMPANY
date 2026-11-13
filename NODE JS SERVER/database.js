@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { runMigrations } from './migration/run.js';
 
 // Database modules are evaluated before server.js. Load configuration before
 // selecting a driver so Linux containers never load the Windows native addon.
@@ -51,24 +51,12 @@ function makePool(database) {
 }
 
 export async function initializeDatabase() {
-  const database = process.env.DB_NAME || 'TLP Company';
-  if (!database || database.length > 128 || /[;\x00-\x1f]/.test(database)) throw new Error('Invalid DB_NAME.');
-  const admin = makePool('master');
-  try {
-    await admin.connect();
-    const result = await admin.request().input('name', sql.NVarChar(128), database)
-      .query('SELECT database_id FROM sys.databases WHERE name = @name');
-    if (!result.recordset.length) {
-      await admin.request().query(`CREATE DATABASE [${database.replaceAll(']', ']]')}]`);
-    }
-  } finally { await admin.close(); }
-  pool = makePool(database);
-  pool.on('error', error => console.error('Database pool error:', error.code || error.message));
-  await pool.connect();
-  for (const filename of ['schema.sql', 'configuration-schema.sql', 'erp-schema.sql']) {
-    const schema = await readFile(new URL(`./${filename}`, import.meta.url), 'utf8');
-    await pool.request().batch(schema);
-  }
+  pool = await runMigrations({
+    database: process.env.DB_NAME || 'TLP Company',
+    createPool: makePool,
+    sql,
+    onPoolError: error => console.error('Database pool error:', error.code || error.message),
+  });
   return pool;
 }
 

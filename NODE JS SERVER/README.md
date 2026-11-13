@@ -1,17 +1,19 @@
 # TLP Company Systems
 
-A shared React workspace for Sales, Purchasing, Warehouse inventory, and Configuration, backed by Node.js and the SQL Server database **TLP Company**. Signed login sessions check the current user and role in the database on each request.
+Four independent React projects connect to one Node.js backend and the SQL Server database **TLP Company**. Every frontend has its own package, entry point, build output, development server, port, and Docker container. Each system authenticates against its own user table and has its own session cookie and API namespace.
 
 ## Folders
 
 ```text
 TLP COMPANY/
-  NODE JS SERVER/   Node.js API, SQL schema, authentication, local .env
+  NODE JS SERVER/   Shared Node.js backend and local .env
+    Api/            SalesApi.js, PurchasingApi.js, ConfigurationApi.js, WarehouseApi.js
+    migration/      SQL schemas, database/schema checks, runner, and CLI
     tests/          In-memory workflow and mocked browser checks
-  SalesSystem/      Shared app entry, login, and Sales modules
-  PurchasingSystem/ Supplier, Supplies, PR, PO, and Receiving modules
-  WarehouseSystem/  Read-only supplies stock and receipt history
-  ConfigurationSystem/ CAS reference masters and audit trail
+  SalesSystem/      Independent React project: Sales and SalesUserLogin
+  PurchasingSystem/ Independent React project: Supplier, Supplies, PR, PO, Receiving
+  WarehouseSystem/  Independent React project: read-only supplies inventory
+  ConfigurationSystem/ Independent React project: reference masters and audit trail
 ```
 
 ## Run
@@ -23,13 +25,23 @@ Requires Node.js 22 or later, SQL Server, and Microsoft ODBC Driver 18 for SQL S
 From this `NODE JS SERVER` folder:
 
 ```powershell
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 docker compose ps
 ```
 
-Open **http://192.168.1.5:5189** from this computer or another device on the same Wi-Fi/LAN. This is the computer's current LAN address and may change when the router assigns another address. The container listens on all host interfaces at port 5189. If Windows Firewall blocks another device, run `allow-lan.ps1` from an Administrator PowerShell to permit only this app port from the local subnet.
+Open each project separately from this computer or another device on the same Wi-Fi/LAN:
 
-Sign in with the local administrator credentials configured in `.env`. The existing administrator is active with role `admin` in `dbo.SalesUserLogin`; the database stores a salted password hash. Credentials remain in the local environment file.
+| Project | LAN address |
+| --- | --- |
+| SalesSystem | http://192.168.1.5:5188 |
+| Shared Node API | http://192.168.1.5:5189/api/health |
+| WarehouseSystem | http://192.168.1.5:5190 |
+| PurchasingSystem | http://192.168.1.5:5191 |
+| ConfigurationSystem | http://192.168.1.5:5192 |
+
+These are the computer's current LAN address and configured default ports. Each frontend serves only its own system. Its `/api` proxy connects to the shared Node server; no frontend imports another project's source or build. Ports can be configured in the server's local `.env`. If Windows Firewall blocks LAN clients, `allow-lan.ps1` permits only these five TCP ports from the local subnet when run as Administrator.
+
+Sign in separately to each app with its local administrator account. Startup creates an administrator from the server's local `.env` only when that system has none. User accounts and salted password hashes are stored in `SalesUserLogin`, `PurchasingUserLogin`, `WarehouseUserLogin`, and `ConfigurationUserLogin`. Credentials remain in the local environment file.
 
 Docker uses the existing Windows SQL Server instance at `host.docker.internal:1433`, database `TLP Company`. Its dedicated SQL login is scoped to that database; credentials and session configuration come from the local `.env`, which is excluded from the Docker build context and Git. SQL Server must remain running. Business data remains in SQL Server when the app container is restarted or rebuilt.
 
@@ -39,41 +51,60 @@ docker compose restart
 docker compose down
 ```
 
-`docker compose down` stops the app; it does not delete the SQL database. Start the stack again with `docker compose up -d`.
+`docker compose down` stops the five app containers; it does not delete the SQL database. Start them again with `docker compose up -d`.
 
 ## Local development
 
 ```powershell
 cd "NODE JS SERVER"
-npm install
-npm --prefix ../SalesSystem install
-npm run dev
+npm ci
+npm --prefix ../SalesSystem ci
+npm --prefix ../WarehouseSystem ci
+npm --prefix ../PurchasingSystem ci
+npm --prefix ../ConfigurationSystem ci
+npm run dev:all
 ```
 
-Open http://127.0.0.1:5188. The API runs on http://127.0.0.1:5189. Startup creates the database and tables if they do not exist, then creates the first administrator if needed. Your Windows account needs permission to create the database on first startup; subsequent runs use the existing database.
+The same five ports apply in development. `npm run dev` inside this backend folder starts only the Node API. Each React project can also run independently with its own `npm run dev`, `npm start`, or `npm run build`. `dev:all` is a convenience launcher for the backend and four independent Vite processes.
 
-For a single production-style server:
+Build all four independent frontends from this backend folder:
 
 ```powershell
 npm run build
-npm start
 ```
 
-Then open http://127.0.0.1:5189.
+`npm start` here starts only the Node API. Production frontend hosting is handled by each project's Dockerfile and Nginx configuration.
+
+## Per-system APIs and migrations
+
+`Api/SalesApi.js`, `PurchasingApi.js`, `ConfigurationApi.js`, and `WarehouseApi.js` contain their own login, session, profile, account, and business routes. `server.js` connects these four APIs to the shared HTTP server. Both `ClientApi.js` and `router.js` are removed.
+
+| System | API namespace | User table | Account roles |
+| --- | --- | --- | --- |
+| Sales | `/api/sales` | `SalesUserLogin` | admin, saleshead, sales |
+| Purchasing | `/api/purchasing` | `PurchasingUserLogin` | admin, purchasing |
+| Warehouse | `/api/warehouse` | `WarehouseUserLogin` | admin, warehouse |
+| Configuration | `/api/configuration` | `ConfigurationUserLogin` | admin, configuration |
+
+Each namespace has its own `/auth/login`, `/auth/session`, `/auth/logout`, `/auth/profile`, and `/users` endpoints. Cookies and signed sessions are scoped to the relevant system. An account or session from one system does not authenticate another. Configuration masters use `/api/configuration/masters`; other business paths follow their owning system's prefix. Purchasing actor foreign keys reference PurchasingUserLogin. Shared audit records identify the actor's system as well as the account ID.
+
+All SQL files and database/schema checking live under `migration/`: `schema.sql`, `system-accounts.sql`, `configuration-schema.sql`, `erp-schema.sql`, and `run.js`. Backend startup applies these idempotent migrations before listening. To run only the migrations, use `npm run migrate`; its CLI does not create administrator or business records. Startup creates each system's administrator only when needed. The backend contains the actual local `.env`; no `.env.example` is required.
 
 ## Administrator and configuration
 
 The actual local configuration is `.env` inside this server folder. It contains `ADMIN_USERNAME`, `ADMIN_PASSWORD`, a private session secret, and the SQL Server connection settings. Sign in using those administrator credentials. Passwords in `SalesUserLogin` are stored as salted hashes. The `.env` file is excluded from Git; keep a private backup when moving the application to another computer.
 
-The first administrator is named Lester. Add your mobile number, email, and profile photo through the profile form. Account roles are enforced by the API and shown in **SalesUserLogin**.
+The initial administrator is named Lester. Add your mobile number, email, and profile photo through each app's own profile form. Administrators manage accounts in that app's UserLogin screen. Sales retains the following account permissions:
 
 | Role | Account permissions |
 | --- | --- |
 | Admin (`admin`) | Full system access. Creates and edits Admin, Sales Head, and Sales accounts. |
-| Sales Head (`saleshead`) | Uses business modules, reads configuration, views Sales accounts, and creates Sales accounts. |
-| Sales (`sales`) | Uses business modules, reads configuration, and edits its own profile. |
+| Sales Head (`saleshead`) | Uses Sales modules, views Sales accounts, and creates Sales accounts. |
+| Sales (`sales`) | Uses Sales modules and edits its own profile. |
 
 **Sales In-charge** selects an active Sales account. Customer assignments reference the account ID, so account name changes appear on the customer record. The customer form omits Company Id.
+
+Purchasing users work in Purchasing; Warehouse users view inventory; Configuration users read reference records. Each system's administrator has full access to its available functions and its own account management. Only Configuration administrators can change configuration masters. Configuration Audit Trail shows events from all four systems with an explicit system field.
 
 ## Sales workflow
 
@@ -104,7 +135,7 @@ PR and PO monitoring show posted downstream quantities and remaining balances. D
 
 ## Configuration
 
-The configuration group contains ATC, Audit Trail, Bank, Country, Currency, Customer Category, Payment Term, Product Category, Supplies Category, Unit of Product, VAT, Warehouse, and Warehouse Location. Only administrators can change these masters. Deactivation retains referenced records and their history. Audit Trail is read-only and records application mutations without storing passwords or photos.
+The independent ConfigurationSystem contains ATC, Audit Trail, Bank, Country, Currency, Customer Category, Payment Term, Product Category, Supplies Category, Unit of Product, VAT, Warehouse, and Warehouse Location. Only administrators can change these masters. Deactivation retains referenced records and their history. Audit Trail is read-only and records application mutations without storing passwords or photos.
 
 The observed CAS inputs and limitations are recorded in `docs/cas-purchasing-reference.json`. Blank CAS forms were inspected without saving or posting transactions. Sales retains its existing full-order invoice/delivery relationships described above; CAS printing, unposting, production, and finished-goods allocation are not implemented by the new purchasing workflow.
 
@@ -117,4 +148,4 @@ npm run test:browser
 
 The default tests run against pure validation, the actual receiving coordinator with an in-memory transactional repository, and mocked browser API routes. They do not start the API or write SQL/business records. Browser tests use installed Google Chrome; run `npm run build` first. Screenshots are saved under `.qa/screenshots/`.
 
-Legacy SQL integration suites are available only through explicit `test:sql` and `test:browser:sql` scripts. They create disposable databases and business fixtures; they were not run for this update because real test transactions were prohibited.
+Historical SQL integration suites remain behind the explicit `test:sql` and `test:browser:sql` scripts. They still target the earlier endpoint/hosting layout and need adaptation before use with these independent apps. They create disposable databases and business fixtures; they were not run for this update because test transactions were prohibited. The verified commands above use only pure and mocked tests.

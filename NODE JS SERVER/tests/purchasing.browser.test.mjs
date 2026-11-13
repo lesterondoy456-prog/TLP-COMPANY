@@ -4,16 +4,17 @@ import { expect } from '@playwright/test';
 import { mockBrowser } from './helpers/mock-browser.mjs';
 import { mockPurchasing } from './helpers/mock-purchasing.mjs';
 
-test('four-system mocked PR to PO to receipt posting updates only Supplies stock and displays its movements', { timeout: 120_000 }, async t => {
-  const actor = { id: 1, name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
-  const purchasing = mockPurchasing(actor);
-  const { page, origin, apiRequests, screenshot, assertSafe } = await mockBrowser(t, purchasing.onApi, { screenshotName: 'purchasing-workflow-mock-last.png', viewport: { width: 1500, height: 1100 } });
+test('independent Purchasing and Warehouse apps share mocked receipt state without sharing frontend entries', { timeout: 120_000 }, async t => {
+  const actor = { id: 1, system: 'purchasing', name: 'Mock Purchasing Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
+  const warehouseActor = { ...actor, id: 77, system: 'warehouse', name: 'Mock Warehouse Administrator' };
+  const purchasing = mockPurchasing(actor, warehouseActor);
+  const { page, origin, gotoProject, apiRequests, screenshot, assertSafe } = await mockBrowser(t, purchasing.onApi, { project: 'PurchasingSystem', screenshotName: 'purchasing-workflow-mock-last.png', viewport: { width: 1500, height: 1100 } });
   await page.goto(origin);
-  await expect(page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
-  for (const name of ['Sales', 'Purchasing', 'Warehouse', 'Configuration']) await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'PR Monitoring', exact: true, level: 1 })).toBeVisible();
+  for (const name of ['PR Monitoring', 'PO Monitoring', 'Supplier', 'Supplies', 'Receiving Receipt']) await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
+  for (const name of ['Customer', 'Product', 'Currency', 'Supplies Stock']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Production', exact: true })).toHaveCount(0);
   await expect(page.getByRole('searchbox', { name: 'Search sales modules', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Purchasing', exact: true }).click();
   const navigate = async name => {
     await page.getByRole('button', { name, exact: true }).click();
     await expect(page.getByRole('heading', { name, exact: true }).first()).toBeVisible();
@@ -122,15 +123,21 @@ test('four-system mocked PR to PO to receipt posting updates only Supplies stock
   assert.equal(purchasing.snapshot().productStock, 7);
   await screenshot('receiving-posted-mocked.png');
 
-  await page.getByRole('button', { name: 'Warehouse', exact: true }).click();
-  await page.getByRole('button', { name: 'Supplies Stock', exact: true }).click();
+  const warehouseOrigin = await gotoProject('WarehouseSystem');
+  assert.notEqual(warehouseOrigin, origin, 'Purchasing and Warehouse must load different project origins.');
   await expect(page.getByRole('heading', { name: 'Supplies Stock', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: new RegExp(warehouseActor.name) })).toBeVisible();
+  await expect(page.getByRole('button', { name: new RegExp(actor.name) })).toHaveCount(0);
+  for (const name of ['PR Monitoring', 'PO Monitoring', 'Customer', 'Product', 'Currency']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
   const stockRow = page.getByRole('row').filter({ hasText: 'Mock Paper' });
   await expect(stockRow.getByRole('cell', { name: '2', exact: true })).toBeVisible();
   await stockRow.getByRole('button', { name: 'View stock', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'LOT-1-1', exact: true }).first()).toBeVisible();
   await expect(page.getByRole('cell', { name: 'SRR-MOCK-001', exact: true })).toHaveCount(2);
-  assert.ok(apiRequests.some(call => call.pathname === '/api/inventory/movements' && call.search === '?suppliesId=30'));
+  assert.ok(apiRequests.some(call => call.project === 'WarehouseSystem' && call.pathname === '/api/inventory/movements' && call.search === '?suppliesId=30'));
+  assert.ok(apiRequests.filter(call => call.pathname.startsWith('/api/purchase-')).every(call => call.project === 'PurchasingSystem'));
+  assert.ok(apiRequests.filter(call => call.pathname.startsWith('/api/inventory')).every(call => call.project === 'WarehouseSystem'));
+  assert.ok(apiRequests.every(call => call.requestPathname.startsWith(`/api/${call.system}/`)));
   await expect(page.getByRole('button', { name: /New stock|Adjust stock|Save stock/ })).toHaveCount(0);
   await screenshot('warehouse-supplies-stock-mocked.png');
   await page.setViewportSize({ width: 390, height: 844 });

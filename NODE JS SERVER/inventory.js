@@ -20,6 +20,6 @@ export async function listStockMovements(suppliesId) {
     u.name AS createdBy,m.createdAt,CONVERT(varchar(10),r.srrDate,23) AS receivedDate,o.branch
     FROM dbo.SupplyStockMovements m JOIN dbo.SupplyInventory i ON i.id=m.inventoryId JOIN dbo.Supplies s ON s.id=i.suppliesId
     JOIN dbo.SuppliesReceipts r ON r.id=m.receiptId JOIN dbo.PurchaseOrders o ON o.id=r.purchaseOrderId
-    JOIN dbo.ConfigWarehouses w ON w.id=i.warehouseId JOIN dbo.ConfigLocations l ON l.id=i.locationId JOIN dbo.SalesUserLogin u ON u.id=m.createdById
+    JOIN dbo.ConfigWarehouses w ON w.id=i.warehouseId JOIN dbo.ConfigLocations l ON l.id=i.locationId JOIN dbo.PurchasingUserLogin u ON u.id=m.createdById
     ${suppliesId ? 'WHERE i.suppliesId=@suppliesId' : ''} ORDER BY m.id DESC`)).recordset;
 }

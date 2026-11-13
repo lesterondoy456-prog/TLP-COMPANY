@@ -1,8 +1,7 @@
 import { db, request, sql, transaction } from './database.js';
-import { ApiError, USER_COLUMNS, hashPassword, requireAdmin, requireAccountManager } from './components/auth.js';
+import { ApiError } from './components/errors.js';
 import * as v from './components/validation.js';
 import { listCustomers, getCustomer, saveCustomer, customerOptions } from './customers.js';
-import { canReadSalesUser, canCreateSalesUser, isSalesRole, ownProfilePrivileges } from './components/roles.js';
 import { listProducts, getProduct, saveProduct } from './products.js';
 import { recordAudit } from './audit.js';
 import { salesOrderPricing, commonSalesCurrency } from './components/sales-pricing.js';
@@ -269,68 +268,4 @@ export async function createShippingInvoice(input, user) {
   return getShippingInvoice(id);
 }
 
-export async function listUsers(user) {
-  requireAccountManager(user);
-  return (await db().request().query(`SELECT ${USER_COLUMNS} FROM dbo.SalesUserLogin ${user.role === 'saleshead' ? "WHERE role='sales'" : ''} ORDER BY id`)).recordset;
-}
-
-async function getUserRecord(id, scope) {
-  const result = await request(scope).input('id', sql.Int, id).query(`SELECT ${USER_COLUMNS} FROM dbo.SalesUserLogin WHERE id=@id`);
-  if (!result.recordset.length) throw new ApiError(404, 'Sales user could not be found.');
-  return result.recordset[0];
-}
-
-export async function getUser(id, currentUser) {
-  requireAccountManager(currentUser);
-  const target = await getUserRecord(id);
-  if (!canReadSalesUser(currentUser, target)) throw new ApiError(403, 'Sales heads can only view Sales accounts.');
-  return target;
-}
-
-export async function saveUser(input, currentUser, id, ownProfile = false) {
-  if (!ownProfile) {
-    requireAccountManager(currentUser);
-    if (id) requireAdmin(currentUser);
-    else if (currentUser.role === 'saleshead' && !canCreateSalesUser(currentUser, input.role)) {
-      throw new ApiError(403, 'Sales heads can only create Sales accounts.');
-    }
-  }
-  if (ownProfile && id !== currentUser.id) throw new ApiError(403, 'You can only update your own profile.');
-  const name = v.text(input, 'name', 150, true);
-  const username = v.username(input);
-  const cpnumber = v.text(input, 'cpnumber', 30);
-  const email = v.email(input);
-  const photo = v.photo(input);
-  const privileges = ownProfile ? ownProfilePrivileges(currentUser) : { role: input.role, isActive: v.bool(input, 'isActive') };
-  const { role, isActive } = privileges;
-  if (!isSalesRole(role)) throw new ApiError(400, 'Role must be admin, saleshead or sales.');
-  const plainPassword = ownProfile ? undefined : v.password(input, !id);
-  const passwordHash = plainPassword ? await hashPassword(plainPassword) : undefined;
-  const savedId = await transaction(async tx => {
-    if (id) {
-      const current = await getUserRecord(id, tx);
-      if (id === currentUser.id && (!isActive || role !== 'admin') && currentUser.role === 'admin') {
-        throw new ApiError(400, 'Keep your own administrator account active with the admin role.');
-      }
-      if (current.role === 'admin' && current.isActive && (role !== 'admin' || !isActive)) {
-        const count = await request(tx).query("SELECT COUNT(*) AS total FROM dbo.SalesUserLogin WITH (UPDLOCK,HOLDLOCK) WHERE role='admin' AND isActive=1");
-        if (count.recordset[0].total <= 1) throw new ApiError(409, 'At least one active administrator is required.');
-      }
-    }
-    const req = request(tx).input('name', sql.NVarChar(150), name).input('username', sql.NVarChar(80), username)
-      .input('cpnumber', sql.NVarChar(30), cpnumber).input('email', sql.NVarChar(254), email)
-      .input('photo', sql.NVarChar(sql.MAX), photo).input('role', sql.NVarChar(20), role).input('isActive', sql.Bit, isActive);
-    if (passwordHash) req.input('passwordHash', sql.VarChar(300), passwordHash);
-    if (id) {
-      await req.input('id', sql.Int, id).query(`UPDATE dbo.SalesUserLogin SET name=@name,username=@username,cpnumber=@cpnumber,
-        email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME()${passwordHash ? ',passwordHash=@passwordHash' : ''} WHERE id=@id`);
-      await recordAudit(tx, currentUser, 'users', ownProfile ? 'profile' : 'update', id);
-      return id;
-    }
-    const result = await req.query(`INSERT INTO dbo.SalesUserLogin (name,username,cpnumber,email,photo,role,isActive,passwordHash)
-      OUTPUT INSERTED.id VALUES (@name,@username,@cpnumber,@email,@photo,@role,@isActive,@passwordHash)`);
-    await recordAudit(tx, currentUser, 'users', 'create', result.recordset[0].id);
-    return result.recordset[0].id;
-  });
-  return getUserRecord(savedId);
-}
+export { listUsers, getUser, saveUser } from './accounts.js';

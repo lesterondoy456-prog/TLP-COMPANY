@@ -3,7 +3,7 @@ import test from 'node:test';
 import { expect } from '@playwright/test';
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
-const admin = { id: 1, name: 'Mock Administrator', username: 'mock_admin', cpnumber: '', email: '', photo: '', role: 'admin', isActive: true };
+const admin = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', cpnumber: '', email: '', photo: '', role: 'admin', isActive: true };
 const salesAccounts = [
   admin,
   { id: 2, name: 'Mock Sales Head', username: 'mock_head', role: 'saleshead', isActive: true },
@@ -39,7 +39,7 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
       if (index === -1) records.push(record); else records[index] = record;
       return { status: method === 'POST' ? 201 : 200, json: { record } };
     }
-  }, { screenshotName: 'customer-form-mock-last.png' });
+  }, { project: 'SalesSystem', screenshotName: 'customer-form-mock-last.png' });
   await page.goto(origin);
   await expect(page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'New customer', exact: false }).click();

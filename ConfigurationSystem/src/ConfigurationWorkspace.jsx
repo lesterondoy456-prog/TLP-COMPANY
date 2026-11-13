@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../../SalesSystem/src/api.js';
-import { Icon } from '../../SalesSystem/src/components/Icons.jsx';
-import { Badge, Empty, ErrorNotice, Field, FormFooter, Modal } from '../../SalesSystem/src/components/UI.jsx';
+import { api } from './api.js';
+import { Icon } from './components/Icons.jsx';
+import { Badge, Empty, ErrorNotice, Field, FormFooter, Modal } from './components/UI.jsx';
 import './configuration.css';
 
 export const CONFIGURATION_TABS = [
@@ -42,7 +42,7 @@ function ConfigurationRecords({ kind, user, onNotice }) {
     const id = ++sequence.current;
     setLoading(true); setError('');
     try {
-      const [definition, result] = await Promise.all([api('/configuration'), api('/configuration/' + kind)]);
+      const [definition, result] = await Promise.all([api('/masters'), api('/masters/' + kind)]);
       if (id !== sequence.current) return;
       const module = definition.modules?.find(item => item.kind === kind);
       if (!module) throw new Error('Configuration fields could not be loaded. Please refresh.');
@@ -60,7 +60,7 @@ function ConfigurationRecords({ kind, user, onNotice }) {
   async function changeStatus(record) {
     setSaving(true); setError('');
     try {
-      await api('/configuration/' + kind + '/' + record.id, { method: 'PUT', body: { ...record, isActive: !record.isActive } });
+      await api('/masters/' + kind + '/' + record.id, { method: 'PUT', body: { ...record, isActive: !record.isActive } });
       onNotice?.(record.isActive ? 'Configuration record deactivated.' : 'Configuration record activated.');
       await load();
     } catch (failure) { setError(failure.message); }
@@ -93,7 +93,7 @@ function ConfigurationForm({ kind, metadata, record, onClose, onSaved }) {
     try {
       const body = { ...values };
       for (const field of metadata.fields) if (field.type === 'number') body[field.key] = Number(body[field.key]);
-      await api('/configuration/' + kind + (record ? '/' + record.id : ''), { method: record ? 'PUT' : 'POST', body });
+      await api('/masters/' + kind + (record ? '/' + record.id : ''), { method: record ? 'PUT' : 'POST', body });
       onSaved();
     } catch (failure) { setError(failure.message); setBusy(false); }
   }

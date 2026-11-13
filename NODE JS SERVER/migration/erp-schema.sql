@@ -1,8 +1,5 @@
 SET XACT_ABORT ON;
 
-IF COL_LENGTH(N'dbo.SalesOrders',N'currency') IS NULL
-  ALTER TABLE dbo.SalesOrders ADD currency NVARCHAR(30) NOT NULL CONSTRAINT DF_SalesOrders_Currency DEFAULT N'PHP';
-
 -- Preserve six-decimal prices for existing installations as well as new tables.
 IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID(N'dbo.SupplySuppliers') AND name=N'price' AND scale<6)
 BEGIN
@@ -153,8 +150,8 @@ BEGIN
     id INT IDENTITY PRIMARY KEY,number NVARCHAR(40) NOT NULL UNIQUE,branch NVARCHAR(150) NOT NULL,
     prDate DATE NOT NULL,neededDate DATE NOT NULL,requestedBy NVARCHAR(150) NOT NULL DEFAULT N'',requestedDept NVARCHAR(150) NOT NULL DEFAULT N'',
     checkedBy NVARCHAR(150) NOT NULL DEFAULT N'',approvedBy NVARCHAR(150) NOT NULL DEFAULT N'',approvedBy2 NVARCHAR(150) NOT NULL DEFAULT N'',
-    remarks NVARCHAR(2000) NOT NULL DEFAULT N'',preparedById INT NOT NULL REFERENCES dbo.SalesUserLogin(id),preparedBy NVARCHAR(150) NOT NULL,
-    status NVARCHAR(20) NOT NULL DEFAULT 'draft',postedById INT NULL REFERENCES dbo.SalesUserLogin(id),postedAt DATETIME2 NULL,
+    remarks NVARCHAR(2000) NOT NULL DEFAULT N'',preparedById INT NOT NULL REFERENCES dbo.PurchasingUserLogin(id),preparedBy NVARCHAR(150) NOT NULL,
+    status NVARCHAR(20) NOT NULL DEFAULT 'draft',postedById INT NULL REFERENCES dbo.PurchasingUserLogin(id),postedAt DATETIME2 NULL,
     createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     CONSTRAINT CK_PurchaseRequests_Status CHECK(status IN ('draft','posted','closed','cancelled'))
   );
@@ -180,8 +177,8 @@ BEGIN
     suppliesCategory NVARCHAR(100) NOT NULL DEFAULT N'',vatCode NVARCHAR(80) NOT NULL,vatRate DECIMAL(9,6) NOT NULL,vatInclusive BIT NOT NULL,
     decimalInPrice INT NOT NULL,decimalInTotalPrice INT NOT NULL,deliveryAddress NVARCHAR(500) NOT NULL DEFAULT N'',remarks NVARCHAR(2000) NOT NULL DEFAULT N'',
     grossAmount DECIMAL(20,6) NOT NULL,discountAmount DECIMAL(20,6) NOT NULL,netAmount DECIMAL(20,6) NOT NULL,vatAmount DECIMAL(20,6) NOT NULL,amount DECIMAL(20,6) NOT NULL,
-    preparedById INT NOT NULL REFERENCES dbo.SalesUserLogin(id),preparedBy NVARCHAR(150) NOT NULL,status NVARCHAR(20) NOT NULL DEFAULT 'draft',
-    postedById INT NULL REFERENCES dbo.SalesUserLogin(id),postedAt DATETIME2 NULL,createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    preparedById INT NOT NULL REFERENCES dbo.PurchasingUserLogin(id),preparedBy NVARCHAR(150) NOT NULL,status NVARCHAR(20) NOT NULL DEFAULT 'draft',
+    postedById INT NULL REFERENCES dbo.PurchasingUserLogin(id),postedAt DATETIME2 NULL,createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     CONSTRAINT CK_PurchaseOrders_Status CHECK(status IN ('draft','posted','closed','cancelled')),CONSTRAINT CK_PurchaseOrders_Rate CHECK(rate>0)
   );
 END;
@@ -206,8 +203,8 @@ BEGIN
     purchaseOrderId INT NOT NULL REFERENCES dbo.PurchaseOrders(id),srrDate DATE NOT NULL,drNumber NVARCHAR(80) NOT NULL DEFAULT N'',pezaReference NVARCHAR(80) NOT NULL DEFAULT N'',
     invoiceNumber NVARCHAR(80) NOT NULL,invoiceDate DATE NULL,rate DECIMAL(18,5) NOT NULL,remarks NVARCHAR(2000) NOT NULL DEFAULT N'',
     grossAmount DECIMAL(20,6) NOT NULL,discountAmount DECIMAL(20,6) NOT NULL,netAmount DECIMAL(20,6) NOT NULL,vatAmount DECIMAL(20,6) NOT NULL,amount DECIMAL(20,6) NOT NULL,
-    receivedById INT NOT NULL REFERENCES dbo.SalesUserLogin(id),receivedBy NVARCHAR(150) NOT NULL,status NVARCHAR(20) NOT NULL DEFAULT 'draft',
-    postedById INT NULL REFERENCES dbo.SalesUserLogin(id),postedAt DATETIME2 NULL,createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    receivedById INT NOT NULL REFERENCES dbo.PurchasingUserLogin(id),receivedBy NVARCHAR(150) NOT NULL,status NVARCHAR(20) NOT NULL DEFAULT 'draft',
+    postedById INT NULL REFERENCES dbo.PurchasingUserLogin(id),postedAt DATETIME2 NULL,createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     CONSTRAINT CK_SuppliesReceipts_Status CHECK(status IN ('draft','posted','cancelled')),CONSTRAINT CK_SuppliesReceipts_Rate CHECK(rate>0)
   );
 END;
@@ -248,7 +245,7 @@ BEGIN
   CREATE TABLE dbo.SupplyStockMovements (
     id INT IDENTITY PRIMARY KEY,receiptId INT NOT NULL REFERENCES dbo.SuppliesReceipts(id),receiptItemId INT NOT NULL REFERENCES dbo.SuppliesReceiptItems(id),
     allocationId INT NOT NULL UNIQUE REFERENCES dbo.SuppliesReceiptAllocations(id),inventoryId INT NOT NULL REFERENCES dbo.SupplyInventory(id),quantity DECIMAL(18,6) NOT NULL,
-    createdById INT NOT NULL REFERENCES dbo.SalesUserLogin(id),createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),CONSTRAINT CK_SupplyStockMovements_Quantity CHECK(quantity>0)
+    createdById INT NOT NULL REFERENCES dbo.PurchasingUserLogin(id),createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),CONSTRAINT CK_SupplyStockMovements_Quantity CHECK(quantity>0)
   );
 END;
 
@@ -343,3 +340,156 @@ BEGIN
     CONSTRAINT PK_ProductInventorySchedules PRIMARY KEY(productId,position)
   );
 END;
+
+-- Existing Purchasing records must reference Purchasing accounts, never Sales.
+BEGIN TRY
+  BEGIN TRANSACTION;
+    DECLARE @wrongUserFk_PurchaseRequests_preparedById sysname;
+    SELECT TOP(1) @wrongUserFk_PurchaseRequests_preparedById=f.name FROM sys.foreign_keys f
+    JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+    JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+    WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseRequests') AND p.name=N'preparedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    WHILE @wrongUserFk_PurchaseRequests_preparedById IS NOT NULL
+    BEGIN
+      DECLARE @dropUserFk_PurchaseRequests_preparedById NVARCHAR(500)=N'ALTER TABLE dbo.PurchaseRequests DROP CONSTRAINT '+QUOTENAME(@wrongUserFk_PurchaseRequests_preparedById);
+      EXEC(@dropUserFk_PurchaseRequests_preparedById);
+      SET @wrongUserFk_PurchaseRequests_preparedById=NULL;
+      SELECT TOP(1) @wrongUserFk_PurchaseRequests_preparedById=f.name FROM sys.foreign_keys f
+      JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseRequests') AND p.name=N'preparedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    END;
+    IF NOT EXISTS(SELECT 1 FROM sys.foreign_keys f JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseRequests') AND p.name=N'preparedById' AND f.referenced_object_id=OBJECT_ID(N'dbo.PurchasingUserLogin'))
+      ALTER TABLE dbo.PurchaseRequests WITH CHECK ADD CONSTRAINT FK_PurchaseRequests_preparedById_PurchasingUser FOREIGN KEY(preparedById) REFERENCES dbo.PurchasingUserLogin(id);
+
+    DECLARE @wrongUserFk_PurchaseRequests_postedById sysname;
+    SELECT TOP(1) @wrongUserFk_PurchaseRequests_postedById=f.name FROM sys.foreign_keys f
+    JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+    JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+    WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseRequests') AND p.name=N'postedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    WHILE @wrongUserFk_PurchaseRequests_postedById IS NOT NULL
+    BEGIN
+      DECLARE @dropUserFk_PurchaseRequests_postedById NVARCHAR(500)=N'ALTER TABLE dbo.PurchaseRequests DROP CONSTRAINT '+QUOTENAME(@wrongUserFk_PurchaseRequests_postedById);
+      EXEC(@dropUserFk_PurchaseRequests_postedById);
+      SET @wrongUserFk_PurchaseRequests_postedById=NULL;
+      SELECT TOP(1) @wrongUserFk_PurchaseRequests_postedById=f.name FROM sys.foreign_keys f
+      JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseRequests') AND p.name=N'postedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    END;
+    IF NOT EXISTS(SELECT 1 FROM sys.foreign_keys f JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseRequests') AND p.name=N'postedById' AND f.referenced_object_id=OBJECT_ID(N'dbo.PurchasingUserLogin'))
+      ALTER TABLE dbo.PurchaseRequests WITH CHECK ADD CONSTRAINT FK_PurchaseRequests_postedById_PurchasingUser FOREIGN KEY(postedById) REFERENCES dbo.PurchasingUserLogin(id);
+
+    DECLARE @wrongUserFk_PurchaseOrders_preparedById sysname;
+    SELECT TOP(1) @wrongUserFk_PurchaseOrders_preparedById=f.name FROM sys.foreign_keys f
+    JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+    JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+    WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseOrders') AND p.name=N'preparedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    WHILE @wrongUserFk_PurchaseOrders_preparedById IS NOT NULL
+    BEGIN
+      DECLARE @dropUserFk_PurchaseOrders_preparedById NVARCHAR(500)=N'ALTER TABLE dbo.PurchaseOrders DROP CONSTRAINT '+QUOTENAME(@wrongUserFk_PurchaseOrders_preparedById);
+      EXEC(@dropUserFk_PurchaseOrders_preparedById);
+      SET @wrongUserFk_PurchaseOrders_preparedById=NULL;
+      SELECT TOP(1) @wrongUserFk_PurchaseOrders_preparedById=f.name FROM sys.foreign_keys f
+      JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseOrders') AND p.name=N'preparedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    END;
+    IF NOT EXISTS(SELECT 1 FROM sys.foreign_keys f JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseOrders') AND p.name=N'preparedById' AND f.referenced_object_id=OBJECT_ID(N'dbo.PurchasingUserLogin'))
+      ALTER TABLE dbo.PurchaseOrders WITH CHECK ADD CONSTRAINT FK_PurchaseOrders_preparedById_PurchasingUser FOREIGN KEY(preparedById) REFERENCES dbo.PurchasingUserLogin(id);
+
+    DECLARE @wrongUserFk_PurchaseOrders_postedById sysname;
+    SELECT TOP(1) @wrongUserFk_PurchaseOrders_postedById=f.name FROM sys.foreign_keys f
+    JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+    JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+    WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseOrders') AND p.name=N'postedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    WHILE @wrongUserFk_PurchaseOrders_postedById IS NOT NULL
+    BEGIN
+      DECLARE @dropUserFk_PurchaseOrders_postedById NVARCHAR(500)=N'ALTER TABLE dbo.PurchaseOrders DROP CONSTRAINT '+QUOTENAME(@wrongUserFk_PurchaseOrders_postedById);
+      EXEC(@dropUserFk_PurchaseOrders_postedById);
+      SET @wrongUserFk_PurchaseOrders_postedById=NULL;
+      SELECT TOP(1) @wrongUserFk_PurchaseOrders_postedById=f.name FROM sys.foreign_keys f
+      JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseOrders') AND p.name=N'postedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    END;
+    IF NOT EXISTS(SELECT 1 FROM sys.foreign_keys f JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.PurchaseOrders') AND p.name=N'postedById' AND f.referenced_object_id=OBJECT_ID(N'dbo.PurchasingUserLogin'))
+      ALTER TABLE dbo.PurchaseOrders WITH CHECK ADD CONSTRAINT FK_PurchaseOrders_postedById_PurchasingUser FOREIGN KEY(postedById) REFERENCES dbo.PurchasingUserLogin(id);
+
+    DECLARE @wrongUserFk_SuppliesReceipts_receivedById sysname;
+    SELECT TOP(1) @wrongUserFk_SuppliesReceipts_receivedById=f.name FROM sys.foreign_keys f
+    JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+    JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+    WHERE f.parent_object_id=OBJECT_ID(N'dbo.SuppliesReceipts') AND p.name=N'receivedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    WHILE @wrongUserFk_SuppliesReceipts_receivedById IS NOT NULL
+    BEGIN
+      DECLARE @dropUserFk_SuppliesReceipts_receivedById NVARCHAR(500)=N'ALTER TABLE dbo.SuppliesReceipts DROP CONSTRAINT '+QUOTENAME(@wrongUserFk_SuppliesReceipts_receivedById);
+      EXEC(@dropUserFk_SuppliesReceipts_receivedById);
+      SET @wrongUserFk_SuppliesReceipts_receivedById=NULL;
+      SELECT TOP(1) @wrongUserFk_SuppliesReceipts_receivedById=f.name FROM sys.foreign_keys f
+      JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.SuppliesReceipts') AND p.name=N'receivedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    END;
+    IF NOT EXISTS(SELECT 1 FROM sys.foreign_keys f JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.SuppliesReceipts') AND p.name=N'receivedById' AND f.referenced_object_id=OBJECT_ID(N'dbo.PurchasingUserLogin'))
+      ALTER TABLE dbo.SuppliesReceipts WITH CHECK ADD CONSTRAINT FK_SuppliesReceipts_receivedById_PurchasingUser FOREIGN KEY(receivedById) REFERENCES dbo.PurchasingUserLogin(id);
+
+    DECLARE @wrongUserFk_SuppliesReceipts_postedById sysname;
+    SELECT TOP(1) @wrongUserFk_SuppliesReceipts_postedById=f.name FROM sys.foreign_keys f
+    JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+    JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+    WHERE f.parent_object_id=OBJECT_ID(N'dbo.SuppliesReceipts') AND p.name=N'postedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    WHILE @wrongUserFk_SuppliesReceipts_postedById IS NOT NULL
+    BEGIN
+      DECLARE @dropUserFk_SuppliesReceipts_postedById NVARCHAR(500)=N'ALTER TABLE dbo.SuppliesReceipts DROP CONSTRAINT '+QUOTENAME(@wrongUserFk_SuppliesReceipts_postedById);
+      EXEC(@dropUserFk_SuppliesReceipts_postedById);
+      SET @wrongUserFk_SuppliesReceipts_postedById=NULL;
+      SELECT TOP(1) @wrongUserFk_SuppliesReceipts_postedById=f.name FROM sys.foreign_keys f
+      JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.SuppliesReceipts') AND p.name=N'postedById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    END;
+    IF NOT EXISTS(SELECT 1 FROM sys.foreign_keys f JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.SuppliesReceipts') AND p.name=N'postedById' AND f.referenced_object_id=OBJECT_ID(N'dbo.PurchasingUserLogin'))
+      ALTER TABLE dbo.SuppliesReceipts WITH CHECK ADD CONSTRAINT FK_SuppliesReceipts_postedById_PurchasingUser FOREIGN KEY(postedById) REFERENCES dbo.PurchasingUserLogin(id);
+
+    DECLARE @wrongUserFk_SupplyStockMovements_createdById sysname;
+    SELECT TOP(1) @wrongUserFk_SupplyStockMovements_createdById=f.name FROM sys.foreign_keys f
+    JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+    JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+    WHERE f.parent_object_id=OBJECT_ID(N'dbo.SupplyStockMovements') AND p.name=N'createdById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    WHILE @wrongUserFk_SupplyStockMovements_createdById IS NOT NULL
+    BEGIN
+      DECLARE @dropUserFk_SupplyStockMovements_createdById NVARCHAR(500)=N'ALTER TABLE dbo.SupplyStockMovements DROP CONSTRAINT '+QUOTENAME(@wrongUserFk_SupplyStockMovements_createdById);
+      EXEC(@dropUserFk_SupplyStockMovements_createdById);
+      SET @wrongUserFk_SupplyStockMovements_createdById=NULL;
+      SELECT TOP(1) @wrongUserFk_SupplyStockMovements_createdById=f.name FROM sys.foreign_keys f
+      JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.SupplyStockMovements') AND p.name=N'createdById' AND f.referenced_object_id<>OBJECT_ID(N'dbo.PurchasingUserLogin');
+    END;
+    IF NOT EXISTS(SELECT 1 FROM sys.foreign_keys f JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+      JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+      WHERE f.parent_object_id=OBJECT_ID(N'dbo.SupplyStockMovements') AND p.name=N'createdById' AND f.referenced_object_id=OBJECT_ID(N'dbo.PurchasingUserLogin'))
+      ALTER TABLE dbo.SupplyStockMovements WITH CHECK ADD CONSTRAINT FK_SupplyStockMovements_createdById_PurchasingUser FOREIGN KEY(createdById) REFERENCES dbo.PurchasingUserLogin(id);
+  COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+  IF XACT_STATE()<>0 ROLLBACK TRANSACTION;
+  THROW;
+END CATCH;
+
+
+IF COL_LENGTH(N'dbo.SalesOrders',N'currency') IS NULL
+  ALTER TABLE dbo.SalesOrders ADD currency NVARCHAR(30) NOT NULL CONSTRAINT DF_SalesOrders_Currency DEFAULT N'PHP';

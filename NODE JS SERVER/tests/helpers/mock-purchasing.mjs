@@ -3,7 +3,7 @@ import { validatePurchaseRequest, validatePurchaseOrder, validateReceiving } fro
 import { calculatePurchaseTotals, createReceivingWorkflow, decimalString, decimalUnits } from '../../components/purchasing-workflow.js';
 import { memoryReceivingRepository } from './receiving-memory-repository.mjs';
 
-export function mockPurchasing(actor) {
+export function mockPurchasing(actor, warehouseActor) {
   const supplier = { id: 50, code: 'SUP-MOCK', name: 'Mock Supplier', shortName: 'Mock', businessStyle: 'Wholesale', address: 'Supplier Office', contactPerson: 'Supplier Contact', paymentTerm: '30 DAYS', vatCode: 'VS', vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, isActive: true };
   const supplies = { id: 30, code: 'S-MOCK', name: 'Mock Paper', description: 'Paper Roll', unit: 'kg', minimumStock: '1.000000', category: 'Raw Materials', stock: '0.000000', isActive: true, suppliers: [{ supplierId: 50, price: '5.000000', currency: 'PHP', moq: '0.000000', remarks: '' }], offices: [], inventorySchedules: [] };
   const options = {
@@ -32,8 +32,8 @@ export function mockPurchasing(actor) {
     return { ...supplies, ...movement, id: index + 1, suppliesId: supplies.id, quantity: decimalString(amount, 6), warehouseCode: 'WH-MOCK', warehouseDescription: 'Mock Warehouse', locationCode: 'LOC-MOCK', locationDescription: 'Mock Location' };
   });
 
-  async function onApi({ method, pathname, body }) {
-    if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: actor } };
+  async function onApi({ project, method, pathname, body }) {
+    if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: project === 'WarehouseSystem' ? warehouseActor : actor } };
     if (method === 'GET' && pathname === '/api/configuration') return { json: { modules: configurationMetadata() } };
     if (method === 'GET' && pathname === '/api/purchasing-options') return { json: options };
     if (method === 'GET' && pathname === '/api/inventory') return { json: { records: stockRows() } };

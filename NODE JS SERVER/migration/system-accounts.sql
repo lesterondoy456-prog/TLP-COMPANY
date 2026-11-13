@@ -1,0 +1,37 @@
+SET XACT_ABORT ON;
+
+IF OBJECT_ID(N'dbo.PurchasingUserLogin',N'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.PurchasingUserLogin (
+    id INT IDENTITY PRIMARY KEY,name NVARCHAR(150) NOT NULL,username NVARCHAR(80) NOT NULL,
+    cpnumber NVARCHAR(30) NOT NULL DEFAULT N'',email NVARCHAR(254) NOT NULL DEFAULT N'',photo NVARCHAR(MAX) NOT NULL DEFAULT N'',
+    role NVARCHAR(20) NOT NULL,passwordHash VARCHAR(300) NOT NULL,isActive BIT NOT NULL DEFAULT 1,
+    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT UQ_PurchasingUserLogin_Username UNIQUE(username),
+    CONSTRAINT CK_PurchasingUserLogin_Role CHECK(role IN ('admin','purchasing'))
+  );
+END;
+
+IF OBJECT_ID(N'dbo.WarehouseUserLogin',N'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.WarehouseUserLogin (
+    id INT IDENTITY PRIMARY KEY,name NVARCHAR(150) NOT NULL,username NVARCHAR(80) NOT NULL,
+    cpnumber NVARCHAR(30) NOT NULL DEFAULT N'',email NVARCHAR(254) NOT NULL DEFAULT N'',photo NVARCHAR(MAX) NOT NULL DEFAULT N'',
+    role NVARCHAR(20) NOT NULL,passwordHash VARCHAR(300) NOT NULL,isActive BIT NOT NULL DEFAULT 1,
+    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT UQ_WarehouseUserLogin_Username UNIQUE(username),
+    CONSTRAINT CK_WarehouseUserLogin_Role CHECK(role IN ('admin','warehouse'))
+  );
+END;
+
+IF OBJECT_ID(N'dbo.ConfigurationUserLogin',N'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.ConfigurationUserLogin (
+    id INT IDENTITY PRIMARY KEY,name NVARCHAR(150) NOT NULL,username NVARCHAR(80) NOT NULL,
+    cpnumber NVARCHAR(30) NOT NULL DEFAULT N'',email NVARCHAR(254) NOT NULL DEFAULT N'',photo NVARCHAR(MAX) NOT NULL DEFAULT N'',
+    role NVARCHAR(20) NOT NULL,passwordHash VARCHAR(300) NOT NULL,isActive BIT NOT NULL DEFAULT 1,
+    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT UQ_ConfigurationUserLogin_Username UNIQUE(username),
+    CONSTRAINT CK_ConfigurationUserLogin_Role CHECK(role IN ('admin','configuration'))
+  );
+END;

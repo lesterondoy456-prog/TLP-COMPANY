@@ -1,7 +1,7 @@
 import React, { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { api, dateLabel } from '../../SalesSystem/src/api.js';
-import { Empty, ErrorNotice } from '../../SalesSystem/src/components/UI.jsx';
-import { Icon } from '../../SalesSystem/src/components/Icons.jsx';
+import { api, dateLabel } from './api.js';
+import { Empty, ErrorNotice } from './components/UI.jsx';
+import { Icon } from './components/Icons.jsx';
 import './warehouse.css';
 
 export const WAREHOUSE_TABS = [

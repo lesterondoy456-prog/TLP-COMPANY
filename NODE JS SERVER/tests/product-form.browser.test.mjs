@@ -5,7 +5,7 @@ import { configurationMetadata } from '../configuration.js';
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
 test('CAS Product tabs validate and preserve all scalar and child fields using mocked APIs only', { timeout: 90_000 }, async t => {
-  const admin = { id: 1, name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
+  const admin = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
   const header = { id: 20, sku: 'HEADER', name: 'Existing Header', unit: 'pcs', price: 0, stock: 50, isActive: true };
   const records = [header];
   const writes = [];
@@ -32,7 +32,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
       if (index === -1) records.push(record); else records[index] = record;
       return { status: method === 'POST' ? 201 : 200, json: { record } };
     }
-  }, { screenshotName: 'product-form-mock-last.png', viewport: { width: 1500, height: 1100 } });
+  }, { project: 'SalesSystem', screenshotName: 'product-form-mock-last.png', viewport: { width: 1500, height: 1100 } });
   await page.goto(origin);
   await expect(page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Product', exact: true }).click();

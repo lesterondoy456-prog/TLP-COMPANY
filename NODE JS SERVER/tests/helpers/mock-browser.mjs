@@ -7,19 +7,27 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 
 // Static assets and in-memory routes only: no environment, backend, or SQL imports.
-const dist = fileURLToPath(new URL('../../../SalesSystem/dist/', import.meta.url));
+const workspace = fileURLToPath(new URL('../../../', import.meta.url));
+const projects = new Set(['SalesSystem', 'PurchasingSystem', 'WarehouseSystem', 'ConfigurationSystem']);
+const systemNames = { SalesSystem: 'sales', PurchasingSystem: 'purchasing', WarehouseSystem: 'warehouse', ConfigurationSystem: 'configuration' };
 const screenshots = new URL('../../.qa/screenshots/', import.meta.url);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 
-export async function mockBrowser(t, onApi, { screenshotName, viewport = { width: 1440, height: 1100 } } = {}) {
-  await stat(path.join(dist, 'index.html'));
+export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: customDist, screenshotName, viewport = { width: 1440, height: 1100 } } = {}) {
   const escapedApiRequests = [];
   const unexpectedRequests = [];
   const apiRequests = [];
   const pageErrors = [];
   let browser;
   let page;
-  const server = createServer(async (request, response) => {
+  const servers = [];
+  const origins = new Map();
+  async function projectOrigin(name, overrideDist) {
+    if (!projects.has(name)) throw new Error('Unknown independent test project: ' + name);
+    if (origins.has(name)) return origins.get(name);
+    const dist = overrideDist ? path.resolve(overrideDist) : path.join(workspace, name, 'dist');
+    await stat(path.join(dist, 'index.html'));
+    const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname.startsWith('/api/')) {
       escapedApiRequests.push({ method: request.method, pathname: url.pathname });
@@ -37,24 +45,32 @@ export async function mockBrowser(t, onApi, { screenshotName, viewport = { width
       response.writeHead(200, { 'Content-Type': mime[path.extname(filename)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
       response.end(request.method === 'HEAD' ? undefined : data);
     } catch { response.writeHead(500); response.end(); }
-  });
+    });
+    servers.push(server);
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    origins.set(name, origin);
+    return origin;
+  }
   const screenshot = async name => page.screenshot({ path: fileURLToPath(new URL(name, screenshots)), fullPage: true });
   t.after(async () => {
     if (screenshotName && page && !page.isClosed()) await screenshot(screenshotName).catch(() => {});
     await browser?.close();
-    server.closeAllConnections();
-    if (server.listening) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await Promise.all(servers.map(async server => {
+      server.closeAllConnections();
+      if (server.listening) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }));
   });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const origin = `http://127.0.0.1:${server.address().port}`;
+  const origin = await projectOrigin(project, customDist);
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   const context = await browser.newContext({ viewport, locale: 'en-PH', timezoneId: 'Asia/Manila', serviceWorkers: 'block' });
   await context.route('**/*', async route => {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === 'GET' && url.hostname === 'fonts.googleapis.com') { await route.fulfill({ contentType: 'text/css', body: '' }); return; }
-    if (url.origin !== origin) {
+    const currentProject = [...origins].find(([, candidate]) => candidate === url.origin)?.[0];
+    if (!currentProject) {
       unexpectedRequests.push({ method: request.method(), url: request.url() });
       await route.abort('blockedbyclient'); return;
     }
@@ -63,7 +79,18 @@ export async function mockBrowser(t, onApi, { screenshotName, viewport = { width
       else { unexpectedRequests.push({ method: request.method(), url: request.url() }); await route.abort('blockedbyclient'); }
       return;
     }
-    const call = { method: request.method(), pathname: url.pathname, search: url.search, body: request.postData() ? request.postDataJSON() : undefined };
+    const system = systemNames[currentProject];
+    const prefix = `/api/${system}`;
+    if (!url.pathname.startsWith(prefix + '/')) {
+      unexpectedRequests.push({ method: request.method(), url: request.url(), expectedNamespace: prefix });
+      await route.fulfill({ status: 500, json: { message: 'This app must use its own API namespace.' } });
+      return;
+    }
+    // Existing business stubs use a system-local logical path. Preserve and
+    // assert the actual namespace separately so no cross-system call is hidden.
+    let pathname = '/api' + url.pathname.slice(prefix.length);
+    if (system === 'configuration') pathname = pathname.replace(/^\/api\/masters(?=\/|$)/, '/api/configuration');
+    const call = { project: currentProject, system, origin: url.origin, method: request.method(), pathname, requestPathname: url.pathname, search: url.search, body: request.postData() ? request.postDataJSON() : undefined };
     apiRequests.push(call);
     const result = await onApi(call);
     if (result) { await route.fulfill(result); return; }
@@ -75,7 +102,8 @@ export async function mockBrowser(t, onApi, { screenshotName, viewport = { width
   page.on('pageerror', error => pageErrors.push(error.message));
   await mkdir(screenshots, { recursive: true });
   return {
-    page, origin, apiRequests, screenshot,
+    page, origin, apiRequests, screenshot, projectOrigin,
+    async gotoProject(name) { const destination = await projectOrigin(name); await page.goto(destination); return destination; },
     assertSafe() {
       assert.deepEqual(escapedApiRequests, [], 'No API request may reach the static-only HTTP server.');
       assert.deepEqual(unexpectedRequests, [], 'No external calls or unrelated API mutations are allowed.');

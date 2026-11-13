@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { api, dateInput } from '../../SalesSystem/src/api.js';
-import { ErrorNotice, Modal, focusModalControl } from '../../SalesSystem/src/components/UI.jsx';
-import { Icon } from '../../SalesSystem/src/components/Icons.jsx';
+import { api, dateInput } from './api.js';
+import { ErrorNotice, Modal, focusModalControl } from './components/UI.jsx';
+import { Icon } from './components/Icons.jsx';
 
 const SUPPLIER_TEXT = {
   name: { label: 'Name', max: 180, required: true },

@@ -5,7 +5,7 @@ import { configurationMetadata, validateConfiguration } from '../configuration.j
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
 async function configurationPage(t, role) {
-  const actor = { id: 1, name: 'Mock ' + role, username: 'mock_' + role, role, isActive: true, cpnumber: '', email: '', photo: '' };
+  const actor = { id: 1, system: 'configuration', name: 'Mock ' + role, username: 'mock_' + role, role, isActive: true, cpnumber: '', email: '', photo: '' };
   const state = { currencies: [], countries: [{ id: 20, name: 'Mock Country', isActive: true, deletedDate: null }], 'audit-trail': [{ id: 501, userName: actor.name, module: 'currencies', action: 'create', recordId: '101', createdAt: '2026-11-13T00:00:00.000Z' }] };
   const writes = [];
   let rejectNext = false;
@@ -29,13 +29,12 @@ async function configurationPage(t, role) {
       }
     }
     if (method === 'GET' && ['/api/customers', '/api/products', '/api/sales-orders', '/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: [] } };
-  }, { screenshotName: `configuration-${role}-mocked.png` });
+  }, { project: 'ConfigurationSystem', screenshotName: `configuration-${role}-mocked.png` });
   await browser.page.goto(browser.origin);
-  await expect(browser.page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
-  for (const group of ['Sales', 'Purchasing', 'Warehouse', 'Configuration']) await expect(browser.page.getByRole('button', { name: group, exact: true })).toBeVisible();
+  await expect(browser.page.getByRole('heading', { name: 'ATC', exact: true, level: 1 })).toBeVisible();
+  for (const title of ['Customer', 'Product', 'PR Monitoring', 'Supplies Stock']) await expect(browser.page.getByRole('button', { name: title, exact: true })).toHaveCount(0);
   await expect(browser.page.getByRole('button', { name: 'Production', exact: true })).toHaveCount(0);
   await expect(browser.page.getByRole('searchbox', { name: 'Search sales modules', exact: true })).toHaveCount(0);
-  await browser.page.getByRole('button', { name: 'Configuration', exact: true }).click();
   return { ...browser, writes, state, rejectOnce: () => { rejectNext = true; } };
 }
 
@@ -82,8 +81,8 @@ test('configuration metadata forms preserve failed input, save, and soft deactiv
   assertSafe();
 });
 
-test('Sales can read Configuration records without maintenance controls or writes', { timeout: 45_000 }, async t => {
-  const { page, writes, assertSafe } = await configurationPage(t, 'sales');
+test('Configuration worker can read records without maintenance controls or writes', { timeout: 45_000 }, async t => {
+  const { page, writes, assertSafe } = await configurationPage(t, 'configuration');
   await page.getByRole('button', { name: 'Country', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'Mock Country', exact: true })).toBeVisible();
   for (const name of ['New record', 'Edit', 'Activate', 'Deactivate']) await expect(page.getByRole('button', { name, exact: name !== 'New record' })).toHaveCount(0);

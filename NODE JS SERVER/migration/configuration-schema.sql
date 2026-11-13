@@ -76,7 +76,30 @@ CREATE TABLE dbo.ConfigVatCodes (
 );
 IF OBJECT_ID(N'dbo.AuditTrail',N'U') IS NULL
 CREATE TABLE dbo.AuditTrail (
-  id BIGINT IDENTITY PRIMARY KEY, userId INT NOT NULL REFERENCES dbo.SalesUserLogin(id), userName NVARCHAR(150) NOT NULL,
+  id BIGINT IDENTITY PRIMARY KEY, userId INT NOT NULL, userName NVARCHAR(150) NOT NULL,
+  system NVARCHAR(20) NOT NULL DEFAULT N'sales',
   module NVARCHAR(100) NOT NULL, action NVARCHAR(50) NOT NULL, recordId NVARCHAR(100) NOT NULL,
   createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
 );
+IF COL_LENGTH(N'dbo.AuditTrail',N'system') IS NULL
+  ALTER TABLE dbo.AuditTrail ADD system NVARCHAR(20) NOT NULL CONSTRAINT DF_AuditTrail_System DEFAULT N'sales';
+IF NOT EXISTS(SELECT 1 FROM sys.check_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.AuditTrail') AND name=N'CK_AuditTrail_System')
+  EXEC(N'ALTER TABLE dbo.AuditTrail ADD CONSTRAINT CK_AuditTrail_System CHECK(system IN (''sales'',''purchasing'',''warehouse'',''configuration''))');
+
+-- A user id belongs to the table identified by system; it cannot reference Sales
+-- accounts globally when four independent account tables share this audit log.
+DECLARE @auditUserForeignKey sysname;
+SELECT TOP(1) @auditUserForeignKey=f.name FROM sys.foreign_keys f
+JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+WHERE f.parent_object_id=OBJECT_ID(N'dbo.AuditTrail') AND p.name=N'userId';
+WHILE @auditUserForeignKey IS NOT NULL
+BEGIN
+  DECLARE @dropAuditUserForeignKey NVARCHAR(500)=N'ALTER TABLE dbo.AuditTrail DROP CONSTRAINT '+QUOTENAME(@auditUserForeignKey);
+  EXEC(@dropAuditUserForeignKey);
+  SET @auditUserForeignKey=NULL;
+  SELECT TOP(1) @auditUserForeignKey=f.name FROM sys.foreign_keys f
+  JOIN sys.foreign_key_columns c ON c.constraint_object_id=f.object_id
+  JOIN sys.columns p ON p.object_id=c.parent_object_id AND p.column_id=c.parent_column_id
+  WHERE f.parent_object_id=OBJECT_ID(N'dbo.AuditTrail') AND p.name=N'userId';
+END;

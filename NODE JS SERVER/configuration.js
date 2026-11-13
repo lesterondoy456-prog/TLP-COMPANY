@@ -33,7 +33,7 @@ export const CONFIGURATION_KINDS = Object.freeze(Object.keys(specs));
 export function configurationMetadata() {
   return [
     ...Object.entries(specs).map(([kind, spec]) => ({ kind, title: spec.title, readOnly: false, fields: spec.fields.map(field => ({ ...field, ...(field.options ? { options: [...field.options] } : {}) })) })),
-    { kind: 'audit-trail', title: 'Audit Trail', readOnly: true, fields: [text('createdAt', 'Date'), text('userName', 'User'), text('module', 'Module'), text('action', 'Action'), text('recordId', 'Record')] },
+    { kind: 'audit-trail', title: 'Audit Trail', readOnly: true, fields: [text('createdAt', 'Date'), text('system', 'System'), text('userName', 'User'), text('module', 'Module'), text('action', 'Action'), text('recordId', 'Record')] },
   ];
 }
 
@@ -92,7 +92,7 @@ export function createConfigurationService({ request, sql, transaction, recordAu
   }
 
   async function listAuditTrail() {
-    return (await request().query('SELECT TOP (1000) id,userId,userName,module,action,recordId,createdAt FROM dbo.AuditTrail ORDER BY id DESC')).recordset;
+    return (await request().query('SELECT TOP (1000) id,userId,userName,system,module,action,recordId,createdAt FROM dbo.AuditTrail ORDER BY id DESC')).recordset;
   }
 
   return {
