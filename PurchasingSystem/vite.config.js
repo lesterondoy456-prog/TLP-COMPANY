@@ -8,15 +8,15 @@ export default defineConfig({
     port: 5191,
     proxy: {
       "/api": {
-        target: process.env.API_PROXY_TARGET || "http://localhost:5189",
+        target: process.env.API_PROXY_TARGET || "http://localhost:5188",
         changeOrigin: true,
       },
       "/Uploads": {
-        target: process.env.API_PROXY_TARGET || "http://localhost:5189",
+        target: process.env.API_PROXY_TARGET || "http://localhost:5188",
         changeOrigin: true,
       },
       "/socket.io": {
-        target: process.env.API_PROXY_TARGET || "http://localhost:5189",
+        target: process.env.API_PROXY_TARGET || "http://localhost:5188",
         changeOrigin: true,
         ws: true,
       },

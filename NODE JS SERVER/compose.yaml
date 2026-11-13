@@ -7,10 +7,10 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "0.0.0.0:5189:5189"
+      - "0.0.0.0:5188:5188"
     env_file: .env
     environment:
-      PORT: "5189"
+      PORT: "5188"
       DB_SERVER: host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -20,9 +20,9 @@ services:
       context: ../SalesSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:5188:5188"
+      - "0.0.0.0:5189:5189"
     environment:
-      API_PROXY_TARGET: http://nodejs-server:5189
+      API_PROXY_TARGET: http://nodejs-server:5188
     depends_on:
       nodejs-server:
         condition: service_healthy
@@ -34,7 +34,7 @@ services:
     ports:
       - "0.0.0.0:5190:5190"
     environment:
-      API_PROXY_TARGET: http://nodejs-server:5189
+      API_PROXY_TARGET: http://nodejs-server:5188
     depends_on:
       nodejs-server:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
     ports:
       - "0.0.0.0:5191:5191"
     environment:
-      API_PROXY_TARGET: http://nodejs-server:5189
+      API_PROXY_TARGET: http://nodejs-server:5188
     depends_on:
       nodejs-server:
         condition: service_healthy
@@ -58,7 +58,7 @@ services:
     ports:
       - "0.0.0.0:5192:5192"
     environment:
-      API_PROXY_TARGET: http://nodejs-server:5189
+      API_PROXY_TARGET: http://nodejs-server:5188
     depends_on:
       nodejs-server:
         condition: service_healthy

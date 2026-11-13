@@ -183,7 +183,7 @@ function createApp(env = process.env, options = {}) {
 }
 
 async function start() {
-  const port = Number(process.env.PORT || 5189);
+  const port = Number(process.env.PORT || 5188);
   const host = process.env.HOST || '0.0.0.0';
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.');
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) throw new Error('Set SESSION_SECRET to at least 32 random characters in NODE JS SERVER/.env.');

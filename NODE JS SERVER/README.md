@@ -29,17 +29,17 @@ docker compose up -d --build --remove-orphans
 docker compose ps
 ```
 
-Each frontend container runs its own built React app with Vite preview. The Node API runs separately on port 5189. Open each app on this computer:
+Each frontend container runs its own built React app with Vite preview. The Node API runs separately on port 5188. Open each app on this computer:
 
 | Project | Address |
 | --- | --- |
-| SalesSystem | http://localhost:5188 |
-| Shared Node API | http://localhost:5189/api/health |
+| SalesSystem | http://localhost:5189 |
+| Shared Node API | http://localhost:5188/api/health |
 | WarehouseSystem | http://localhost:5190 |
 | PurchasingSystem | http://localhost:5191 |
 | ConfigurationSystem | http://localhost:5192 |
 
-For LAN access, replace `localhost` with this computer's LAN IP. Each frontend uses `@vitejs/plugin-react` and inline Vite proxy entries for `/api`, `/Uploads`, and `/socket.io`, with `changeOrigin: true` and WebSocket proxying for `/socket.io`. The target defaults to `http://localhost:5189`; Docker sets `API_PROXY_TARGET=http://nodejs-server:5189`. `/socket.io` carries authenticated live updates; `/Uploads` remains a reserved proxy path without upload storage.
+For LAN access, replace `localhost` with this computer's LAN IP. Each frontend uses `@vitejs/plugin-react` and inline Vite proxy entries for `/api`, `/Uploads`, and `/socket.io`, with `changeOrigin: true` and WebSocket proxying for `/socket.io`. The target defaults to `http://localhost:5188`; Docker sets `API_PROXY_TARGET=http://nodejs-server:5188`. `/socket.io` carries authenticated live updates; `/Uploads` remains a reserved proxy path without upload storage.
 
 The four frontend ports and the API port are set directly in `compose.yaml`. Browser API calls use each frontend's same-origin Vite proxy. Every write request sends JSON, including bodyless actions; the backend rejects simple form submissions and does not enable cross-origin CORS requests. There is no frontend-origin list to update when the LAN IP changes.
 

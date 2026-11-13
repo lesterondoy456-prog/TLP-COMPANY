@@ -4,7 +4,7 @@ Independent React/Vite project on port **5191**. Supplier and Supplies masters, 
 
 ## Development
 
-Start the common Node.js API on port 5189. Then, from this folder:
+Start the common Node.js API on port 5188. Then, from this folder:
 
 ```powershell
 npm ci
@@ -22,7 +22,7 @@ npm run build
 npm start
 ```
 
-`npm start` serves `dist` with Vite preview on the same port. The React plugin is configured in `vite.config.js`. Development and preview both proxy `/api`, `/Uploads`, and `/socket.io` with `changeOrigin: true` to `API_PROXY_TARGET`, which defaults to `http://localhost:5189`. Docker runs the built Vite app in its own Node container and sets the target to `http://nodejs-server:5189`.
+`npm start` serves `dist` with Vite preview on the same port. The React plugin is configured in `vite.config.js`. Development and preview both proxy `/api`, `/Uploads`, and `/socket.io` with `changeOrigin: true` to `API_PROXY_TARGET`, which defaults to `http://localhost:5188`. Docker runs the built Vite app in its own Node container and sets the target to `http://nodejs-server:5188`.
 
 The upload and Socket.IO entries forward requests only; the backend has no upload-storage or Socket.IO service yet. Allowed frontend URLs are configured in the backend `.env` as `FRONTEND_ORIGINS`.
 

@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const backend = path.join(workspace, 'NODE JS SERVER');
-const systems = { SalesSystem: 5188, WarehouseSystem: 5190, PurchasingSystem: 5191, ConfigurationSystem: 5192 };
+const systems = { SalesSystem: 5189, WarehouseSystem: 5190, PurchasingSystem: 5191, ConfigurationSystem: 5192 };
 const sidebarPages = {
   SalesSystem: ['Customer', 'Product', 'SalesOrder', 'Invoice', 'DeliveryReceipt', 'ShippingInvoice', 'SalesUserLogin'],
   PurchasingSystem: ['PRMonitoring', 'POMonitoring', 'Supplier', 'Supplies', 'ReceivingReceipt', 'PurchasingUserLogin'],
@@ -77,7 +77,7 @@ for (const [project, port] of Object.entries(systems)) {
     assert.equal(cliPort(packageJson.scripts?.start) || configuredPort(previewOptions) || 4173, port, 'The actual npm start preview port must match Docker and Compose.');
     assert.match(config, /import\s+react\s+from\s+['"]@vitejs\/plugin-react['"]/);
     assert.match(config, /plugins\s*:\s*\[\s*react\(\)\s*\]/);
-    assert.match(config, /process\.env\.API_PROXY_TARGET\s*\|\|\s*['"]http:\/\/localhost:5189['"]/);
+    assert.match(config, /process\.env\.API_PROXY_TARGET\s*\|\|\s*['"]http:\/\/localhost:5188['"]/);
     assert.match(config, /server\s*:\s*\{[\s\S]*?proxy\s*:\s*\{/);
     for (const route of ['/api', '/Uploads', '/socket.io']) {
       const escaped = route.replaceAll('.', '\\.');
@@ -132,7 +132,7 @@ for (const [project, port] of Object.entries(systems)) {
 test('frontend containers use their own Vite ports and the shared API proxy target without Nginx', async () => {
   const compose = await readFile(path.join(backend, 'compose.yaml'), 'utf8');
   assert.doesNotMatch(compose, /nginx/i);
-  assert.equal([...compose.matchAll(/API_PROXY_TARGET:\s*["']?http:\/\/nodejs-server:5189/g)].length, 4);
+  assert.equal([...compose.matchAll(/API_PROXY_TARGET:\s*["']?http:\/\/nodejs-server:5188/g)].length, 4);
   for (const port of Object.values(systems)) assert.match(compose, new RegExp(':' + port + '["\']?\\s*$', 'm'));
 });
 

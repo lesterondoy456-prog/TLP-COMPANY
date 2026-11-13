@@ -12,10 +12,10 @@ function policyRequest({ method = 'GET', headers = {} } = {}) {
 }
 
 test('JSON writes work through rewritten proxy hosts without origin or port allowlists', () => {
-  for (const host of ['localhost', '127.0.0.1', '192.168.1.5']) for (const port of [5188, 5190, 5191, 5192]) {
+  for (const host of ['localhost', '127.0.0.1', '192.168.1.5']) for (const port of [5189, 5190, 5191, 5192]) {
     const origin = `http://${host}:${port}`;
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
-      const headers = { Host: 'nodejs-server:5189', Origin: origin, 'Content-Type': 'application/json' };
+      const headers = { Host: 'nodejs-server:5188', Origin: origin, 'Content-Type': 'application/json' };
       assert.doesNotThrow(() => checkOrigin(policyRequest({ method, headers })));
       assert.doesNotThrow(() => checkOrigin(policyRequest({ method, headers: { ...headers, 'Sec-Fetch-Site': 'same-origin' } })));
       assert.throws(() => checkOrigin(policyRequest({ method, headers: { ...headers, 'Sec-Fetch-Site': 'cross-site' } })), error => error.status === 403);
@@ -33,7 +33,7 @@ test('every unsafe API method rejects form content types and absent JSON headers
 });
 
 test('malformed and opaque Origin values remain rejected without a frontend allowlist', () => {
-  for (const origin of ['null', 'not-an-origin', 'data:text/plain,mock', 'file://', 'http://localhost:5188/', 'http://localhost:5188/path', 'http://user:password@localhost:5188']) {
+  for (const origin of ['null', 'not-an-origin', 'data:text/plain,mock', 'file://', 'http://localhost:5189/', 'http://localhost:5189/path', 'http://user:password@localhost:5189']) {
     assert.throws(() => checkOrigin(policyRequest({ method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' } })), error => error.status === 403);
   }
 });
