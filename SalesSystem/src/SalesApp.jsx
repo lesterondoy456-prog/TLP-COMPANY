@@ -4,14 +4,14 @@ import { SALES_PAGES } from './salesNavigation.js';
 import Layout from './components/Layout.jsx';
 import SalesOverview from './components/SalesOverview.jsx';
 import { Icon } from './components/Icons.jsx';
-import CustomerPage from './pages/Customer.jsx';
-import ProductPage from './pages/Product.jsx';
-import SalesOrderPage from './pages/SalesOrder.jsx';
-import InvoicePage from './pages/Invoice.jsx';
-import DeliveryReceiptPage from './pages/DeliveryReceipt.jsx';
-import ShippingInvoicePage from './pages/ShippingInvoice.jsx';
-import SalesUserLoginPage from './pages/SalesUserLogin.jsx';
-import UserForm from './pages/SalesUserLogin/Form.jsx';
+import CustomerPage from './pages/Customer/Customer.jsx';
+import ProductPage from './pages/Product/Product.jsx';
+import SalesOrderPage from './pages/SalesOrder/SalesOrder.jsx';
+import InvoicePage from './pages/Invoice/Invoice.jsx';
+import DeliveryReceiptPage from './pages/DeliveryReceipt/DeliveryReceipt.jsx';
+import ShippingInvoicePage from './pages/ShippingInvoice/ShippingInvoice.jsx';
+import SalesUserLoginPage from './pages/SalesUserLogin/SalesUserLogin.jsx';
+import SalesUserForm from './pages/SalesUserLogin/SalesUserForm.jsx';
 
 const EMPTY_DATA = { customers: [], products: [], 'sales-orders': [], 'sales-invoices': [], 'delivery-receipts': [], 'shipping-invoices': [], users: [] };
 
@@ -71,6 +71,6 @@ export default function SalesApp({ user, onUser, onLogout }) {
       {page === 'shipping-invoices' && <ShippingInvoicePage {...props} />}
       {page === 'users' && canManageUsers && <SalesUserLoginPage {...props} />}
     </Layout>
-    {profileOpen && <UserForm profile actorRole={user.role} record={user} onClose={() => setProfileOpen(false)} onSaved={saved} />}
+    {profileOpen && <SalesUserForm profile actorRole={user.role} record={user} onClose={() => setProfileOpen(false)} onSaved={saved} />}
   </>;
 }

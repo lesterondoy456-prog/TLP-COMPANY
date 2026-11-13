@@ -1,13 +1,13 @@
 ﻿import React, { useEffect, useState } from 'react';
-import Login from './pages/Login.jsx';
+import Login from './pages/Login/Login.jsx';
 import Layout from './components/Layout.jsx';
-import PRMonitoring from './pages/PRMonitoring.jsx';
-import POMonitoring from './pages/POMonitoring.jsx';
-import Supplier from './pages/Supplier.jsx';
-import Supplies from './pages/Supplies.jsx';
-import ReceivingReceipt from './pages/ReceivingReceipt.jsx';
-import PurchasingUserLogin from './pages/PurchasingUserLogin.jsx';
-import ProfileForm from './pages/ProfileForm.jsx';
+import PRMonitoring from './pages/PRMonitoring/PRMonitoring.jsx';
+import POMonitoring from './pages/POMonitoring/POMonitoring.jsx';
+import Supplier from './pages/Supplier/Supplier.jsx';
+import Supplies from './pages/Supplies/Supplies.jsx';
+import ReceivingReceipt from './pages/ReceivingReceipt/ReceivingReceipt.jsx';
+import PurchasingUserLogin from './pages/PurchasingUserLogin/PurchasingUserLogin.jsx';
+import Profile from './pages/Profile/Profile.jsx';
 import './purchasing.css';
 import { api } from './api.js';
 import { APP } from './appSettings.js';
@@ -61,7 +61,7 @@ export default function App() {
         {page === 'supplies' && <Supplies user={user} onNotice={setNotice} />}
         {page === 'receivings' && <ReceivingReceipt user={user} onNotice={setNotice} />}
         {page === 'users' && user.role === 'admin' && <PurchasingUserLogin user={user} onUser={setUser} onNotice={setNotice} />}
-        {profileOpen && <ProfileForm user={user} onClose={() => setProfileOpen(false)} onSaved={updated => { setUser(updated); setProfileOpen(false); setNotice('Profile saved.'); }} />}
+        {profileOpen && <Profile user={user} onClose={() => setProfileOpen(false)} onSaved={updated => { setUser(updated); setProfileOpen(false); setNotice('Profile saved.'); }} />}
       </Layout>
     : <Login onLogin={login} initialError={error} />;
 }

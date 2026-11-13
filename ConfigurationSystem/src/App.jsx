@@ -1,24 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import Login from './pages/Login.jsx';
+import Login from './pages/Login/Login.jsx';
 import Layout from './components/Layout.jsx';
 import { api } from './api.js';
 import { APP } from './appSettings.js';
 
-import ATC from './pages/ATC.jsx';
-import AuditTrail from './pages/AuditTrail.jsx';
-import Bank from './pages/Bank.jsx';
-import Country from './pages/Country.jsx';
-import Currency from './pages/Currency.jsx';
-import CustomerCategory from './pages/CustomerCategory.jsx';
-import PaymentTerm from './pages/PaymentTerm.jsx';
-import ProductCategory from './pages/ProductCategory.jsx';
-import SuppliesCategory from './pages/SuppliesCategory.jsx';
-import UnitOfProduct from './pages/UnitOfProduct.jsx';
-import VAT from './pages/VAT.jsx';
-import Warehouse from './pages/Warehouse.jsx';
-import WarehouseLocation from './pages/WarehouseLocation.jsx';
-import ConfigurationUserLogin from './pages/ConfigurationUserLogin.jsx';
-import Profile from './pages/Profile.jsx';
+import ATC from './pages/ATC/ATC.jsx';
+import AuditTrail from './pages/AuditTrail/AuditTrail.jsx';
+import Bank from './pages/Bank/Bank.jsx';
+import Country from './pages/Country/Country.jsx';
+import Currency from './pages/Currency/Currency.jsx';
+import CustomerCategory from './pages/CustomerCategory/CustomerCategory.jsx';
+import PaymentTerm from './pages/PaymentTerm/PaymentTerm.jsx';
+import ProductCategory from './pages/ProductCategory/ProductCategory.jsx';
+import SuppliesCategory from './pages/SuppliesCategory/SuppliesCategory.jsx';
+import UnitOfProduct from './pages/UnitOfProduct/UnitOfProduct.jsx';
+import VAT from './pages/VAT/VAT.jsx';
+import Warehouse from './pages/Warehouse/Warehouse.jsx';
+import WarehouseLocation from './pages/WarehouseLocation/WarehouseLocation.jsx';
+import ConfigurationUserLogin from './pages/ConfigurationUserLogin/ConfigurationUserLogin.jsx';
+import Profile from './pages/Profile/Profile.jsx';
 
 const tabs = [
   { id: 'config-atc', title: 'ATC', icon: 'grid' },

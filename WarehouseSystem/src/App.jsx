@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import Login from './pages/Login.jsx';
+import Login from './pages/Login/Login.jsx';
 import Layout from './components/Layout.jsx';
 import { api } from './api.js';
 import { APP } from './appSettings.js';
 
-import SuppliesStock from './pages/SuppliesStock.jsx';
-import WarehouseUserLogin from './pages/WarehouseUserLogin.jsx';
-import Profile from './pages/Profile.jsx';
+import SuppliesStock from './pages/SuppliesStock/SuppliesStock.jsx';
+import WarehouseUserLogin from './pages/WarehouseUserLogin/WarehouseUserLogin.jsx';
+import Profile from './pages/Profile/Profile.jsx';
 
 const tabs = [
   { id: 'warehouse-stock', title: 'Supplies Stock', icon: 'box' },

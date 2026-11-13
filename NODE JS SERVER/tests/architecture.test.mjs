@@ -64,7 +64,7 @@ for (const [project, port] of Object.entries(systems)) {
     await access(path.join(directory, 'src', 'main.jsx'));
     await access(path.join(directory, 'src', 'App.jsx'));
     await access(path.join(directory, 'src', 'helper', 'validation.js'));
-    for (const page of sidebarPages[project]) await access(path.join(directory, 'src', 'pages', page + '.jsx'));
+    for (const page of sidebarPages[project]) await access(path.join(directory, 'src', 'pages', page, page + '.jsx'));
     const apiWrapper = await readFile(path.join(directory, 'src', 'api.js'), 'utf8');
     assert.match(apiWrapper, /\bfetch\(path\s*,/);
     assert.doesNotMatch(apiWrapper, /\bAPI_BASE\b/);

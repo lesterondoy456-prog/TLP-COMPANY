@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
-import Login from './pages/Login.jsx';
+import Login from './pages/Login/Login.jsx';
 import SalesApp from './SalesApp.jsx';
 import { api } from './api.js';
 
