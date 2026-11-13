@@ -199,23 +199,21 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
     }
     const body = Object.fromEntries(Object.keys(TEXT_FIELDS).map(key => [key, String(form[key]).trim()]));
     for (const key of Object.keys(NUMBER_FIELDS)) body[key] = Number(form[key]);
-    Object.assign(body, {
-      vatMode: form.vatMode,
-      productHeaderId: form.productHeaderId === '' ? null : Number(form.productHeaderId),
-      processes: form.processes.map(row => ({ name: row.name.trim() })),
-      offices: form.offices.filter(row => row.selected).map(row => ({ name: row.name.trim() })),
-      customerApprovals: form.customerApprovals.map(row => ({
+    body.vatMode = form.vatMode;
+    body.productHeaderId = form.productHeaderId === '' ? null : Number(form.productHeaderId);
+    body.processes = form.processes.map(row => ({ name: row.name.trim() }));
+    body.offices = form.offices.filter(row => row.selected).map(row => ({ name: row.name.trim() }));
+    body.customerApprovals = form.customerApprovals.map(row => ({
         customerId: Number(row.customerId),
         approvalDate: row.approvalDate || null,
         eolDate: row.eolDate || null,
         approvalRemarks: (row.approvalRemarks || '').trim(),
         eolRemarks: (row.eolRemarks || '').trim(),
-      })),
-      inventorySetup: form.inventorySetup,
-      inventorySchedules: form.inventorySchedules.map(row => ({ scheduleDate: row.scheduleDate || null, month: (row.month || '').trim() })),
-      linkedSupplies: form.linkedSupplies.map(row => ({ suppliesId: Number(row.suppliesId), quantity: Number(row.quantity), unit: row.unit || '' })),
-      isActive: form.isActive,
-    });
+      }));
+    body.inventorySetup = form.inventorySetup;
+    body.inventorySchedules = form.inventorySchedules.map(row => ({ scheduleDate: row.scheduleDate || null, month: (row.month || '').trim() }));
+    body.linkedSupplies = form.linkedSupplies.map(row => ({ suppliesId: Number(row.suppliesId), quantity: Number(row.quantity), unit: row.unit || '' }));
+    body.isActive = form.isActive;
     setBusy(true);
     try {
       const result = await api(record ? '/api/sales/products/' + record.id : '/api/sales/products', { method: record ? 'PUT' : 'POST', body });

@@ -5,7 +5,17 @@ import { Icon } from '../../components/Icons.jsx';
 import { Modal, Field, FormFooter, ErrorNotice, Badge, PhotoField, roleLabel } from '../../components/UI.jsx';
 import useSave from '../../hooks/useSave.js';
 
-export default function CreateOrderForm({ record, customers, products, onClose, onSaved }) {
+export default function CreateOrderForm({
+  record,
+  customers: initialCustomers,
+  products: initialProducts,
+  onClose,
+  onSaved
+}) {
+  // Keep an open document's choices stable while its surrounding lists refresh.
+  const [choices] = useState(() => ({ customers: initialCustomers, products: initialProducts }));
+  const { customers, products } = choices;
+
   const [form, setForm] = useState({ customerId: record?.customerId || '', orderDate: dateInput(record?.orderDate) || today(), notes: record?.notes || '', status: record?.status || 'draft' });
   const [items, setItems] = useState(record?.items?.map(item => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice })) || [{ productId: '', quantity: 1, unitPrice: 0 }]);
   const { busy, error, save } = useSave(onSaved);

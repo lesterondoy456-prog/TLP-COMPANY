@@ -30,7 +30,7 @@ for (const [project, system] of Object.entries(systems)) {
       const headers = new Headers();
       for (const [name, value] of Object.entries(incoming.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
       try {
-        checkOrigin({ method: incoming.method, protocol: 'http', get: name => headers.get(name) }, [origin]);
+        checkOrigin({ method: incoming.method, protocol: 'http', get: name => headers.get(name) });
       } catch (error) {
         response.writeHead(error.status, { 'Content-Type': 'application/json' });
         response.end(JSON.stringify({ message: error.message }));
@@ -90,20 +90,20 @@ for (const [project, system] of Object.entries(systems)) {
     const loginPath = `/api/${system}/auth/login`;
     const body = JSON.stringify({ username: 'mock-only-user', password: 'mock-only-password' });
     const login = await fetch(origin + loginPath, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, 'Sec-Fetch-Site': 'same-origin', Cookie: requestCookie }, body });
-    assert.equal(login.status, 200, 'The real origin policy must accept the explicitly allowed frontend origin through Host rewriting.');
+    assert.equal(login.status, 200, 'JSON writes must work through Host rewriting without a configured frontend origin.');
     assert.deepEqual(login.headers.getSetCookie(), [cookie]);
     const loginEcho = await login.json();
     assert.deepEqual(loginEcho, { method: 'POST', path: loginPath, host: targetHost, origin, fetchSite: 'same-origin', cookie: requestCookie, contentType: 'application/json', body });
-    // Plain HTTP LAN browsers omit Fetch Metadata. The exact configured origin
-    // must remain accepted, while an unrelated origin still cannot write.
+    // Plain HTTP LAN browsers omit Fetch Metadata. JSON requests must still
+    // work without comparing the frontend Origin with the rewritten Host.
     const lanLogin = await fetch(origin + loginPath, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: requestCookie }, body });
     assert.equal(lanLogin.status, 200);
     const lanEcho = await lanLogin.json();
     assert.equal(lanEcho.origin, origin);
     assert.equal(lanEcho.host, targetHost);
     assert.equal(Object.hasOwn(lanEcho, 'fetchSite'), false);
-    const unrelated = await fetch(origin + loginPath, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://unrelated.example' }, body });
-    assert.equal(unrelated.status, 403);
+    const unrelated = await fetch(origin + loginPath, { method: 'POST', headers: { 'Content-Type': 'text/plain', Origin: 'http://unrelated.example' }, body });
+    assert.equal(unrelated.status, 415);
     await unrelated.json();
     const rejected = await fetch(origin + loginPath, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://unrelated.example', 'Sec-Fetch-Site': 'cross-site' }, body });
     assert.equal(rejected.status, 403);

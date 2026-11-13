@@ -497,8 +497,16 @@ router.get('/masters/:kind', async (req, res) => {
     return res.json({ records: result.recordset });
   }
   const kind = req.params.kind;
-  if (kind === 'audit-trail') throw Object.assign(new Error('Audit Trail is read-only.'), { status: 405 });
-  if (!Object.hasOwn(specs, kind)) throw Object.assign(new Error('Configuration module was not found.'), { status: 404 });
+  if (kind === 'audit-trail') {
+    const error = new Error('Audit Trail is read-only.');
+    error.status = 405;
+    throw error;
+  }
+  if (!Object.hasOwn(specs, kind)) {
+    const error = new Error('Configuration module was not found.');
+    error.status = 404;
+    throw error;
+  }
   const spec = specs[kind];
   let result;
   switch (kind) {
@@ -514,17 +522,33 @@ router.get('/masters/:kind', async (req, res) => {
     case 'currencies': result = await request().query(`SELECT [id], [name], [shortName], [checkName], [symbol], [isDefault], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [code], [name] AS [description] FROM dbo.ConfigCurrencies ORDER BY id DESC`); break;
     case 'banks': result = await request().query(`SELECT [id], [name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigBanks ORDER BY id DESC`); break;
     case 'vat-codes': result = await request().query(`SELECT [id], [code], [description], [type], [class], [rate], [prodVatInd], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigVatCodes ORDER BY id DESC`); break;
-    default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+    default: {
+      const error = new Error('Configuration query was not found.');
+      error.status = 404;
+      throw error;
+    }
   }
   res.json({ records: result.recordset });
 });
 router.get('/masters/:kind/:id', async (req, res) => {
   const kind = req.params.kind;
-  if (kind === 'audit-trail') throw Object.assign(new Error('Audit Trail is read-only.'), { status: 405 });
-  if (!Object.hasOwn(specs, kind)) throw Object.assign(new Error('Configuration module was not found.'), { status: 404 });
+  if (kind === 'audit-trail') {
+    const error = new Error('Audit Trail is read-only.');
+    error.status = 405;
+    throw error;
+  }
+  if (!Object.hasOwn(specs, kind)) {
+    const error = new Error('Configuration module was not found.');
+    error.status = 404;
+    throw error;
+  }
   const spec = specs[kind];
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Select a valid configuration record.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Select a valid configuration record.');
+    error.status = 400;
+    throw error;
+  }
   let result;
   switch (kind) {
     case 'atc': result = await request().input('id', sql.Int, id).query(`SELECT [id], [code], [description], [rate], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigAtc WHERE id=@id`); break;
@@ -539,39 +563,83 @@ router.get('/masters/:kind/:id', async (req, res) => {
     case 'currencies': result = await request().input('id', sql.Int, id).query(`SELECT [id], [name], [shortName], [checkName], [symbol], [isDefault], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [code], [name] AS [description] FROM dbo.ConfigCurrencies WHERE id=@id`); break;
     case 'banks': result = await request().input('id', sql.Int, id).query(`SELECT [id], [name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigBanks WHERE id=@id`); break;
     case 'vat-codes': result = await request().input('id', sql.Int, id).query(`SELECT [id], [code], [description], [type], [class], [rate], [prodVatInd], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigVatCodes WHERE id=@id`); break;
-    default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+    default: {
+      const error = new Error('Configuration query was not found.');
+      error.status = 404;
+      throw error;
+    }
   }
-  if (!result.recordset.length) throw Object.assign(new Error('The configuration record was not found.'), { status: 404 });
+  if (!result.recordset.length) {
+    const error = new Error('The configuration record was not found.');
+    error.status = 404;
+    throw error;
+  }
   res.json({ record: result.recordset[0] });
 });
 
 router.post('/masters/:kind', async (req, res) => {
-  if (req.configurationUser?.system !== 'configuration' || req.configurationUser.role !== 'admin') throw Object.assign(new Error('Only administrators can change configuration.'), { status: 403 });
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
-  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw Object.assign(new Error('Send a valid JSON object.'), { status: 400 });
+  if (req.configurationUser?.system !== 'configuration' || req.configurationUser.role !== 'admin') {
+    const error = new Error('Only administrators can change configuration.');
+    error.status = 403;
+    throw error;
+  }
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body, kind = req.params.kind, actor = req.configurationUser;
-  if (kind === 'audit-trail') throw Object.assign(new Error('Audit Trail is read-only.'), { status: 405 });
-  if (!Object.hasOwn(specs, kind)) throw Object.assign(new Error('Configuration module was not found.'), { status: 404 });
+  if (kind === 'audit-trail') {
+    const error = new Error('Audit Trail is read-only.');
+    error.status = 405;
+    throw error;
+  }
+  if (!Object.hasOwn(specs, kind)) {
+    const error = new Error('Configuration module was not found.');
+    error.status = 404;
+    throw error;
+  }
   const spec = specs[kind];
   const record = await transaction(async scope => {
 
     const auditUser = actor;
-    if (auditUser?.system !== 'configuration' || auditUser.role !== 'admin') throw Object.assign(new Error('Only administrators can change configuration.'), { status: 403 });
+    if (auditUser?.system !== 'configuration' || auditUser.role !== 'admin') {
+      const error = new Error('Only administrators can change configuration.');
+      error.status = 403;
+      throw error;
+    }
     const current = undefined;
 
     const values = {};
     for (const field of [...spec.fields, { key: 'isActive', type: 'boolean', default: true }]) {
       const raw = input[field.key] !== undefined ? input[field.key] : current?.[field.key] ?? field.default;
       if (field.type === 'boolean') {
-        if (typeof raw !== 'boolean') throw Object.assign(new Error('Invalid stored checkbox value.'), { status: 400 });
+        if (typeof raw !== 'boolean') {
+          const error = new Error('Invalid stored checkbox value.');
+          error.status = 400;
+          throw error;
+        }
         values[field.key] = raw;
       } else if (field.type === 'number') {
         const number = Number(raw);
         if (!Number.isFinite(number) || (field.integer && (!Number.isInteger(number) || number < -2147483648 || number > 2147483647))
-          || (!field.integer && (Math.abs(number) > 999999999999.999999 || Math.abs(number * 1e6 - Math.round(number * 1e6)) > 1e-5))) throw Object.assign(new Error('Numeric value exceeds the database precision.'), { status: 400 });
+          || (!field.integer && (Math.abs(number) > 999999999999.999999 || Math.abs(number * 1e6 - Math.round(number * 1e6)) > 1e-5))) {
+            const error = new Error('Numeric value exceeds the database precision.');
+            error.status = 400;
+            throw error;
+          }
         values[field.key] = number;
       } else {
-        if (typeof raw !== 'string' || raw.includes('\0')) throw Object.assign(new Error('Text must be a string without null characters.'), { status: 400 });
+        if (typeof raw !== 'string' || raw.includes('\0')) {
+          const error = new Error('Text must be a string without null characters.');
+          error.status = 400;
+          throw error;
+        }
         values[field.key] = raw.trim();
       }
     }
@@ -597,7 +665,11 @@ router.post('/masters/:kind', async (req, res) => {
       case 'currencies': result = await query.query(`INSERT INTO dbo.ConfigCurrencies ([name], [shortName], [checkName], [symbol], [isDefault], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@name, @shortName, @checkName, @symbol, @isDefault, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
       case 'banks': result = await query.query(`INSERT INTO dbo.ConfigBanks ([name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@name, @shortName, @accountNo, @accountName, @swiftCode, @branchName, @address, @accountType, @currency, @account, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
       case 'vat-codes': result = await query.query(`INSERT INTO dbo.ConfigVatCodes ([code], [description], [type], [class], [rate], [prodVatInd], [accountCode], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@code, @description, @type, @class, @rate, @prodVatInd, @accountCode, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+      default: {
+        const error = new Error('Configuration query was not found.');
+        error.status = 404;
+        throw error;
+      }
     }
     const savedId = result.recordset[0].id;
 
@@ -619,7 +691,11 @@ router.post('/masters/:kind', async (req, res) => {
       case 'currencies': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [name], [shortName], [checkName], [symbol], [isDefault], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [code], [name] AS [description] FROM dbo.ConfigCurrencies WHERE id=@id`); break;
       case 'banks': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigBanks WHERE id=@id`); break;
       case 'vat-codes': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [description], [type], [class], [rate], [prodVatInd], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigVatCodes WHERE id=@id`); break;
-      default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+      default: {
+        const error = new Error('Configuration query was not found.');
+        error.status = 404;
+        throw error;
+      }
     }
     return selectedResult.recordset[0];
   });
@@ -627,19 +703,47 @@ router.post('/masters/:kind', async (req, res) => {
 });
 
 router.put('/masters/:kind/:id', async (req, res) => {
-  if (req.configurationUser?.system !== 'configuration' || req.configurationUser.role !== 'admin') throw Object.assign(new Error('Only administrators can change configuration.'), { status: 403 });
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
-  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw Object.assign(new Error('Send a valid JSON object.'), { status: 400 });
+  if (req.configurationUser?.system !== 'configuration' || req.configurationUser.role !== 'admin') {
+    const error = new Error('Only administrators can change configuration.');
+    error.status = 403;
+    throw error;
+  }
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body, kind = req.params.kind, actor = req.configurationUser;
-  if (kind === 'audit-trail') throw Object.assign(new Error('Audit Trail is read-only.'), { status: 405 });
-  if (!Object.hasOwn(specs, kind)) throw Object.assign(new Error('Configuration module was not found.'), { status: 404 });
+  if (kind === 'audit-trail') {
+    const error = new Error('Audit Trail is read-only.');
+    error.status = 405;
+    throw error;
+  }
+  if (!Object.hasOwn(specs, kind)) {
+    const error = new Error('Configuration module was not found.');
+    error.status = 404;
+    throw error;
+  }
   const spec = specs[kind];
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Select a valid configuration record.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Select a valid configuration record.');
+    error.status = 400;
+    throw error;
+  }
   const record = await transaction(async scope => {
 
     const auditUser = actor;
-    if (auditUser?.system !== 'configuration' || auditUser.role !== 'admin') throw Object.assign(new Error('Only administrators can change configuration.'), { status: 403 });
+    if (auditUser?.system !== 'configuration' || auditUser.role !== 'admin') {
+      const error = new Error('Only administrators can change configuration.');
+      error.status = 403;
+      throw error;
+    }
     let lockedResult;
     switch (kind) {
       case 'atc': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [rate], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigAtc WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
@@ -654,24 +758,44 @@ router.put('/masters/:kind/:id', async (req, res) => {
       case 'currencies': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [shortName], [checkName], [symbol], [isDefault], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [code], [name] AS [description] FROM dbo.ConfigCurrencies WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'banks': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigBanks WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'vat-codes': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [type], [class], [rate], [prodVatInd], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigVatCodes WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
-      default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+      default: {
+        const error = new Error('Configuration query was not found.');
+        error.status = 404;
+        throw error;
+      }
     }
     const current = lockedResult.recordset[0];
-    if (!current) throw Object.assign(new Error('The configuration record was not found.'), { status: 404 });
+    if (!current) {
+      const error = new Error('The configuration record was not found.');
+      error.status = 404;
+      throw error;
+    }
 
     const values = {};
     for (const field of [...spec.fields, { key: 'isActive', type: 'boolean', default: true }]) {
       const raw = input[field.key] !== undefined ? input[field.key] : current?.[field.key] ?? field.default;
       if (field.type === 'boolean') {
-        if (typeof raw !== 'boolean') throw Object.assign(new Error('Invalid stored checkbox value.'), { status: 400 });
+        if (typeof raw !== 'boolean') {
+          const error = new Error('Invalid stored checkbox value.');
+          error.status = 400;
+          throw error;
+        }
         values[field.key] = raw;
       } else if (field.type === 'number') {
         const number = Number(raw);
         if (!Number.isFinite(number) || (field.integer && (!Number.isInteger(number) || number < -2147483648 || number > 2147483647))
-          || (!field.integer && (Math.abs(number) > 999999999999.999999 || Math.abs(number * 1e6 - Math.round(number * 1e6)) > 1e-5))) throw Object.assign(new Error('Numeric value exceeds the database precision.'), { status: 400 });
+          || (!field.integer && (Math.abs(number) > 999999999999.999999 || Math.abs(number * 1e6 - Math.round(number * 1e6)) > 1e-5))) {
+            const error = new Error('Numeric value exceeds the database precision.');
+            error.status = 400;
+            throw error;
+          }
         values[field.key] = number;
       } else {
-        if (typeof raw !== 'string' || raw.includes('\0')) throw Object.assign(new Error('Text must be a string without null characters.'), { status: 400 });
+        if (typeof raw !== 'string' || raw.includes('\0')) {
+          const error = new Error('Text must be a string without null characters.');
+          error.status = 400;
+          throw error;
+        }
         values[field.key] = raw.trim();
       }
     }
@@ -697,7 +821,11 @@ router.put('/masters/:kind/:id', async (req, res) => {
       case 'currencies': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigCurrencies SET [name]=@name, [shortName]=@shortName, [checkName]=@checkName, [symbol]=@symbol, [isDefault]=@isDefault, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
       case 'banks': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigBanks SET [name]=@name, [shortName]=@shortName, [accountNo]=@accountNo, [accountName]=@accountName, [swiftCode]=@swiftCode, [branchName]=@branchName, [address]=@address, [accountType]=@accountType, [currency]=@currency, [account]=@account, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
       case 'vat-codes': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigVatCodes SET [code]=@code, [description]=@description, [type]=@type, [class]=@class, [rate]=@rate, [prodVatInd]=@prodVatInd, [accountCode]=@accountCode, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
-      default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+      default: {
+        const error = new Error('Configuration query was not found.');
+        error.status = 404;
+        throw error;
+      }
     }
     const savedId = result.recordset[0].id;
 
@@ -719,7 +847,11 @@ router.put('/masters/:kind/:id', async (req, res) => {
       case 'currencies': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [name], [shortName], [checkName], [symbol], [isDefault], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [code], [name] AS [description] FROM dbo.ConfigCurrencies WHERE id=@id`); break;
       case 'banks': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigBanks WHERE id=@id`); break;
       case 'vat-codes': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [description], [type], [class], [rate], [prodVatInd], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigVatCodes WHERE id=@id`); break;
-      default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+      default: {
+        const error = new Error('Configuration query was not found.');
+        error.status = 404;
+        throw error;
+      }
     }
     return selectedResult.recordset[0];
   });
@@ -727,18 +859,38 @@ router.put('/masters/:kind/:id', async (req, res) => {
 });
 
 router.delete('/masters/:kind/:id', async (req, res) => {
-  if (req.configurationUser?.system !== 'configuration' || req.configurationUser.role !== 'admin') throw Object.assign(new Error('Only administrators can change configuration.'), { status: 403 });
+  if (req.configurationUser?.system !== 'configuration' || req.configurationUser.role !== 'admin') {
+    const error = new Error('Only administrators can change configuration.');
+    error.status = 403;
+    throw error;
+  }
   const kind = req.params.kind, actor = req.configurationUser;
-  if (kind === 'audit-trail') throw Object.assign(new Error('Audit Trail is read-only.'), { status: 405 });
-  if (!Object.hasOwn(specs, kind)) throw Object.assign(new Error('Configuration module was not found.'), { status: 404 });
+  if (kind === 'audit-trail') {
+    const error = new Error('Audit Trail is read-only.');
+    error.status = 405;
+    throw error;
+  }
+  if (!Object.hasOwn(specs, kind)) {
+    const error = new Error('Configuration module was not found.');
+    error.status = 404;
+    throw error;
+  }
   const spec = specs[kind];
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Select a valid configuration record.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Select a valid configuration record.');
+    error.status = 400;
+    throw error;
+  }
   const record = await transaction(async scope => {
 
     const auditUser = actor;
 
-    if (auditUser?.system !== 'configuration' || auditUser.role !== 'admin') throw Object.assign(new Error('Only administrators can change configuration.'), { status: 403 });
+    if (auditUser?.system !== 'configuration' || auditUser.role !== 'admin') {
+      const error = new Error('Only administrators can change configuration.');
+      error.status = 403;
+      throw error;
+    }
     let lockedResult;
     switch (kind) {
       case 'atc': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [rate], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigAtc WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
@@ -753,10 +905,18 @@ router.delete('/masters/:kind/:id', async (req, res) => {
       case 'currencies': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [shortName], [checkName], [symbol], [isDefault], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [code], [name] AS [description] FROM dbo.ConfigCurrencies WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'banks': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigBanks WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'vat-codes': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [type], [class], [rate], [prodVatInd], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigVatCodes WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
-      default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+      default: {
+        const error = new Error('Configuration query was not found.');
+        error.status = 404;
+        throw error;
+      }
     }
     const current = lockedResult.recordset[0];
-    if (!current) throw Object.assign(new Error('The configuration record was not found.'), { status: 404 });
+    if (!current) {
+      const error = new Error('The configuration record was not found.');
+      error.status = 404;
+      throw error;
+    }
     if (!current.isActive) return current;
     switch (kind) {
       case 'atc': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigAtc SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
@@ -771,7 +931,11 @@ router.delete('/masters/:kind/:id', async (req, res) => {
       case 'currencies': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigCurrencies SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
       case 'banks': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigBanks SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
       case 'vat-codes': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigVatCodes SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
-      default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+      default: {
+        const error = new Error('Configuration query was not found.');
+        error.status = 404;
+        throw error;
+      }
     }
 
     await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(sql.MAX), auditUser.name)
@@ -793,7 +957,11 @@ router.delete('/masters/:kind/:id', async (req, res) => {
       case 'currencies': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [shortName], [checkName], [symbol], [isDefault], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [code], [name] AS [description] FROM dbo.ConfigCurrencies WHERE id=@id`); break;
       case 'banks': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigBanks WHERE id=@id`); break;
       case 'vat-codes': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [type], [class], [rate], [prodVatInd], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigVatCodes WHERE id=@id`); break;
-      default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
+      default: {
+        const error = new Error('Configuration query was not found.');
+        error.status = 404;
+        throw error;
+      }
     }
     return selectedResult.recordset[0];
   });

@@ -75,7 +75,11 @@ export function withConfigurationValidation(metadata) {
   }) };
 }
 
-const invalid = (field, message) => { throw Object.assign(new Error(message), { field }); };
+const invalid = (field, message) => {
+  const error = new Error(message);
+  error.field = field;
+  throw error;
+};
 
 export function validateConfiguration(metadata, input, current) {
   metadata = withConfigurationValidation(metadata);

@@ -30,7 +30,7 @@ function routeFixture(steps, initial = {}) {
     async transaction(work) {
       const snapshot = structuredClone(state);
       try { const value = await work({ serializable: true }); state.commits++; return value; }
-      catch (error) { Object.assign(state, snapshot); state.rollbacks++; throw error; }
+      catch (error) { for (const key of Object.keys(snapshot)) state[key] = snapshot[key]; state.rollbacks++; throw error; }
     },
   };
   const router = loadRouterWithDatabase('sales', database);

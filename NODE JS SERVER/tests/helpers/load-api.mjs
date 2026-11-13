@@ -13,25 +13,25 @@ const blocked = () => { throw new Error('Real database operations are forbidden 
 const sql = new Proxy({}, { get: (_target, type) => type === 'MAX' ? -1 : (...args) => ({ type, args }) });
 const fakeDatabase = { db: blocked, request: blocked, sql, transaction: blocked, initializeDatabase: blocked, closeDatabase: blocked };
 
-function compile(filename) {
-  if (modules.has(filename)) return modules.get(filename).exports;
+function compile(filename, database = fakeDatabase, cache = modules) {
+  if (cache.has(filename)) return cache.get(filename).exports;
   const compiled = new Module(filename);
   compiled.filename = filename;
   compiled.paths = Module._nodeModulePaths(path.dirname(filename));
   compiled.require = specifier => {
-    if (/^\.\.?\/db(?:\.js)?$/.test(specifier)) return fakeDatabase;
-    if (/^\.\/Api\/LoginApiSystem(?:\.js)?$/.test(specifier)) return compile(path.join(backend, 'Api', 'LoginApiSystem.js'));
+    if (/^\.\.?\/db(?:\.js)?$/.test(specifier)) return database;
+    if (/^\.\/Api\/LoginApiSystem(?:\.js)?$/.test(specifier)) return compile(path.join(backend, 'Api', 'LoginApiSystem.js'), database, cache);
     const api = specifier.match(/^\.\/Api\/(Sales|Purchasing|Warehouse|Configuration)Api(?:\.js)?$/);
-    if (api) return compile(path.join(backend, 'Api', api[1] + 'Api.js'));
-    if (specifier === 'express' || specifier.startsWith('node:') || builtinModules.includes(specifier)) return requireBackend(specifier);
+    if (api) return compile(path.join(backend, 'Api', api[1] + 'Api.js'), database, cache);
+    if (specifier === 'express' || specifier === 'socket.io' || specifier.startsWith('node:') || builtinModules.includes(specifier)) return requireBackend(specifier);
     throw new Error('Unexpected dependency in isolated API test: ' + specifier);
   };
-  modules.set(filename, compiled);
+  cache.set(filename, compiled);
   try {
     compiled._compile(readFileSync(filename, 'utf8'), filename);
     compiled.loaded = true;
     return compiled.exports;
-  } catch (error) { modules.delete(filename); throw error; }
+  } catch (error) { cache.delete(filename); throw error; }
 }
 
 export function loadApi(system) {
@@ -49,6 +49,7 @@ export function loadApi(system) {
 }
 
 export function loadServer() { return compile(path.join(backend, 'server.js')); }
+export function loadServerWithDatabase(database) { return compile(path.join(backend, 'server.js'), database, new Map()); }
 
 // Exercise the real route callbacks against a supplied in-memory SQL adapter.
 export function loadRouterWithDatabase(system, database) {

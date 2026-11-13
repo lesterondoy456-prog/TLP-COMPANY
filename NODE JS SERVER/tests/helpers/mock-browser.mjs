@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -13,7 +14,7 @@ const systemNames = { SalesSystem: 'sales', PurchasingSystem: 'purchasing', Ware
 const screenshots = new URL('../../.qa/screenshots/', import.meta.url);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 
-export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: customDist, screenshotName, viewport = { width: 1440, height: 1100 } } = {}) {
+export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: customDist, screenshotName, realtime = false, viewport = { width: 1440, height: 1100 } } = {}) {
   const escapedApiRequests = [];
   const unexpectedRequests = [];
   const apiRequests = [];
@@ -21,6 +22,8 @@ export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: cus
   let browser;
   let page;
   const servers = [];
+  const sockets = new Map();
+  const tickets = new Map();
   const origins = new Map();
   async function projectOrigin(name, overrideDist) {
     if (!projects.has(name)) throw new Error('Unknown independent test project: ' + name);
@@ -46,6 +49,17 @@ export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: cus
       response.end(request.method === 'HEAD' ? undefined : data);
     } catch { response.writeHead(500); response.end(); }
     });
+    if (realtime) {
+      const { Server } = await import('socket.io');
+      const io = new Server(server, { serveClient: false });
+      io.use((socket, next) => {
+        const ticket = socket.handshake.auth?.ticket;
+        const system = tickets.get(ticket);
+        tickets.delete(ticket);
+        next(system === systemNames[name] ? undefined : new Error('Invalid mock realtime ticket.'));
+      });
+      sockets.set(name, io);
+    }
     servers.push(server);
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -57,6 +71,7 @@ export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: cus
   t.after(async () => {
     if (screenshotName && page && !page.isClosed()) await screenshot(screenshotName).catch(() => {});
     await browser?.close();
+    await Promise.all([...sockets.values()].map(io => new Promise(resolve => io.close(resolve))));
     await Promise.all(servers.map(async server => {
       server.closeAllConnections();
       if (server.listening) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
@@ -74,6 +89,7 @@ export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: cus
       unexpectedRequests.push({ method: request.method(), url: request.url() });
       await route.abort('blockedbyclient'); return;
     }
+    if (realtime && url.pathname.startsWith('/socket.io/')) { await route.continue(); return; }
     if (!url.pathname.startsWith('/api/')) {
       if (['GET', 'HEAD'].includes(request.method())) await route.continue();
       else { unexpectedRequests.push({ method: request.method(), url: request.url() }); await route.abort('blockedbyclient'); }
@@ -90,6 +106,13 @@ export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: cus
     // assert the actual namespace separately so no cross-system call is hidden.
     let pathname = '/api' + url.pathname.slice(prefix.length);
     if (system === 'configuration') pathname = pathname.replace(/^\/api\/masters(?=\/|$)/, '/api/configuration');
+    if (request.method() === 'GET' && pathname === '/api/realtime-ticket') {
+      if (!realtime) { await route.fulfill({ status: 503, json: { message: 'Realtime is disabled in this isolated workflow test.' } }); return; }
+      const ticket = randomBytes(32).toString('hex');
+      tickets.set(ticket, system);
+      await route.fulfill({ json: { ticket, expiresAt: Date.now() + 30000 } });
+      return;
+    }
     const call = { project: currentProject, system, origin: url.origin, method: request.method(), pathname, requestPathname: url.pathname, search: url.search, body: request.postData() ? request.postDataJSON() : undefined };
     apiRequests.push(call);
     const result = await onApi(call);
@@ -103,6 +126,9 @@ export async function mockBrowser(t, onApi, { project = 'SalesSystem', dist: cus
   await mkdir(screenshots, { recursive: true });
   return {
     page, origin, apiRequests, screenshot, projectOrigin,
+    realtimeClients(name = project) { return sockets.get(name)?.sockets.sockets.size || 0; },
+    emitChange(name, resources = ['*']) { sockets.get(name)?.emit('data:changed', { system: systemNames[name], resources, changedAt: new Date().toISOString() }); },
+    disconnectRealtime(name = project) { sockets.get(name)?.disconnectSockets(true); },
     async gotoProject(name) { const destination = await projectOrigin(name); await page.goto(destination); return destination; },
     assertSafe() {
       assert.deepEqual(escapedApiRequests, [], 'No API request may reach the static-only HTTP server.');

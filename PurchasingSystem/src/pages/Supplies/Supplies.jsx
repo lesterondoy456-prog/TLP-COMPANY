@@ -1,3 +1,4 @@
+import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, dateLabel } from '../../api.js';
 import { Badge, Empty, ErrorNotice, Modal } from '../../components/UI.jsx';
@@ -43,12 +44,13 @@ export default function Supplies({ user, onNotice }) {
   const [dialog, setDialog] = useState(null);
   const [busyRow, setBusyRow] = useState(null);
   const requests = useRef(0);
+  const hasLoaded = useRef(false);
   const detailRequests = useRef(0);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (quiet = false) => {
+    const background = quiet === true && hasLoaded.current;
     const request = ++requests.current;
-    setLoading(true);
-    setError('');
+    if (!background) { setLoading(true); setError(''); }
     try {
       const [listing, reference] = await Promise.all([
         api('/api/purchasing/supplies'),
@@ -57,13 +59,17 @@ export default function Supplies({ user, onNotice }) {
       if (request !== requests.current) return;
       setRecords(listing.records || []);
       setOptions(reference);
+      hasLoaded.current = true;
+      setError('');
       setLoaded(true);
     } catch (error) {
-      if (request === requests.current) setError(error.message);
+      if (request === requests.current && !background) setError(error.message);
     } finally {
       if (request === requests.current) setLoading(false);
     }
   }, []);
+
+  useRealtimeRefresh(() => reload(true));
 
   useEffect(() => {
     reload();

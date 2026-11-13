@@ -1,3 +1,4 @@
+import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import UserAccountForm from './UserAccountForm.jsx';
 import React, { useEffect, useRef, useState } from 'react';
 import { api, SYSTEM } from '../../api.js';
@@ -13,20 +14,28 @@ export default function ConfigurationUserLogin({ user, onUser, onNotice }) {
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState(null);
   const sequence = useRef(0);
+  const hasLoaded = useRef(false);
 
-  async function load() {
+  async function load(quiet = false) {
+    const background = quiet === true && hasLoaded.current;
     const request = ++sequence.current;
-    setLoading(true);
-    setError('');
+    if (!background) { setLoading(true); setError(''); }
     try {
       const result = await api('/api/configuration/users');
-      if (request === sequence.current) setRecords((result.records || []).filter(record => record.system === SYSTEM));
+      if (request === sequence.current) {
+        setRecords((result.records || []).filter(record => record.system === SYSTEM));
+        hasLoaded.current = true; setError('');
+      }
     } catch (error) {
-      if (request === sequence.current) setError(error.message);
+      if (request === sequence.current && !background) setError(error.message);
     } finally {
       if (request === sequence.current) setLoading(false);
     }
   }
+
+  useRealtimeRefresh(() => {
+    if (user.role === 'admin' && user.system === SYSTEM) load(true);
+  });
 
   useEffect(() => {
     if (user.role === 'admin' && user.system === SYSTEM) load();

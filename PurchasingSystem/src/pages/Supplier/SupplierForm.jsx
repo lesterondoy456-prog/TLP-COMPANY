@@ -36,8 +36,11 @@ export function SupplierForm({ record, options, onClose, onSaved }) {
       editor.focus(first);
       return;
     }
-    const body = Object.fromEntries(Object.keys(SUPPLIER_TEXT).map(key => [key, String(form[key]).trim()]));
-    Object.assign(body, { decimalInPrice: Number(form.decimalInPrice), decimalInTotalPrice: Number(form.decimalInTotalPrice), vatInclusive: form.vatInclusive, isActive: form.isActive });
+    const body = {
+      ...Object.fromEntries(Object.keys(SUPPLIER_TEXT).map(key => [key, String(form[key]).trim()])),
+      decimalInPrice: Number(form.decimalInPrice), decimalInTotalPrice: Number(form.decimalInTotalPrice),
+      vatInclusive: form.vatInclusive, isActive: form.isActive,
+    };
     editor.setBusy(true);
     try {
       const result = record

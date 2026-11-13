@@ -19,15 +19,17 @@ const defaults = {
   deliveryAddresses: [],
   salesInChargeId: null
 };
-const PRODUCT_QUANTITIES = Object.freeze(['quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'divisor', 'thickness', 'weight']);
-router.use((boundRequest, res, next) => {
-  if (res.locals.user?.system !== 'sales') throw Object.assign(new Error('Sign in to Sales to continue.'), {
-    status: 401
-  });
+const PRODUCT_QUANTITIES = ['quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'divisor', 'thickness', 'weight'];
+router.use((req, res, next) => {
+  if (res.locals.user?.system !== 'sales') {
+    const error = new Error('Sign in to Sales to continue.');
+    error.status = 401;
+    throw error;
+  }
   next();
 });
 
-router.get('/customers', async (boundRequest, res) => {
+router.get('/customers', async (req, res) => {
   const result = await request().query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId ORDER BY c.id DESC`);
   const addressRows = (await request().query('SELECT customerId,position,address FROM dbo.CustomerDeliveryAddresses ORDER BY customerId,position')).recordset;
   const grouped = new Map();
@@ -44,14 +46,18 @@ router.get('/customers', async (boundRequest, res) => {
 });
 router.get('/customers/:id', async (req, res) => {
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('The customer could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordAddresses = await request().input('id', sql.Int, id).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
   const record = {
     ...recordResult.recordset[0],
@@ -61,7 +67,7 @@ router.get('/customers/:id', async (req, res) => {
     record
   });
 });
-router.get('/customer-options', async (boundRequest, res) => {
+router.get('/customer-options', async (req, res) => {
   const fields = [['countriesOfOrigin', 'countryOfOrigin'], ['countries', 'country'], ['paymentTerms', 'paymentTerm'], ['categories', 'category'], ['taxCodes', 'taxCode']];
   const result = await request().query(`SELECT id,name,username,role FROM dbo.SalesUserLogin WHERE isActive=1 AND role='sales' ORDER BY name,username,id;
     SELECT DISTINCT LTRIM(RTRIM([countryOfOrigin])) AS value FROM dbo.Customers WHERE LEN(LTRIM(RTRIM([countryOfOrigin])))>0 ORDER BY value;
@@ -87,12 +93,16 @@ SELECT DISTINCT LTRIM(RTRIM([taxCode])) AS value FROM dbo.Customers WHERE LEN(LT
   });
 });
 router.post('/customers', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const id = undefined;
@@ -100,9 +110,11 @@ router.post('/customers', async (req, res) => {
     let current;
     if (id) {
       const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],c.salesInCharge AS _salesInChargeSnapshot FROM dbo.Customers c WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
-      if (!currentResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
-        status: 404
-      });
+      if (!currentResult.recordset.length) {
+        const error = new Error('The customer could not be found.');
+        error.status = 404;
+        throw error;
+      }
       const currentAddresses = await request(tx).input('id', sql.Int, id).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
       current = {
         ...currentResult.recordset[0],
@@ -117,22 +129,28 @@ router.post('/customers', async (req, res) => {
     for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === true;
     for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
-      if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
-        status: 400
-      });
+      if (!Number.isFinite(numericFieldValue)) {
+        const error = new Error('A database numeric value is invalid.');
+        error.status = 400;
+        throw error;
+      }
       customer[key] = numericFieldValue;
     }
     for (const key of ['salesAddressType', 'drAddressType', 'discountType']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
     if (Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
-      if (!Array.isArray(input.deliveryAddresses) || input.deliveryAddresses.length > 50) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-        status: 400
-      });
+      if (!Array.isArray(input.deliveryAddresses) || input.deliveryAddresses.length > 50) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
+      }
       customer.deliveryAddresses = input.deliveryAddresses.map(value => typeof value === 'string' ? value.trim() : '');
     }
     if (current && !customer.code) customer.code = current.code;
-    if (customer.discountType === 'percent' && customer.discount > 100) throw Object.assign(new Error('Percentage discount cannot exceed 100.'), {
-      status: 400
-    });
+    if (customer.discountType === 'percent' && customer.discount > 100) {
+      const error = new Error('Percentage discount cannot exceed 100.');
+      error.status = 400;
+      throw error;
+    }
     const storedName = current?._salesInChargeSnapshot ?? current?.salesInCharge ?? '';
     let assignment = {
       id: current?.salesInChargeId ?? null,
@@ -144,16 +162,20 @@ router.post('/customers', async (req, res) => {
         name: ''
       };else {
         const parsedSalesInChargeId = Number(input.salesInChargeId);
-        if (!Number.isSafeInteger(parsedSalesInChargeId) || parsedSalesInChargeId <= 0 || parsedSalesInChargeId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Sales account'}.`), {
-          status: 400
-        });
+        if (!Number.isSafeInteger(parsedSalesInChargeId) || parsedSalesInChargeId <= 0 || parsedSalesInChargeId > 2147483647) {
+          const error = new Error(`Enter a valid ${'Sales account'}.`);
+          error.status = 400;
+          throw error;
+        }
         const accountId = parsedSalesInChargeId;
         if (!current || accountId !== current.salesInChargeId) {
           const accountResult = await request(tx).input('id', sql.Int, accountId).query('SELECT id,name,role,isActive FROM dbo.SalesUserLogin WHERE id=@id');
           const account = accountResult.recordset[0];
-          if (!(account?.role === 'sales' && account.isActive === true)) throw Object.assign(new Error('Sales In-charge must be an active Sales account.'), {
-            status: 400
-          });
+          if (!(account?.role === 'sales' && account.isActive === true)) {
+            const error = new Error('Sales In-charge must be an active Sales account.');
+            error.status = 400;
+            throw error;
+          }
           assignment = {
             id: account.id,
             name: account.name
@@ -168,9 +190,11 @@ router.post('/customers', async (req, res) => {
           name: ''
         };else {
           const accountResult = await request(tx).input('name', sql.NVarChar(sql.MAX), name).query("SELECT id,name FROM dbo.SalesUserLogin WHERE name=@name AND role='sales' AND isActive=1");
-          if (accountResult.recordset.length !== 1) throw Object.assign(new Error('Select an active Sales account; names must resolve to one account.'), {
-            status: 400
-          });
+          if (accountResult.recordset.length !== 1) {
+            const error = new Error('Select an active Sales account; names must resolve to one account.');
+            error.status = 400;
+            throw error;
+          }
           assignment = {
             id: accountResult.recordset[0].id,
             name: accountResult.recordset[0].name
@@ -187,9 +211,11 @@ router.post('/customers', async (req, res) => {
       const result = await request(tx).query(`SELECT COALESCE(CONVERT(bigint,last_value)+CONVERT(bigint,increment_value),CONVERT(bigint,seed_value)) AS nextId
     FROM sys.identity_columns WHERE object_id=OBJECT_ID(N'dbo.Customers') AND name=N'id'`);
       const id = Number(result.recordset[0]?.nextId);
-      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('A customer identifier could not be allocated.'), {
-        status: 409
-      });
+      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+        const error = new Error('A customer identifier could not be allocated.');
+        error.status = 409;
+        throw error;
+      }
       const base = `C-${String(id).padStart(8, '0')}`;
       let code = base;
       let suffix = 0;
@@ -198,14 +224,13 @@ router.post('/customers', async (req, res) => {
       }
       customer.code = code;
     }
-    const boundRequest = request(tx);
-    for (const fieldName of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
-    for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) boundRequest.input(fieldName, sql.Bit, customer[fieldName]);
-    for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) boundRequest.input(fieldName, sql.Int, customer[fieldName]);
-    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
-    boundRequest.input('discount', sql.Decimal(18, 6), customer.discount);
-    boundRequest.input('salesInChargeId', sql.Int, customer.salesInChargeId);
-    const req = boundRequest;
+    const req = request(tx);
+    for (const fieldName of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
+    for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) req.input(fieldName, sql.Bit, customer[fieldName]);
+    for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) req.input(fieldName, sql.Int, customer[fieldName]);
+    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
+    req.input('discount', sql.Decimal(18, 6), customer.discount);
+    req.input('salesInChargeId', sql.Int, customer.salesInChargeId);
     let saved = id;
     if (id) {
       await req.input('id', sql.Int, id).query(`UPDATE dbo.Customers SET [code]=@code,[name]=@name,[contactPerson]=@contactPerson,[cpnumber]=@cpnumber,[email]=@email,[address]=@address,[shortName]=@shortName,[businessStyle]=@businessStyle,[salesInCharge]=@salesInCharge,[tin]=@tin,[faxNo]=@faxNo,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[category]=@category,[remarks]=@remarks,[salesName]=@salesName,[drName]=@drName,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[isActive]=@isActive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[salesAddressType]=@salesAddressType,[drAddressType]=@drAddressType,[discount]=@discount,[discountType]=@discountType,[includePoInInvoice]=@includePoInInvoice,[vatInclusive]=@vatInclusive,[salesInChargeId]=@salesInChargeId,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
@@ -223,9 +248,11 @@ router.post('/customers', async (req, res) => {
     return saved;
   });
   const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('The customer could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordAddresses = await request().input('id', sql.Int, savedId).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
   const record = {
     ...recordResult.recordset[0],
@@ -236,26 +263,34 @@ router.post('/customers', async (req, res) => {
   });
 });
 router.put('/customers/:id', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const savedId = await transaction(async tx => {
     let current;
     if (id) {
       const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],c.salesInCharge AS _salesInChargeSnapshot FROM dbo.Customers c WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
-      if (!currentResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
-        status: 404
-      });
+      if (!currentResult.recordset.length) {
+        const error = new Error('The customer could not be found.');
+        error.status = 404;
+        throw error;
+      }
       const currentAddresses = await request(tx).input('id', sql.Int, id).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
       current = {
         ...currentResult.recordset[0],
@@ -270,22 +305,28 @@ router.put('/customers/:id', async (req, res) => {
     for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === true;
     for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
-      if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
-        status: 400
-      });
+      if (!Number.isFinite(numericFieldValue)) {
+        const error = new Error('A database numeric value is invalid.');
+        error.status = 400;
+        throw error;
+      }
       customer[key] = numericFieldValue;
     }
     for (const key of ['salesAddressType', 'drAddressType', 'discountType']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
     if (Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
-      if (!Array.isArray(input.deliveryAddresses) || input.deliveryAddresses.length > 50) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-        status: 400
-      });
+      if (!Array.isArray(input.deliveryAddresses) || input.deliveryAddresses.length > 50) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
+      }
       customer.deliveryAddresses = input.deliveryAddresses.map(value => typeof value === 'string' ? value.trim() : '');
     }
     if (current && !customer.code) customer.code = current.code;
-    if (customer.discountType === 'percent' && customer.discount > 100) throw Object.assign(new Error('Percentage discount cannot exceed 100.'), {
-      status: 400
-    });
+    if (customer.discountType === 'percent' && customer.discount > 100) {
+      const error = new Error('Percentage discount cannot exceed 100.');
+      error.status = 400;
+      throw error;
+    }
     const storedName = current?._salesInChargeSnapshot ?? current?.salesInCharge ?? '';
     let assignment = {
       id: current?.salesInChargeId ?? null,
@@ -297,16 +338,20 @@ router.put('/customers/:id', async (req, res) => {
         name: ''
       };else {
         const parsedSalesInChargeId = Number(input.salesInChargeId);
-        if (!Number.isSafeInteger(parsedSalesInChargeId) || parsedSalesInChargeId <= 0 || parsedSalesInChargeId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Sales account'}.`), {
-          status: 400
-        });
+        if (!Number.isSafeInteger(parsedSalesInChargeId) || parsedSalesInChargeId <= 0 || parsedSalesInChargeId > 2147483647) {
+          const error = new Error(`Enter a valid ${'Sales account'}.`);
+          error.status = 400;
+          throw error;
+        }
         const accountId = parsedSalesInChargeId;
         if (!current || accountId !== current.salesInChargeId) {
           const accountResult = await request(tx).input('id', sql.Int, accountId).query('SELECT id,name,role,isActive FROM dbo.SalesUserLogin WHERE id=@id');
           const account = accountResult.recordset[0];
-          if (!(account?.role === 'sales' && account.isActive === true)) throw Object.assign(new Error('Sales In-charge must be an active Sales account.'), {
-            status: 400
-          });
+          if (!(account?.role === 'sales' && account.isActive === true)) {
+            const error = new Error('Sales In-charge must be an active Sales account.');
+            error.status = 400;
+            throw error;
+          }
           assignment = {
             id: account.id,
             name: account.name
@@ -321,9 +366,11 @@ router.put('/customers/:id', async (req, res) => {
           name: ''
         };else {
           const accountResult = await request(tx).input('name', sql.NVarChar(sql.MAX), name).query("SELECT id,name FROM dbo.SalesUserLogin WHERE name=@name AND role='sales' AND isActive=1");
-          if (accountResult.recordset.length !== 1) throw Object.assign(new Error('Select an active Sales account; names must resolve to one account.'), {
-            status: 400
-          });
+          if (accountResult.recordset.length !== 1) {
+            const error = new Error('Select an active Sales account; names must resolve to one account.');
+            error.status = 400;
+            throw error;
+          }
           assignment = {
             id: accountResult.recordset[0].id,
             name: accountResult.recordset[0].name
@@ -340,9 +387,11 @@ router.put('/customers/:id', async (req, res) => {
       const result = await request(tx).query(`SELECT COALESCE(CONVERT(bigint,last_value)+CONVERT(bigint,increment_value),CONVERT(bigint,seed_value)) AS nextId
     FROM sys.identity_columns WHERE object_id=OBJECT_ID(N'dbo.Customers') AND name=N'id'`);
       const id = Number(result.recordset[0]?.nextId);
-      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('A customer identifier could not be allocated.'), {
-        status: 409
-      });
+      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+        const error = new Error('A customer identifier could not be allocated.');
+        error.status = 409;
+        throw error;
+      }
       const base = `C-${String(id).padStart(8, '0')}`;
       let code = base;
       let suffix = 0;
@@ -351,14 +400,13 @@ router.put('/customers/:id', async (req, res) => {
       }
       customer.code = code;
     }
-    const boundRequest = request(tx);
-    for (const fieldName of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
-    for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) boundRequest.input(fieldName, sql.Bit, customer[fieldName]);
-    for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) boundRequest.input(fieldName, sql.Int, customer[fieldName]);
-    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
-    boundRequest.input('discount', sql.Decimal(18, 6), customer.discount);
-    boundRequest.input('salesInChargeId', sql.Int, customer.salesInChargeId);
-    const req = boundRequest;
+    const req = request(tx);
+    for (const fieldName of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
+    for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) req.input(fieldName, sql.Bit, customer[fieldName]);
+    for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) req.input(fieldName, sql.Int, customer[fieldName]);
+    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
+    req.input('discount', sql.Decimal(18, 6), customer.discount);
+    req.input('salesInChargeId', sql.Int, customer.salesInChargeId);
     let saved = id;
     if (id) {
       await req.input('id', sql.Int, id).query(`UPDATE dbo.Customers SET [code]=@code,[name]=@name,[contactPerson]=@contactPerson,[cpnumber]=@cpnumber,[email]=@email,[address]=@address,[shortName]=@shortName,[businessStyle]=@businessStyle,[salesInCharge]=@salesInCharge,[tin]=@tin,[faxNo]=@faxNo,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[category]=@category,[remarks]=@remarks,[salesName]=@salesName,[drName]=@drName,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[isActive]=@isActive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[salesAddressType]=@salesAddressType,[drAddressType]=@drAddressType,[discount]=@discount,[discountType]=@discountType,[includePoInInvoice]=@includePoInInvoice,[vatInclusive]=@vatInclusive,[salesInChargeId]=@salesInChargeId,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
@@ -376,9 +424,11 @@ router.put('/customers/:id', async (req, res) => {
     return saved;
   });
   const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('The customer could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordAddresses = await request().input('id', sql.Int, savedId).query('SELECT address FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id ORDER BY position');
   const record = {
     ...recordResult.recordset[0],
@@ -391,16 +441,20 @@ router.put('/customers/:id', async (req, res) => {
 router.delete('/customers/:id', async (req, res) => {
   const kind = 'customers';
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const user = res.locals.user;
   await transaction(async tx => {
     const result = await request(tx).input('id', sql.Int, id).query(`DELETE FROM dbo.Customers OUTPUT DELETED.id WHERE id=@id`);
-    if (!result.recordset.length) throw Object.assign(new Error('The record could not be found.'), {
-      status: 404
-    });
+    if (!result.recordset.length) {
+      const error = new Error('The record could not be found.');
+      error.status = 404;
+      throw error;
+    }
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), kind).input('action', sql.NVarChar(sql.MAX), 'delete').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
   });
   res.json({
@@ -410,16 +464,20 @@ router.delete('/customers/:id', async (req, res) => {
 router.delete('/products/:id', async (req, res) => {
   const kind = 'products';
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const user = res.locals.user;
   await transaction(async tx => {
     const result = await request(tx).input('id', sql.Int, id).query(`DELETE FROM dbo.Products OUTPUT DELETED.id WHERE id=@id`);
-    if (!result.recordset.length) throw Object.assign(new Error('The record could not be found.'), {
-      status: 404
-    });
+    if (!result.recordset.length) {
+      const error = new Error('The record could not be found.');
+      error.status = 404;
+      throw error;
+    }
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), kind).input('action', sql.NVarChar(sql.MAX), 'delete').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
   });
   res.json({
@@ -428,7 +486,7 @@ router.delete('/products/:id', async (req, res) => {
 });
 
 // Product master with customer approvals, schedules and linked supplies.
-router.get('/products', async (boundRequest, res) => {
+router.get('/products', async (req, res) => {
   const recordsQuery = request();
   const recordsResult = await recordsQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[planType],p.[color],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[thickness],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
     FROM dbo.Products p
@@ -475,9 +533,11 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
 });
 router.get('/products/:id', async (req, res) => {
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const recordQuery = request();
   recordQuery.input('id', sql.Int, id);
@@ -519,15 +579,17 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     ...productRow
   } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
-  if (!recordRows.length) throw Object.assign(new Error('The product could not be found.'), {
-    status: 404
-  });
+  if (!recordRows.length) {
+    const error = new Error('The product could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const record = recordRows[0];
   res.json({
     record
   });
 });
-router.get('/product-options', async (boundRequest, res) => {
+router.get('/product-options', async (req, res) => {
   const result = await request().query(`
     SELECT id,shortName AS name,description,[decimal],isActive FROM dbo.ConfigUnits WHERE isActive=1 AND forProduct=1 ORDER BY shortName;
     SELECT id,shortName AS code,name AS description,isDefault,isActive FROM dbo.ConfigCurrencies WHERE isActive=1 ORDER BY shortName;
@@ -549,12 +611,16 @@ router.get('/product-options', async (boundRequest, res) => {
   });
 });
 router.post('/products', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const id = undefined;
@@ -601,9 +667,11 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         ...productRow
       } of currentResult.recordsets[5]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
       const currentRows = [...productsById2.values()];
-      if (!currentRows.length) throw Object.assign(new Error('The product could not be found.'), {
-        status: 404
-      });
+      if (!currentRows.length) {
+        const error = new Error('The product could not be found.');
+        error.status = 404;
+        throw error;
+      }
       current = currentRows[0];
     }
     const product = {
@@ -628,9 +696,11 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     if (!product.name) product.name = product.sku;
     for (const key of [...PRODUCT_QUANTITIES, 'price', 'stock']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
-      if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
-        status: 400
-      });
+      if (!Number.isFinite(numericFieldValue)) {
+        const error = new Error('A database numeric value is invalid.');
+        error.status = 400;
+        throw error;
+      }
       product[key] = numericFieldValue;
     }
     if (Object.hasOwn(input, 'isActive') && input['isActive'] !== undefined) product.isActive = input.isActive === true;
@@ -639,16 +709,20 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       product.productHeaderId = null;
     } else {
       const parsedProductHeaderId = Number(input.productHeaderId);
-      if (!Number.isSafeInteger(parsedProductHeaderId) || parsedProductHeaderId <= 0 || parsedProductHeaderId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Product Header'}.`), {
-        status: 400
-      });
+      if (!Number.isSafeInteger(parsedProductHeaderId) || parsedProductHeaderId <= 0 || parsedProductHeaderId > 2147483647) {
+        const error = new Error(`Enter a valid ${'Product Header'}.`);
+        error.status = 400;
+        throw error;
+      }
       product.productHeaderId = parsedProductHeaderId;
     }
     for (const [key, limit] of [['processes', 100], ['offices', 50]]) {
       if (Object.hasOwn(input, key) && input[key] !== undefined) {
-        if (!Array.isArray(input[key]) || input[key].length > limit) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-          status: 400
-        });
+        if (!Array.isArray(input[key]) || input[key].length > limit) {
+          const error = new Error('The submitted collection exceeds the supported size.');
+          error.status = 400;
+          throw error;
+        }
         product[key] = input[key].map(row => {
           return {
             name: typeof row.name === 'string' ? row.name.trim() : ''
@@ -657,14 +731,18 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       }
     }
     if (Object.hasOwn(input, 'customerApprovals') && input['customerApprovals'] !== undefined) {
-      if (!Array.isArray(input.customerApprovals) || input.customerApprovals.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-        status: 400
-      });
+      if (!Array.isArray(input.customerApprovals) || input.customerApprovals.length > 100) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
+      }
       product.customerApprovals = input.customerApprovals.map(row => {
         const parsedCustomerId = Number(row.customerId);
-        if (!Number.isSafeInteger(parsedCustomerId) || parsedCustomerId <= 0 || parsedCustomerId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'customer'}.`), {
-          status: 400
-        });
+        if (!Number.isSafeInteger(parsedCustomerId) || parsedCustomerId <= 0 || parsedCustomerId > 2147483647) {
+          const error = new Error(`Enter a valid ${'customer'}.`);
+          error.status = 400;
+          throw error;
+        }
         return {
           customerId: parsedCustomerId,
           approvalDate: row.approvalDate || null,
@@ -675,9 +753,11 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       });
     }
     if (Object.hasOwn(input, 'inventorySchedules') && input['inventorySchedules'] !== undefined) {
-      if (!Array.isArray(input.inventorySchedules) || input.inventorySchedules.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-        status: 400
-      });
+      if (!Array.isArray(input.inventorySchedules) || input.inventorySchedules.length > 100) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
+      }
       product.inventorySchedules = input.inventorySchedules.map(row => {
         return {
           scheduleDate: row.scheduleDate || null,
@@ -686,18 +766,24 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       });
     }
     if (Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
-      if (!Array.isArray(input.linkedSupplies) || input.linkedSupplies.length > 200) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-        status: 400
-      });
+      if (!Array.isArray(input.linkedSupplies) || input.linkedSupplies.length > 200) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
+      }
       product.linkedSupplies = input.linkedSupplies.map(row => {
         const parsedSuppliesId = Number(row.suppliesId);
-        if (!Number.isSafeInteger(parsedSuppliesId) || parsedSuppliesId <= 0 || parsedSuppliesId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Supplies'}.`), {
-          status: 400
-        });
+        if (!Number.isSafeInteger(parsedSuppliesId) || parsedSuppliesId <= 0 || parsedSuppliesId > 2147483647) {
+          const error = new Error(`Enter a valid ${'Supplies'}.`);
+          error.status = 400;
+          throw error;
+        }
         const numericFieldValue = Number(row.quantity ?? 0);
-        if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
-          status: 400
-        });
+        if (!Number.isFinite(numericFieldValue)) {
+          const error = new Error('A database numeric value is invalid.');
+          error.status = 400;
+          throw error;
+        }
         return {
           suppliesId: parsedSuppliesId,
           quantity: numericFieldValue,
@@ -705,85 +791,110 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         };
       });
     }
-    if (product.secondaryUnit && product.quantityPerSecondaryUnit <= 0) throw Object.assign(new Error('UOP2 conversion quantity must be positive.'), {
-      status: 400
-    });
+    if (product.secondaryUnit && product.quantityPerSecondaryUnit <= 0) {
+      const error = new Error('UOP2 conversion quantity must be positive.');
+      error.status = 400;
+      throw error;
+    }
     if (user && Number(product.stock) !== Number(current?.stock || 0)) {
-      throw Object.assign(new Error('Finished-product stock cannot be adjusted from the Product master.'), {
-        status: 400
-      });
+      {
+        const error = new Error('Finished-product stock cannot be adjusted from the Product master.');
+        error.status = 400;
+        throw error;
+      }
     }
     for (const field of ['unit', 'secondaryUnit']) {
       if (!product[field] || product[field] === current?.[field]) continue;
       const result = await request(scope).input('name', sql.NVarChar(sql.MAX), product[field]).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@name AND isActive=1 AND forProduct=1');
-      if (!result.recordset.length) throw Object.assign(new Error('Product UOP and UOP2 must use active Configuration units marked For Product.'), {
-        status: 400
-      });
+      if (!result.recordset.length) {
+        const error = new Error('Product UOP and UOP2 must use active Configuration units marked For Product.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (product.currency && product.currency !== current?.currency) {
       const result = await request(scope).input('code', sql.NVarChar(sql.MAX), product.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
-      if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Currency.'), {
-        status: 400
-      });
+      if (!result.recordset.length) {
+        const error = new Error('Select an active configured Currency.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (product.category && product.category !== current?.category) {
       const result = await request(scope).input('name', sql.NVarChar(sql.MAX), product.category).query('SELECT id FROM dbo.ConfigProductCategories WHERE name=@name AND isActive=1');
-      if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Product Category.'), {
-        status: 400
-      });
+      if (!result.recordset.length) {
+        const error = new Error('Select an active configured Product Category.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (current && product.unit !== current.unit) {
       const result = await request(scope).input('id', sql.Int, current.id).query('SELECT TOP(1) id FROM dbo.SalesOrderItems WHERE productId=@id');
-      if (Number(current.stock) > 0 || result.recordset.length) throw Object.assign(new Error('UOP cannot change after finished-product stock or sales history exists.'), {
-        status: 409
-      });
+      if (Number(current.stock) > 0 || result.recordset.length) {
+        const error = new Error('UOP cannot change after finished-product stock or sales history exists.');
+        error.status = 409;
+        throw error;
+      }
     }
     let headerId = product.productHeaderId;
     if (headerId) {
       const visited = new Set(id ? [id] : []);
       let first = true;
       while (headerId) {
-        if (visited.has(headerId)) throw Object.assign(new Error('Product Header cannot refer to this product or form a circular group.'), {
-          status: 400
-        });
-        if (visited.size >= 100) throw Object.assign(new Error('Product Header grouping exceeds the supported depth.'), {
-          status: 400
-        });
+        if (visited.has(headerId)) {
+          const error = new Error('Product Header cannot refer to this product or form a circular group.');
+          error.status = 400;
+          throw error;
+        }
+        if (visited.size >= 100) {
+          const error = new Error('Product Header grouping exceeds the supported depth.');
+          error.status = 400;
+          throw error;
+        }
         visited.add(headerId);
         const result = await request(scope).input('id', sql.Int, headerId).query('SELECT productHeaderId,isActive FROM dbo.Products WHERE id=@id');
-        if (!result.recordset.length) throw Object.assign(new Error('Select an existing Product Header.'), {
-          status: 400
-        });
-        if (first && !result.recordset[0].isActive && product.productHeaderId !== current?.productHeaderId) throw Object.assign(new Error('Select an active Product Header.'), {
-          status: 400
-        });
+        if (!result.recordset.length) {
+          const error = new Error('Select an existing Product Header.');
+          error.status = 400;
+          throw error;
+        }
+        if (first && !result.recordset[0].isActive && product.productHeaderId !== current?.productHeaderId) {
+          const error = new Error('Select an active Product Header.');
+          error.status = 400;
+          throw error;
+        }
         first = false;
         headerId = result.recordset[0].productHeaderId;
       }
     }
     for (const row of product.customerApprovals) {
       const result = await request(scope).input('id', sql.Int, row.customerId).query('SELECT id FROM dbo.Customers WHERE id=@id');
-      if (!result.recordset.length) throw Object.assign(new Error('A Product Customer row references a customer that does not exist.'), {
-        status: 400
-      });
+      if (!result.recordset.length) {
+        const error = new Error('A Product Customer row references a customer that does not exist.');
+        error.status = 400;
+        throw error;
+      }
     }
     const previous = new Set(current?.linkedSupplies.map(row => row.suppliesId) || []);
     for (const row of product.linkedSupplies) {
       const result = await request(scope).input('id', sql.Int, row.suppliesId).query('SELECT unit,isActive FROM dbo.Supplies WHERE id=@id');
       const supplies = result.recordset[0];
-      if (!supplies || !supplies.isActive && !previous.has(row.suppliesId)) throw Object.assign(new Error('Select an active Supplies record for each linked material.'), {
-        status: 400
-      });
-      if (row.unit && row.unit !== supplies.unit) throw Object.assign(new Error('Linked Supplies UOM must match its Supplies master record.'), {
-        status: 400
-      });
+      if (!supplies || !supplies.isActive && !previous.has(row.suppliesId)) {
+        const error = new Error('Select an active Supplies record for each linked material.');
+        error.status = 400;
+        throw error;
+      }
+      if (row.unit && row.unit !== supplies.unit) {
+        const error = new Error('Linked Supplies UOM must match its Supplies master record.');
+        error.status = 400;
+        throw error;
+      }
       row.unit = supplies.unit;
     }
-    const boundRequest = request(scope);
-    for (const fieldName of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), product[fieldName]);
-    for (const fieldName of PRODUCT_QUANTITIES) boundRequest.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
-    boundRequest.input('price', sql.VarChar(sql.MAX), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
-    const req = boundRequest;
+    const req = request(scope);
+    for (const fieldName of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) req.input(fieldName, sql.NVarChar(sql.MAX), product[fieldName]);
+    for (const fieldName of PRODUCT_QUANTITIES) req.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
+    req.input('price', sql.VarChar(sql.MAX), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
     let saved = id;
     if (id) {
       await req.input('id', sql.Int, id).query(`UPDATE dbo.Products SET [sku]=@sku,[name]=@name,[description]=@description,[unit]=@unit,[revision]=@revision,[secondaryUnit]=@secondaryUnit,[currency]=@currency,[model]=@model,[category]=@category,[planType]=@planType,[color]=@color,[remarks]=@remarks,[tagColor]=@tagColor,[quantityPerSecondaryUnit]=@quantityPerSecondaryUnit,[moq]=@moq,[spq]=@spq,[unitCost]=@unitCost,[divisor]=@divisor,[thickness]=@thickness,[weight]=@weight,[price]=@price,[stock]=@stock,[isActive]=@isActive,[vatMode]=@vatMode,[productHeaderId]=@productHeaderId,[inventorySetup]=@inventorySetup,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
@@ -864,27 +975,35 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     ...productRow
   } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
-  if (!recordRows.length) throw Object.assign(new Error('The product could not be found.'), {
-    status: 404
-  });
+  if (!recordRows.length) {
+    const error = new Error('The product could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const record = recordRows[0];
   res.status(201).json({
     record
   });
 });
 router.put('/products/:id', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const savedId = await transaction(async scope => {
     let current;
@@ -929,9 +1048,11 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         ...productRow
       } of currentResult.recordsets[5]) productsById2.get(linkedProductId)?.linkedSupplies.push(productRow);
       const currentRows = [...productsById2.values()];
-      if (!currentRows.length) throw Object.assign(new Error('The product could not be found.'), {
-        status: 404
-      });
+      if (!currentRows.length) {
+        const error = new Error('The product could not be found.');
+        error.status = 404;
+        throw error;
+      }
       current = currentRows[0];
     }
     const product = {
@@ -956,9 +1077,11 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     if (!product.name) product.name = product.sku;
     for (const key of [...PRODUCT_QUANTITIES, 'price', 'stock']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
-      if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
-        status: 400
-      });
+      if (!Number.isFinite(numericFieldValue)) {
+        const error = new Error('A database numeric value is invalid.');
+        error.status = 400;
+        throw error;
+      }
       product[key] = numericFieldValue;
     }
     if (Object.hasOwn(input, 'isActive') && input['isActive'] !== undefined) product.isActive = input.isActive === true;
@@ -967,16 +1090,20 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       product.productHeaderId = null;
     } else {
       const parsedProductHeaderId = Number(input.productHeaderId);
-      if (!Number.isSafeInteger(parsedProductHeaderId) || parsedProductHeaderId <= 0 || parsedProductHeaderId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Product Header'}.`), {
-        status: 400
-      });
+      if (!Number.isSafeInteger(parsedProductHeaderId) || parsedProductHeaderId <= 0 || parsedProductHeaderId > 2147483647) {
+        const error = new Error(`Enter a valid ${'Product Header'}.`);
+        error.status = 400;
+        throw error;
+      }
       product.productHeaderId = parsedProductHeaderId;
     }
     for (const [key, limit] of [['processes', 100], ['offices', 50]]) {
       if (Object.hasOwn(input, key) && input[key] !== undefined) {
-        if (!Array.isArray(input[key]) || input[key].length > limit) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-          status: 400
-        });
+        if (!Array.isArray(input[key]) || input[key].length > limit) {
+          const error = new Error('The submitted collection exceeds the supported size.');
+          error.status = 400;
+          throw error;
+        }
         product[key] = input[key].map(row => {
           return {
             name: typeof row.name === 'string' ? row.name.trim() : ''
@@ -985,14 +1112,18 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       }
     }
     if (Object.hasOwn(input, 'customerApprovals') && input['customerApprovals'] !== undefined) {
-      if (!Array.isArray(input.customerApprovals) || input.customerApprovals.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-        status: 400
-      });
+      if (!Array.isArray(input.customerApprovals) || input.customerApprovals.length > 100) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
+      }
       product.customerApprovals = input.customerApprovals.map(row => {
         const parsedCustomerId = Number(row.customerId);
-        if (!Number.isSafeInteger(parsedCustomerId) || parsedCustomerId <= 0 || parsedCustomerId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'customer'}.`), {
-          status: 400
-        });
+        if (!Number.isSafeInteger(parsedCustomerId) || parsedCustomerId <= 0 || parsedCustomerId > 2147483647) {
+          const error = new Error(`Enter a valid ${'customer'}.`);
+          error.status = 400;
+          throw error;
+        }
         return {
           customerId: parsedCustomerId,
           approvalDate: row.approvalDate || null,
@@ -1003,9 +1134,11 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       });
     }
     if (Object.hasOwn(input, 'inventorySchedules') && input['inventorySchedules'] !== undefined) {
-      if (!Array.isArray(input.inventorySchedules) || input.inventorySchedules.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-        status: 400
-      });
+      if (!Array.isArray(input.inventorySchedules) || input.inventorySchedules.length > 100) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
+      }
       product.inventorySchedules = input.inventorySchedules.map(row => {
         return {
           scheduleDate: row.scheduleDate || null,
@@ -1014,18 +1147,24 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       });
     }
     if (Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
-      if (!Array.isArray(input.linkedSupplies) || input.linkedSupplies.length > 200) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-        status: 400
-      });
+      if (!Array.isArray(input.linkedSupplies) || input.linkedSupplies.length > 200) {
+        const error = new Error('The submitted collection exceeds the supported size.');
+        error.status = 400;
+        throw error;
+      }
       product.linkedSupplies = input.linkedSupplies.map(row => {
         const parsedSuppliesId = Number(row.suppliesId);
-        if (!Number.isSafeInteger(parsedSuppliesId) || parsedSuppliesId <= 0 || parsedSuppliesId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'Supplies'}.`), {
-          status: 400
-        });
+        if (!Number.isSafeInteger(parsedSuppliesId) || parsedSuppliesId <= 0 || parsedSuppliesId > 2147483647) {
+          const error = new Error(`Enter a valid ${'Supplies'}.`);
+          error.status = 400;
+          throw error;
+        }
         const numericFieldValue = Number(row.quantity ?? 0);
-        if (!Number.isFinite(numericFieldValue)) throw Object.assign(new Error('A database numeric value is invalid.'), {
-          status: 400
-        });
+        if (!Number.isFinite(numericFieldValue)) {
+          const error = new Error('A database numeric value is invalid.');
+          error.status = 400;
+          throw error;
+        }
         return {
           suppliesId: parsedSuppliesId,
           quantity: numericFieldValue,
@@ -1033,85 +1172,110 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
         };
       });
     }
-    if (product.secondaryUnit && product.quantityPerSecondaryUnit <= 0) throw Object.assign(new Error('UOP2 conversion quantity must be positive.'), {
-      status: 400
-    });
+    if (product.secondaryUnit && product.quantityPerSecondaryUnit <= 0) {
+      const error = new Error('UOP2 conversion quantity must be positive.');
+      error.status = 400;
+      throw error;
+    }
     if (user && Number(product.stock) !== Number(current?.stock || 0)) {
-      throw Object.assign(new Error('Finished-product stock cannot be adjusted from the Product master.'), {
-        status: 400
-      });
+      {
+        const error = new Error('Finished-product stock cannot be adjusted from the Product master.');
+        error.status = 400;
+        throw error;
+      }
     }
     for (const field of ['unit', 'secondaryUnit']) {
       if (!product[field] || product[field] === current?.[field]) continue;
       const result = await request(scope).input('name', sql.NVarChar(sql.MAX), product[field]).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@name AND isActive=1 AND forProduct=1');
-      if (!result.recordset.length) throw Object.assign(new Error('Product UOP and UOP2 must use active Configuration units marked For Product.'), {
-        status: 400
-      });
+      if (!result.recordset.length) {
+        const error = new Error('Product UOP and UOP2 must use active Configuration units marked For Product.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (product.currency && product.currency !== current?.currency) {
       const result = await request(scope).input('code', sql.NVarChar(sql.MAX), product.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
-      if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Currency.'), {
-        status: 400
-      });
+      if (!result.recordset.length) {
+        const error = new Error('Select an active configured Currency.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (product.category && product.category !== current?.category) {
       const result = await request(scope).input('name', sql.NVarChar(sql.MAX), product.category).query('SELECT id FROM dbo.ConfigProductCategories WHERE name=@name AND isActive=1');
-      if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Product Category.'), {
-        status: 400
-      });
+      if (!result.recordset.length) {
+        const error = new Error('Select an active configured Product Category.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (current && product.unit !== current.unit) {
       const result = await request(scope).input('id', sql.Int, current.id).query('SELECT TOP(1) id FROM dbo.SalesOrderItems WHERE productId=@id');
-      if (Number(current.stock) > 0 || result.recordset.length) throw Object.assign(new Error('UOP cannot change after finished-product stock or sales history exists.'), {
-        status: 409
-      });
+      if (Number(current.stock) > 0 || result.recordset.length) {
+        const error = new Error('UOP cannot change after finished-product stock or sales history exists.');
+        error.status = 409;
+        throw error;
+      }
     }
     let headerId = product.productHeaderId;
     if (headerId) {
       const visited = new Set(id ? [id] : []);
       let first = true;
       while (headerId) {
-        if (visited.has(headerId)) throw Object.assign(new Error('Product Header cannot refer to this product or form a circular group.'), {
-          status: 400
-        });
-        if (visited.size >= 100) throw Object.assign(new Error('Product Header grouping exceeds the supported depth.'), {
-          status: 400
-        });
+        if (visited.has(headerId)) {
+          const error = new Error('Product Header cannot refer to this product or form a circular group.');
+          error.status = 400;
+          throw error;
+        }
+        if (visited.size >= 100) {
+          const error = new Error('Product Header grouping exceeds the supported depth.');
+          error.status = 400;
+          throw error;
+        }
         visited.add(headerId);
         const result = await request(scope).input('id', sql.Int, headerId).query('SELECT productHeaderId,isActive FROM dbo.Products WHERE id=@id');
-        if (!result.recordset.length) throw Object.assign(new Error('Select an existing Product Header.'), {
-          status: 400
-        });
-        if (first && !result.recordset[0].isActive && product.productHeaderId !== current?.productHeaderId) throw Object.assign(new Error('Select an active Product Header.'), {
-          status: 400
-        });
+        if (!result.recordset.length) {
+          const error = new Error('Select an existing Product Header.');
+          error.status = 400;
+          throw error;
+        }
+        if (first && !result.recordset[0].isActive && product.productHeaderId !== current?.productHeaderId) {
+          const error = new Error('Select an active Product Header.');
+          error.status = 400;
+          throw error;
+        }
         first = false;
         headerId = result.recordset[0].productHeaderId;
       }
     }
     for (const row of product.customerApprovals) {
       const result = await request(scope).input('id', sql.Int, row.customerId).query('SELECT id FROM dbo.Customers WHERE id=@id');
-      if (!result.recordset.length) throw Object.assign(new Error('A Product Customer row references a customer that does not exist.'), {
-        status: 400
-      });
+      if (!result.recordset.length) {
+        const error = new Error('A Product Customer row references a customer that does not exist.');
+        error.status = 400;
+        throw error;
+      }
     }
     const previous = new Set(current?.linkedSupplies.map(row => row.suppliesId) || []);
     for (const row of product.linkedSupplies) {
       const result = await request(scope).input('id', sql.Int, row.suppliesId).query('SELECT unit,isActive FROM dbo.Supplies WHERE id=@id');
       const supplies = result.recordset[0];
-      if (!supplies || !supplies.isActive && !previous.has(row.suppliesId)) throw Object.assign(new Error('Select an active Supplies record for each linked material.'), {
-        status: 400
-      });
-      if (row.unit && row.unit !== supplies.unit) throw Object.assign(new Error('Linked Supplies UOM must match its Supplies master record.'), {
-        status: 400
-      });
+      if (!supplies || !supplies.isActive && !previous.has(row.suppliesId)) {
+        const error = new Error('Select an active Supplies record for each linked material.');
+        error.status = 400;
+        throw error;
+      }
+      if (row.unit && row.unit !== supplies.unit) {
+        const error = new Error('Linked Supplies UOM must match its Supplies master record.');
+        error.status = 400;
+        throw error;
+      }
       row.unit = supplies.unit;
     }
-    const boundRequest = request(scope);
-    for (const fieldName of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), product[fieldName]);
-    for (const fieldName of PRODUCT_QUANTITIES) boundRequest.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
-    boundRequest.input('price', sql.VarChar(sql.MAX), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
-    const req = boundRequest;
+    const req = request(scope);
+    for (const fieldName of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) req.input(fieldName, sql.NVarChar(sql.MAX), product[fieldName]);
+    for (const fieldName of PRODUCT_QUANTITIES) req.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
+    req.input('price', sql.VarChar(sql.MAX), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
     let saved = id;
     if (id) {
       await req.input('id', sql.Int, id).query(`UPDATE dbo.Products SET [sku]=@sku,[name]=@name,[description]=@description,[unit]=@unit,[revision]=@revision,[secondaryUnit]=@secondaryUnit,[currency]=@currency,[model]=@model,[category]=@category,[planType]=@planType,[color]=@color,[remarks]=@remarks,[tagColor]=@tagColor,[quantityPerSecondaryUnit]=@quantityPerSecondaryUnit,[moq]=@moq,[spq]=@spq,[unitCost]=@unitCost,[divisor]=@divisor,[thickness]=@thickness,[weight]=@weight,[price]=@price,[stock]=@stock,[isActive]=@isActive,[vatMode]=@vatMode,[productHeaderId]=@productHeaderId,[inventorySetup]=@inventorySetup,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
@@ -1192,9 +1356,11 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     ...productRow
   } of recordResult.recordsets[5]) productsById.get(linkedProductId)?.linkedSupplies.push(productRow);
   const recordRows = [...productsById.values()];
-  if (!recordRows.length) throw Object.assign(new Error('The product could not be found.'), {
-    status: 404
-  });
+  if (!recordRows.length) {
+    const error = new Error('The product could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const record = recordRows[0];
   res.json({
     record
@@ -1202,7 +1368,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
 });
 
 // Sales orders snapshot customer/product data and use exact six-place prices.
-router.get('/sales-orders', async (boundRequest, res) => {
+router.get('/sales-orders', async (req, res) => {
   const result = await request().query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
@@ -1213,17 +1379,21 @@ router.get('/sales-orders', async (boundRequest, res) => {
 });
 router.get('/sales-orders/:id', async (req, res) => {
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WHERE o.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Sales order could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('id', sql.Int, id).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1234,62 +1404,88 @@ router.get('/sales-orders/:id', async (req, res) => {
   });
 });
 router.post('/sales-orders', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const id = undefined;
-  if (!Array.isArray(input.items) || input.items.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-    status: 400
-  });
+  if (!Array.isArray(input.items) || input.items.length > 100) {
+    const error = new Error('The submitted collection exceeds the supported size.');
+    error.status = 400;
+    throw error;
+  }
   let totalCents = 0n;
   const items = input.items.map(item => {
-    if (!['string', 'number'].includes(typeof item.quantity) || !Number.isFinite(Number(item.quantity))) throw Object.assign(new Error('Quantity must be a valid decimal number.'), {
-      status: 400
-    });
+    if (!['string', 'number'].includes(typeof item.quantity) || !Number.isFinite(Number(item.quantity))) {
+      const error = new Error('Quantity must be a valid decimal number.');
+      error.status = 400;
+      throw error;
+    }
     const quantityText = String(item.quantity).trim();
-    if (!/^\d+(?:\.\d+)?$/.test(quantityText)) throw Object.assign(new Error('Quantity must be zero or greater.'), {
-      status: 400
-    });
+    if (!/^\d+(?:\.\d+)?$/.test(quantityText)) {
+      const error = new Error('Quantity must be zero or greater.');
+      error.status = 400;
+      throw error;
+    }
     const [wholeQuantity, enteredQuantityFraction = ''] = quantityText.split('.');
     const quantityFraction = enteredQuantityFraction.replace(/0+$/, '');
-    if (quantityFraction.length > 3) throw Object.assign(new Error('Quantity supports at most 3 decimal places.'), {
-      status: 400
-    });
+    if (quantityFraction.length > 3) {
+      const error = new Error('Quantity supports at most 3 decimal places.');
+      error.status = 400;
+      throw error;
+    }
     const quantityThousandths = BigInt(wholeQuantity) * 1000n + BigInt(quantityFraction.padEnd(3, '0') || '0');
-    if (quantityThousandths <= 0n || quantityThousandths > 1000000000n) throw Object.assign(new Error('Order quantities must be positive and at most 1,000,000.'), {
-      status: 400
-    });
-    if (!['string', 'number'].includes(typeof item.unitPrice) || !Number.isFinite(Number(item.unitPrice))) throw Object.assign(new Error('Unit price must be a valid decimal number.'), {
-      status: 400
-    });
+    if (quantityThousandths <= 0n || quantityThousandths > 1000000000n) {
+      const error = new Error('Order quantities must be positive and at most 1,000,000.');
+      error.status = 400;
+      throw error;
+    }
+    if (!['string', 'number'].includes(typeof item.unitPrice) || !Number.isFinite(Number(item.unitPrice))) {
+      const error = new Error('Unit price must be a valid decimal number.');
+      error.status = 400;
+      throw error;
+    }
     const priceText = String(item.unitPrice).trim();
-    if (!/^\d+(?:\.\d+)?$/.test(priceText)) throw Object.assign(new Error('Unit price must be zero or greater.'), {
-      status: 400
-    });
+    if (!/^\d+(?:\.\d+)?$/.test(priceText)) {
+      const error = new Error('Unit price must be zero or greater.');
+      error.status = 400;
+      throw error;
+    }
     const [wholePrice, enteredPriceFraction = ''] = priceText.split('.');
     const priceFraction = enteredPriceFraction.replace(/0+$/, '');
-    if (priceFraction.length > 6) throw Object.assign(new Error('Unit price supports at most 6 decimal places.'), {
-      status: 400
-    });
+    if (priceFraction.length > 6) {
+      const error = new Error('Unit price supports at most 6 decimal places.');
+      error.status = 400;
+      throw error;
+    }
     const priceMillionths = BigInt(wholePrice) * 1000000n + BigInt(priceFraction.padEnd(6, '0') || '0');
-    if (priceMillionths > 100000000000000n) throw Object.assign(new Error('Unit price is too large.'), {
-      status: 400
-    });
+    if (priceMillionths > 100000000000000n) {
+      const error = new Error('Unit price is too large.');
+      error.status = 400;
+      throw error;
+    }
     const productId = Number(item.productId);
-    if (!Number.isSafeInteger(productId) || productId <= 0 || productId > 2147483647) throw Object.assign(new Error('Enter a valid product.'), {
-      status: 400
-    });
+    if (!Number.isSafeInteger(productId) || productId <= 0 || productId > 2147483647) {
+      const error = new Error('Enter a valid product.');
+      error.status = 400;
+      throw error;
+    }
     // Quantity has scale 3 and price scale 6. Round each line HALF-UP to cents.
     const lineCents = (quantityThousandths * priceMillionths * 100n + 500000000n) / 1000000000n;
     totalCents += lineCents;
-    if (totalCents > 100000000000000n) throw Object.assign(new Error('The document total exceeds the supported amount.'), {
-      status: 400
-    });
+    if (totalCents > 100000000000000n) {
+      const error = new Error('The document total exceeds the supported amount.');
+      error.status = 400;
+      throw error;
+    }
     return {
       productId,
       quantity: Number(quantityThousandths) / 1000,
@@ -1297,13 +1493,17 @@ router.post('/sales-orders', async (req, res) => {
       lineTotal: Number(lineCents) / 100
     };
   });
-  if (!items.length || new Set(items.map(item => item.productId)).size !== items.length) throw Object.assign(new Error('Orders need distinct product lines.'), {
-    status: 400
-  });
+  if (!items.length || new Set(items.map(item => item.productId)).size !== items.length) {
+    const error = new Error('Orders need distinct product lines.');
+    error.status = 400;
+    throw error;
+  }
   const customerId = Number(input.customerId);
-  if (!Number.isSafeInteger(customerId) || customerId <= 0 || customerId > 2147483647) throw Object.assign(new Error('Enter a valid customer.'), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(customerId) || customerId <= 0 || customerId > 2147483647) {
+    const error = new Error('Enter a valid customer.');
+    error.status = 400;
+    throw error;
+  }
   const order = {
     customerId,
     orderDate: typeof input.orderDate === 'string' ? input.orderDate.trim() : '',
@@ -1312,45 +1512,59 @@ router.post('/sales-orders', async (req, res) => {
     items,
     total: Number(totalCents) / 100
   };
-  if (!['draft', 'confirmed'].includes(order.status)) throw Object.assign(new Error('The order state is invalid.'), {
-    status: 400
-  });
+  if (!['draft', 'confirmed'].includes(order.status)) {
+    const error = new Error('The order state is invalid.');
+    error.status = 400;
+    throw error;
+  }
   const savedId = await transaction(async tx => {
     if (id) {
       const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
-      if (!currentResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
-        status: 404
-      });
+      if (!currentResult.recordset.length) {
+        const error = new Error('Sales order could not be found.');
+        error.status = 404;
+        throw error;
+      }
       const currentItems = await request(tx).input('id', sql.Int, id).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
       const current = {
         ...currentResult.recordset[0],
         items: currentItems.recordset
       };
-      if (current.invoiced || current.delivered) throw Object.assign(new Error('This order is already linked to an invoice or delivery receipt and cannot be edited.'), {
-        status: 409
-      });
+      if (current.invoiced || current.delivered) {
+        const error = new Error('This order is already linked to an invoice or delivery receipt and cannot be edited.');
+        error.status = 409;
+        throw error;
+      }
     }
     const customerResult = await request(tx).input('id', sql.Int, order.customerId).query('SELECT id,name,address,isActive FROM dbo.Customers WHERE id=@id');
-    if (!customerResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
-      status: 404
-    });
+    if (!customerResult.recordset.length) {
+      const error = new Error('The customer could not be found.');
+      error.status = 404;
+      throw error;
+    }
     const customer = customerResult.recordset[0];
-    if (!customer.isActive) throw Object.assign(new Error('Select an active customer.'), {
-      status: 400
-    });
+    if (!customer.isActive) {
+      const error = new Error('Select an active customer.');
+      error.status = 400;
+      throw error;
+    }
     const snapshots = [];
     for (const item of [...order.items].sort((a, b) => a.productId - b.productId)) {
       const productResult = await request(tx).input('id', sql.Int, item.productId).query('SELECT id,name,sku,unit,currency,isActive FROM dbo.Products WHERE id=@id');
-      if (!productResult.recordset.length) throw Object.assign(new Error('The product could not be found.'), {
-        status: 404
-      });
+      if (!productResult.recordset.length) {
+        const error = new Error('The product could not be found.');
+        error.status = 404;
+        throw error;
+      }
       const product = productResult.recordset[0];
-      if (!product.isActive) throw Object.assign(new Error(`${product.name} is inactive.`), {
-        status: 400
-      });
+      if (!product.isActive) {
+        const error = new Error(`${product.name} is inactive.`);
+        error.status = 400;
+        throw error;
+      }
       snapshots.push({
         ...item,
         productName: product.name,
@@ -1360,13 +1574,17 @@ router.post('/sales-orders', async (req, res) => {
       });
     }
     const productCurrencies = new Set(snapshots.map(productSnapshot => String(productSnapshot.currency || 'PHP').trim().toUpperCase() || 'PHP'));
-    if (productCurrencies.size !== 1) throw Object.assign(new Error('Use products with the same currency in one sales order.'), {
-      status: 400
-    });
+    if (productCurrencies.size !== 1) {
+      const error = new Error('Use products with the same currency in one sales order.');
+      error.status = 400;
+      throw error;
+    }
     const currency = [...productCurrencies][0];
-    if (input.currency !== undefined && (typeof input.currency === 'string' ? input.currency.trim() : '').toUpperCase() !== currency) throw Object.assign(new Error('Order currency must match the selected product prices.'), {
-      status: 400
-    });
+    if (input.currency !== undefined && (typeof input.currency === 'string' ? input.currency.trim() : '').toUpperCase() !== currency) {
+      const error = new Error('Order currency must match the selected product prices.');
+      error.status = 400;
+      throw error;
+    }
     const req = request(tx).input('customerId', sql.Int, order.customerId).input('customerName', sql.NVarChar(sql.MAX), customer.name).input('customerAddress', sql.NVarChar(sql.MAX), customer.address).input('orderDate', sql.VarChar(sql.MAX), order.orderDate).input('notes', sql.NVarChar(sql.MAX), order.notes).input('status', sql.NVarChar(sql.MAX), order.status).input('total', sql.Decimal(18, 2), order.total).input('currency', sql.NVarChar(sql.MAX), currency);
     let saved = id;
     if (id) {
@@ -1390,9 +1608,11 @@ router.post('/sales-orders', async (req, res) => {
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WHERE o.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Sales order could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('id', sql.Int, savedId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1403,66 +1623,94 @@ router.post('/sales-orders', async (req, res) => {
   });
 });
 router.put('/sales-orders/:id', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
-  if (!Array.isArray(input.items) || input.items.length > 100) throw Object.assign(new Error('The submitted collection exceeds the supported size.'), {
-    status: 400
-  });
+  if (!Array.isArray(input.items) || input.items.length > 100) {
+    const error = new Error('The submitted collection exceeds the supported size.');
+    error.status = 400;
+    throw error;
+  }
   let totalCents = 0n;
   const items = input.items.map(item => {
-    if (!['string', 'number'].includes(typeof item.quantity) || !Number.isFinite(Number(item.quantity))) throw Object.assign(new Error('Quantity must be a valid decimal number.'), {
-      status: 400
-    });
+    if (!['string', 'number'].includes(typeof item.quantity) || !Number.isFinite(Number(item.quantity))) {
+      const error = new Error('Quantity must be a valid decimal number.');
+      error.status = 400;
+      throw error;
+    }
     const quantityText = String(item.quantity).trim();
-    if (!/^\d+(?:\.\d+)?$/.test(quantityText)) throw Object.assign(new Error('Quantity must be zero or greater.'), {
-      status: 400
-    });
+    if (!/^\d+(?:\.\d+)?$/.test(quantityText)) {
+      const error = new Error('Quantity must be zero or greater.');
+      error.status = 400;
+      throw error;
+    }
     const [wholeQuantity, enteredQuantityFraction = ''] = quantityText.split('.');
     const quantityFraction = enteredQuantityFraction.replace(/0+$/, '');
-    if (quantityFraction.length > 3) throw Object.assign(new Error('Quantity supports at most 3 decimal places.'), {
-      status: 400
-    });
+    if (quantityFraction.length > 3) {
+      const error = new Error('Quantity supports at most 3 decimal places.');
+      error.status = 400;
+      throw error;
+    }
     const quantityThousandths = BigInt(wholeQuantity) * 1000n + BigInt(quantityFraction.padEnd(3, '0') || '0');
-    if (quantityThousandths <= 0n || quantityThousandths > 1000000000n) throw Object.assign(new Error('Order quantities must be positive and at most 1,000,000.'), {
-      status: 400
-    });
-    if (!['string', 'number'].includes(typeof item.unitPrice) || !Number.isFinite(Number(item.unitPrice))) throw Object.assign(new Error('Unit price must be a valid decimal number.'), {
-      status: 400
-    });
+    if (quantityThousandths <= 0n || quantityThousandths > 1000000000n) {
+      const error = new Error('Order quantities must be positive and at most 1,000,000.');
+      error.status = 400;
+      throw error;
+    }
+    if (!['string', 'number'].includes(typeof item.unitPrice) || !Number.isFinite(Number(item.unitPrice))) {
+      const error = new Error('Unit price must be a valid decimal number.');
+      error.status = 400;
+      throw error;
+    }
     const priceText = String(item.unitPrice).trim();
-    if (!/^\d+(?:\.\d+)?$/.test(priceText)) throw Object.assign(new Error('Unit price must be zero or greater.'), {
-      status: 400
-    });
+    if (!/^\d+(?:\.\d+)?$/.test(priceText)) {
+      const error = new Error('Unit price must be zero or greater.');
+      error.status = 400;
+      throw error;
+    }
     const [wholePrice, enteredPriceFraction = ''] = priceText.split('.');
     const priceFraction = enteredPriceFraction.replace(/0+$/, '');
-    if (priceFraction.length > 6) throw Object.assign(new Error('Unit price supports at most 6 decimal places.'), {
-      status: 400
-    });
+    if (priceFraction.length > 6) {
+      const error = new Error('Unit price supports at most 6 decimal places.');
+      error.status = 400;
+      throw error;
+    }
     const priceMillionths = BigInt(wholePrice) * 1000000n + BigInt(priceFraction.padEnd(6, '0') || '0');
-    if (priceMillionths > 100000000000000n) throw Object.assign(new Error('Unit price is too large.'), {
-      status: 400
-    });
+    if (priceMillionths > 100000000000000n) {
+      const error = new Error('Unit price is too large.');
+      error.status = 400;
+      throw error;
+    }
     const productId = Number(item.productId);
-    if (!Number.isSafeInteger(productId) || productId <= 0 || productId > 2147483647) throw Object.assign(new Error('Enter a valid product.'), {
-      status: 400
-    });
+    if (!Number.isSafeInteger(productId) || productId <= 0 || productId > 2147483647) {
+      const error = new Error('Enter a valid product.');
+      error.status = 400;
+      throw error;
+    }
     // Quantity has scale 3 and price scale 6. Round each line HALF-UP to cents.
     const lineCents = (quantityThousandths * priceMillionths * 100n + 500000000n) / 1000000000n;
     totalCents += lineCents;
-    if (totalCents > 100000000000000n) throw Object.assign(new Error('The document total exceeds the supported amount.'), {
-      status: 400
-    });
+    if (totalCents > 100000000000000n) {
+      const error = new Error('The document total exceeds the supported amount.');
+      error.status = 400;
+      throw error;
+    }
     return {
       productId,
       quantity: Number(quantityThousandths) / 1000,
@@ -1470,13 +1718,17 @@ router.put('/sales-orders/:id', async (req, res) => {
       lineTotal: Number(lineCents) / 100
     };
   });
-  if (!items.length || new Set(items.map(item => item.productId)).size !== items.length) throw Object.assign(new Error('Orders need distinct product lines.'), {
-    status: 400
-  });
+  if (!items.length || new Set(items.map(item => item.productId)).size !== items.length) {
+    const error = new Error('Orders need distinct product lines.');
+    error.status = 400;
+    throw error;
+  }
   const customerId = Number(input.customerId);
-  if (!Number.isSafeInteger(customerId) || customerId <= 0 || customerId > 2147483647) throw Object.assign(new Error('Enter a valid customer.'), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(customerId) || customerId <= 0 || customerId > 2147483647) {
+    const error = new Error('Enter a valid customer.');
+    error.status = 400;
+    throw error;
+  }
   const order = {
     customerId,
     orderDate: typeof input.orderDate === 'string' ? input.orderDate.trim() : '',
@@ -1485,45 +1737,59 @@ router.put('/sales-orders/:id', async (req, res) => {
     items,
     total: Number(totalCents) / 100
   };
-  if (!['draft', 'confirmed'].includes(order.status)) throw Object.assign(new Error('The order state is invalid.'), {
-    status: 400
-  });
+  if (!['draft', 'confirmed'].includes(order.status)) {
+    const error = new Error('The order state is invalid.');
+    error.status = 400;
+    throw error;
+  }
   const savedId = await transaction(async tx => {
     if (id) {
       const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
-      if (!currentResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
-        status: 404
-      });
+      if (!currentResult.recordset.length) {
+        const error = new Error('Sales order could not be found.');
+        error.status = 404;
+        throw error;
+      }
       const currentItems = await request(tx).input('id', sql.Int, id).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
       const current = {
         ...currentResult.recordset[0],
         items: currentItems.recordset
       };
-      if (current.invoiced || current.delivered) throw Object.assign(new Error('This order is already linked to an invoice or delivery receipt and cannot be edited.'), {
-        status: 409
-      });
+      if (current.invoiced || current.delivered) {
+        const error = new Error('This order is already linked to an invoice or delivery receipt and cannot be edited.');
+        error.status = 409;
+        throw error;
+      }
     }
     const customerResult = await request(tx).input('id', sql.Int, order.customerId).query('SELECT id,name,address,isActive FROM dbo.Customers WHERE id=@id');
-    if (!customerResult.recordset.length) throw Object.assign(new Error('The customer could not be found.'), {
-      status: 404
-    });
+    if (!customerResult.recordset.length) {
+      const error = new Error('The customer could not be found.');
+      error.status = 404;
+      throw error;
+    }
     const customer = customerResult.recordset[0];
-    if (!customer.isActive) throw Object.assign(new Error('Select an active customer.'), {
-      status: 400
-    });
+    if (!customer.isActive) {
+      const error = new Error('Select an active customer.');
+      error.status = 400;
+      throw error;
+    }
     const snapshots = [];
     for (const item of [...order.items].sort((a, b) => a.productId - b.productId)) {
       const productResult = await request(tx).input('id', sql.Int, item.productId).query('SELECT id,name,sku,unit,currency,isActive FROM dbo.Products WHERE id=@id');
-      if (!productResult.recordset.length) throw Object.assign(new Error('The product could not be found.'), {
-        status: 404
-      });
+      if (!productResult.recordset.length) {
+        const error = new Error('The product could not be found.');
+        error.status = 404;
+        throw error;
+      }
       const product = productResult.recordset[0];
-      if (!product.isActive) throw Object.assign(new Error(`${product.name} is inactive.`), {
-        status: 400
-      });
+      if (!product.isActive) {
+        const error = new Error(`${product.name} is inactive.`);
+        error.status = 400;
+        throw error;
+      }
       snapshots.push({
         ...item,
         productName: product.name,
@@ -1533,13 +1799,17 @@ router.put('/sales-orders/:id', async (req, res) => {
       });
     }
     const productCurrencies = new Set(snapshots.map(productSnapshot => String(productSnapshot.currency || 'PHP').trim().toUpperCase() || 'PHP'));
-    if (productCurrencies.size !== 1) throw Object.assign(new Error('Use products with the same currency in one sales order.'), {
-      status: 400
-    });
+    if (productCurrencies.size !== 1) {
+      const error = new Error('Use products with the same currency in one sales order.');
+      error.status = 400;
+      throw error;
+    }
     const currency = [...productCurrencies][0];
-    if (input.currency !== undefined && (typeof input.currency === 'string' ? input.currency.trim() : '').toUpperCase() !== currency) throw Object.assign(new Error('Order currency must match the selected product prices.'), {
-      status: 400
-    });
+    if (input.currency !== undefined && (typeof input.currency === 'string' ? input.currency.trim() : '').toUpperCase() !== currency) {
+      const error = new Error('Order currency must match the selected product prices.');
+      error.status = 400;
+      throw error;
+    }
     const req = request(tx).input('customerId', sql.Int, order.customerId).input('customerName', sql.NVarChar(sql.MAX), customer.name).input('customerAddress', sql.NVarChar(sql.MAX), customer.address).input('orderDate', sql.VarChar(sql.MAX), order.orderDate).input('notes', sql.NVarChar(sql.MAX), order.notes).input('status', sql.NVarChar(sql.MAX), order.status).input('total', sql.Decimal(18, 2), order.total).input('currency', sql.NVarChar(sql.MAX), currency);
     let saved = id;
     if (id) {
@@ -1563,9 +1833,11 @@ router.put('/sales-orders/:id', async (req, res) => {
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WHERE o.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Sales order could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('id', sql.Int, savedId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1577,9 +1849,11 @@ router.put('/sales-orders/:id', async (req, res) => {
 });
 router.delete('/sales-orders/:id', async (req, res) => {
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const user = res.locals.user;
   await transaction(async tx => {
@@ -1587,17 +1861,21 @@ router.delete('/sales-orders/:id', async (req, res) => {
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
-    if (!orderResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
-      status: 404
-    });
+    if (!orderResult.recordset.length) {
+      const error = new Error('Sales order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     const orderItems = await request(tx).input('id', sql.Int, id).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
     const order = {
       ...orderResult.recordset[0],
       items: orderItems.recordset
     };
-    if (order.invoiced || order.delivered) throw Object.assign(new Error('Orders linked to an invoice or delivery receipt cannot be deleted.'), {
-      status: 409
-    });
+    if (order.invoiced || order.delivered) {
+      const error = new Error('Orders linked to an invoice or delivery receipt cannot be deleted.');
+      error.status = 409;
+      throw error;
+    }
     await request(tx).input('id', sql.Int, id).query('DELETE FROM dbo.SalesOrderItems WHERE orderId=@id; DELETE FROM dbo.SalesOrders WHERE id=@id;');
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-orders').input('action', sql.NVarChar(sql.MAX), 'delete').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
   });
@@ -1607,7 +1885,7 @@ router.delete('/sales-orders/:id', async (req, res) => {
 });
 
 // Invoice, delivery and shipping documents retain their source-order snapshots.
-router.get('/sales-invoices', async (boundRequest, res) => {
+router.get('/sales-invoices', async (req, res) => {
   const result = await request().query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
   i.notes,i.total,i.paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId ORDER BY i.id DESC`);
@@ -1617,16 +1895,20 @@ router.get('/sales-invoices', async (boundRequest, res) => {
 });
 router.get('/sales-invoices/:id', async (req, res) => {
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
   i.notes,i.total,i.paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId WHERE i.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Sales invoice could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1636,7 +1918,7 @@ router.get('/sales-invoices/:id', async (req, res) => {
     record
   });
 });
-router.get('/delivery-receipts', async (boundRequest, res) => {
+router.get('/delivery-receipts', async (req, res) => {
   const result = await request().query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.total,o.currency,
   CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId ORDER BY d.id DESC`);
   res.json({
@@ -1645,15 +1927,19 @@ router.get('/delivery-receipts', async (boundRequest, res) => {
 });
 router.get('/delivery-receipts/:id', async (req, res) => {
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.total,o.currency,
   CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId WHERE d.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Delivery receipt could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Delivery receipt could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1663,7 +1949,7 @@ router.get('/delivery-receipts/:id', async (req, res) => {
     record
   });
 });
-router.get('/shipping-invoices', async (boundRequest, res) => {
+router.get('/shipping-invoices', async (req, res) => {
   const result = await request().query(`SELECT s.id,s.number,s.invoiceId,i.number AS invoiceNumber,i.orderId,o.number AS orderNumber,
   o.customerId,o.customerName,o.customerAddress,o.currency,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
   s.carrier,s.trackingNumber,s.notes,i.total,i.paidAmount,d.number AS deliveryNumber FROM dbo.ShippingInvoices s
@@ -1676,9 +1962,11 @@ router.get('/shipping-invoices', async (boundRequest, res) => {
 });
 router.get('/shipping-invoices/:id', async (req, res) => {
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT s.id,s.number,s.invoiceId,i.number AS invoiceNumber,i.orderId,o.number AS orderNumber,
   o.customerId,o.customerName,o.customerAddress,o.currency,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
@@ -1686,9 +1974,11 @@ router.get('/shipping-invoices/:id', async (req, res) => {
   JOIN dbo.SalesInvoices i ON i.id=s.invoiceId
   JOIN dbo.SalesOrders o ON o.id=i.orderId
   LEFT JOIN dbo.DeliveryReceipts d ON d.orderId=o.id WHERE s.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Shipping invoice could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Shipping invoice could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1699,44 +1989,58 @@ router.get('/shipping-invoices/:id', async (req, res) => {
   });
 });
 router.post('/sales-invoices', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const parsedOrderId = Number(input.orderId);
-  if (!Number.isSafeInteger(parsedOrderId) || parsedOrderId <= 0 || parsedOrderId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'sales order'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedOrderId) || parsedOrderId <= 0 || parsedOrderId > 2147483647) {
+    const error = new Error(`Enter a valid ${'sales order'}.`);
+    error.status = 400;
+    throw error;
+  }
   const orderId = parsedOrderId;
   const invoiceDate = typeof input.invoiceDate === 'string' ? input.invoiceDate.trim() : '';
   const dueDate = typeof input.dueDate === 'string' ? input.dueDate.trim() : '';
-  if (dueDate < invoiceDate) throw Object.assign(new Error('Due date cannot be earlier than invoice date.'), {
-    status: 400
-  });
+  if (dueDate < invoiceDate) {
+    const error = new Error('Due date cannot be earlier than invoice date.');
+    error.status = 400;
+    throw error;
+  }
   const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
   const id = await transaction(async tx => {
     const orderResult = await request(tx).input('id', sql.Int, orderId).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
-    if (!orderResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
-      status: 404
-    });
+    if (!orderResult.recordset.length) {
+      const error = new Error('Sales order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     const orderItems = await request(tx).input('id', sql.Int, orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
     const order = {
       ...orderResult.recordset[0],
       items: orderItems.recordset
     };
-    if (order.status !== 'confirmed') throw Object.assign(new Error('Confirm the sales order before creating an invoice.'), {
-      status: 400
-    });
-    if (order.invoiced) throw Object.assign(new Error('This sales order already has an invoice.'), {
-      status: 409
-    });
+    if (order.status !== 'confirmed') {
+      const error = new Error('Confirm the sales order before creating an invoice.');
+      error.status = 400;
+      throw error;
+    }
+    if (order.invoiced) {
+      const error = new Error('This sales order already has an invoice.');
+      error.status = 409;
+      throw error;
+    }
     const result = await request(tx).input('orderId', sql.Int, orderId).input('invoiceDate', sql.VarChar(sql.MAX), invoiceDate).input('dueDate', sql.VarChar(sql.MAX), dueDate).input('notes', sql.NVarChar(sql.MAX), notes).input('total', sql.Decimal(18, 2), order.total).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.SalesInvoices (orderId,invoiceDate,dueDate,notes,total,createdBy) OUTPUT INSERTED.id
         VALUES (@orderId,@invoiceDate,@dueDate,@notes,@total,@createdBy)`);
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-invoices').input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
@@ -1745,9 +2049,11 @@ router.post('/sales-invoices', async (req, res) => {
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
   i.notes,i.total,i.paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId WHERE i.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Sales invoice could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1759,54 +2065,74 @@ router.post('/sales-invoices', async (req, res) => {
 });
 router.patch('/sales-invoices/:id/payment', async (req, res) => {
   const parsedId = Number(req.params.id);
-  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'id'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
+    const error = new Error(`Enter a valid ${'id'}.`);
+    error.status = 400;
+    throw error;
+  }
   const id = parsedId;
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
-  if (!['string', 'number'].includes(typeof input.paidAmount) || !Number.isFinite(Number(input.paidAmount))) throw Object.assign(new Error('Payment must be a valid decimal number.'), {
-    status: 400
-  });
+  if (!['string', 'number'].includes(typeof input.paidAmount) || !Number.isFinite(Number(input.paidAmount))) {
+    const error = new Error('Payment must be a valid decimal number.');
+    error.status = 400;
+    throw error;
+  }
   const paymentText = String(input.paidAmount).trim();
-  if (!/^\d+(?:\.\d+)?$/.test(paymentText)) throw Object.assign(new Error('Payment must be zero or greater.'), {
-    status: 400
-  });
+  if (!/^\d+(?:\.\d+)?$/.test(paymentText)) {
+    const error = new Error('Payment must be zero or greater.');
+    error.status = 400;
+    throw error;
+  }
   const [wholePayment, enteredPaymentFraction = ''] = paymentText.split('.');
   const paymentFraction = enteredPaymentFraction.replace(/0+$/, '');
-  if (paymentFraction.length > 2) throw Object.assign(new Error('Payment supports at most 2 decimal places.'), {
-    status: 400
-  });
+  if (paymentFraction.length > 2) {
+    const error = new Error('Payment supports at most 2 decimal places.');
+    error.status = 400;
+    throw error;
+  }
   const paymentCents = BigInt(wholePayment) * 100n + BigInt(paymentFraction.padEnd(2, '0') || '0');
-  if (paymentCents > 100000000000000n) throw Object.assign(new Error('Payment is too large.'), {
-    status: 400
-  });
+  if (paymentCents > 100000000000000n) {
+    const error = new Error('Payment is too large.');
+    error.status = 400;
+    throw error;
+  }
   const paidAmount = Number(paymentCents) / 100;
   await transaction(async tx => {
     const result = await request(tx).input('id', sql.Int, id).input('paidAmount', sql.Decimal(18, 2), paidAmount).query('UPDATE dbo.SalesInvoices SET paidAmount=@paidAmount,updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id AND total>=@paidAmount');
     if (!result.recordset.length) {
       const existing = await request(tx).input('id', sql.Int, id).query('SELECT id FROM dbo.SalesInvoices WHERE id=@id');
-      if (!existing.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
-        status: 404
-      });
-      throw Object.assign(new Error('Payment cannot exceed the invoice total.'), {
-        status: 400
-      });
+      if (!existing.recordset.length) {
+        const error = new Error('Sales invoice could not be found.');
+        error.status = 404;
+        throw error;
+      }
+      {
+        const error = new Error('Payment cannot exceed the invoice total.');
+        error.status = 400;
+        throw error;
+      }
     }
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-invoices').input('action', sql.NVarChar(sql.MAX), 'payment').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
   i.notes,i.total,i.paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId WHERE i.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Sales invoice could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1817,18 +2143,24 @@ router.patch('/sales-invoices/:id/payment', async (req, res) => {
   });
 });
 router.post('/delivery-receipts', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const parsedOrderId = Number(input.orderId);
-  if (!Number.isSafeInteger(parsedOrderId) || parsedOrderId <= 0 || parsedOrderId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'sales order'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedOrderId) || parsedOrderId <= 0 || parsedOrderId > 2147483647) {
+    const error = new Error(`Enter a valid ${'sales order'}.`);
+    error.status = 400;
+    throw error;
+  }
   const orderId = parsedOrderId;
   const deliveryDate = typeof input.deliveryDate === 'string' ? input.deliveryDate.trim() : '';
   const receivedBy = typeof input.receivedBy === 'string' ? input.receivedBy.trim() : '';
@@ -1839,25 +2171,33 @@ router.post('/delivery-receipts', async (req, res) => {
   CONVERT(varchar(10),o.orderDate,23) AS orderDate, o.notes, o.status, o.total,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) WHERE o.id=@id`);
-    if (!orderResult.recordset.length) throw Object.assign(new Error('Sales order could not be found.'), {
-      status: 404
-    });
+    if (!orderResult.recordset.length) {
+      const error = new Error('Sales order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     const orderItems = await request(tx).input('id', sql.Int, orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id');
     const order = {
       ...orderResult.recordset[0],
       items: orderItems.recordset
     };
-    if (order.status !== 'confirmed') throw Object.assign(new Error('Confirm the sales order before creating a delivery receipt.'), {
-      status: 400
-    });
-    if (order.delivered) throw Object.assign(new Error('This sales order already has a delivery receipt.'), {
-      status: 409
-    });
+    if (order.status !== 'confirmed') {
+      const error = new Error('Confirm the sales order before creating a delivery receipt.');
+      error.status = 400;
+      throw error;
+    }
+    if (order.delivered) {
+      const error = new Error('This sales order already has a delivery receipt.');
+      error.status = 409;
+      throw error;
+    }
     for (const item of [...order.items].sort((a, b) => a.productId - b.productId)) {
       const result = await request(tx).input('productId', sql.Int, item.productId).input('quantity', sql.Decimal(18, 3), item.quantity).query('UPDATE dbo.Products SET stock=stock-@quantity,updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@productId AND stock>=@quantity');
-      if (!result.recordset.length) throw Object.assign(new Error(`Insufficient finished-product stock for ${item.productName}.`), {
-        status: 409
-      });
+      if (!result.recordset.length) {
+        const error = new Error(`Insufficient finished-product stock for ${item.productName}.`);
+        error.status = 409;
+        throw error;
+      }
     }
     const result = await request(tx).input('orderId', sql.Int, orderId).input('deliveryDate', sql.VarChar(sql.MAX), deliveryDate).input('receivedBy', sql.NVarChar(sql.MAX), receivedBy).input('address', sql.NVarChar(sql.MAX), address || order.customerAddress).input('notes', sql.NVarChar(sql.MAX), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.DeliveryReceipts (orderId,deliveryDate,receivedBy,address,notes,createdBy) OUTPUT INSERTED.id
         VALUES (@orderId,@deliveryDate,@receivedBy,@address,@notes,@createdBy)`);
@@ -1866,9 +2206,11 @@ router.post('/delivery-receipts', async (req, res) => {
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.total,o.currency,
   CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId WHERE d.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Delivery receipt could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Delivery receipt could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1879,18 +2221,24 @@ router.post('/delivery-receipts', async (req, res) => {
   });
 });
 router.post('/shipping-invoices', async (req, res) => {
-  if (!req.is('application/json')) throw Object.assign(new Error('Send this request as JSON.'), {
-    status: 415
-  });
-  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') throw Object.assign(new Error('Send a valid JSON object.'), {
-    status: 400
-  });
+  if (!req.is('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') {
+    const error = new Error('Send a valid JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const input = req.body;
   const user = res.locals.user;
   const parsedInvoiceId = Number(input.invoiceId);
-  if (!Number.isSafeInteger(parsedInvoiceId) || parsedInvoiceId <= 0 || parsedInvoiceId > 2147483647) throw Object.assign(new Error(`Enter a valid ${'sales invoice'}.`), {
-    status: 400
-  });
+  if (!Number.isSafeInteger(parsedInvoiceId) || parsedInvoiceId <= 0 || parsedInvoiceId > 2147483647) {
+    const error = new Error(`Enter a valid ${'sales invoice'}.`);
+    error.status = 400;
+    throw error;
+  }
   const invoiceId = parsedInvoiceId;
   const shippingDate = typeof input.shippingDate === 'string' ? input.shippingDate.trim() : '';
   const carrier = typeof input.carrier === 'string' ? input.carrier.trim() : '';
@@ -1899,16 +2247,22 @@ router.post('/shipping-invoices', async (req, res) => {
   const id = await transaction(async tx => {
     // Serialize requests for the same source invoice without changing its data.
     const invoice = await request(tx).input('id', sql.Int, invoiceId).query('SELECT CONVERT(varchar(10),invoiceDate,23) AS invoiceDate FROM dbo.SalesInvoices WITH (UPDLOCK,HOLDLOCK) WHERE id=@id');
-    if (!invoice.recordset.length) throw Object.assign(new Error('Sales invoice could not be found.'), {
-      status: 404
-    });
-    if (shippingDate < invoice.recordset[0].invoiceDate) throw Object.assign(new Error('Shipping date cannot be earlier than invoice date.'), {
-      status: 400
-    });
+    if (!invoice.recordset.length) {
+      const error = new Error('Sales invoice could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (shippingDate < invoice.recordset[0].invoiceDate) {
+      const error = new Error('Shipping date cannot be earlier than invoice date.');
+      error.status = 400;
+      throw error;
+    }
     const existing = await request(tx).input('invoiceId', sql.Int, invoiceId).query('SELECT id FROM dbo.ShippingInvoices WHERE invoiceId=@invoiceId');
-    if (existing.recordset.length) throw Object.assign(new Error('This sales invoice already has a shipping invoice.'), {
-      status: 409
-    });
+    if (existing.recordset.length) {
+      const error = new Error('This sales invoice already has a shipping invoice.');
+      error.status = 409;
+      throw error;
+    }
     const result = await request(tx).input('invoiceId', sql.Int, invoiceId).input('shippingDate', sql.VarChar(sql.MAX), shippingDate).input('carrier', sql.NVarChar(sql.MAX), carrier).input('trackingNumber', sql.NVarChar(sql.MAX), trackingNumber).input('notes', sql.NVarChar(sql.MAX), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.ShippingInvoices (invoiceId,shippingDate,carrier,trackingNumber,notes,createdBy)
         OUTPUT INSERTED.id VALUES (@invoiceId,@shippingDate,@carrier,@trackingNumber,@notes,@createdBy)`);
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'shipping-invoices').input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
@@ -1920,9 +2274,11 @@ router.post('/shipping-invoices', async (req, res) => {
   JOIN dbo.SalesInvoices i ON i.id=s.invoiceId
   JOIN dbo.SalesOrders o ON o.id=i.orderId
   LEFT JOIN dbo.DeliveryReceipts d ON d.orderId=o.id WHERE s.id=@id`);
-  if (!recordResult.recordset.length) throw Object.assign(new Error('Shipping invoice could not be found.'), {
-    status: 404
-  });
+  if (!recordResult.recordset.length) {
+    const error = new Error('Shipping invoice could not be found.');
+    error.status = 404;
+    throw error;
+  }
   const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query('SELECT productId,productName,sku,unit,quantity,unitPrice,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id');
   const record = {
     ...recordResult.recordset[0],
@@ -1932,7 +2288,7 @@ router.post('/shipping-invoices', async (req, res) => {
     record
   });
 });
-for (const [path, methods] of [['/customer-options', ['GET']], ['/product-options', ['GET']], ['/customers', ['GET', 'POST']], ['/customers/:id', ['GET', 'PUT', 'DELETE']], ['/products', ['GET', 'POST']], ['/products/:id', ['GET', 'PUT', 'DELETE']], ['/sales-orders', ['GET', 'POST']], ['/sales-orders/:id', ['GET', 'PUT', 'DELETE']], ['/sales-invoices', ['GET', 'POST']], ['/sales-invoices/:id', ['GET']], ['/sales-invoices/:id/payment', ['PATCH']], ['/delivery-receipts', ['GET', 'POST']], ['/delivery-receipts/:id', ['GET']], ['/shipping-invoices', ['GET', 'POST']], ['/shipping-invoices/:id', ['GET']]]) router.all(path, (boundRequest, res) => res.set('Allow', methods.join(', ')).status(405).json({
+for (const [path, methods] of [['/customer-options', ['GET']], ['/product-options', ['GET']], ['/customers', ['GET', 'POST']], ['/customers/:id', ['GET', 'PUT', 'DELETE']], ['/products', ['GET', 'POST']], ['/products/:id', ['GET', 'PUT', 'DELETE']], ['/sales-orders', ['GET', 'POST']], ['/sales-orders/:id', ['GET', 'PUT', 'DELETE']], ['/sales-invoices', ['GET', 'POST']], ['/sales-invoices/:id', ['GET']], ['/sales-invoices/:id/payment', ['PATCH']], ['/delivery-receipts', ['GET', 'POST']], ['/delivery-receipts/:id', ['GET']], ['/shipping-invoices', ['GET', 'POST']], ['/shipping-invoices/:id', ['GET']]]) router.all(path, (req, res) => res.set('Allow', methods.join(', ')).status(405).json({
   message: 'This HTTP method is not supported.'
 }));
 module.exports = router;

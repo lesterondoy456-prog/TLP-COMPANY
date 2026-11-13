@@ -1,3 +1,4 @@
+import useRealtime from './hooks/useRealtime.js';
 ﻿import React, { useEffect, useState } from 'react';
 import Login from './pages/Login/Login.jsx';
 import Layout from './components/Layout.jsx';
@@ -19,6 +20,8 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState('');
+
+  useRealtime({ user, onUser: setUser });
 
   useEffect(() => {
     let active = true;

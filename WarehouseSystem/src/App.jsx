@@ -3,6 +3,7 @@ import Login from './pages/Login/Login.jsx';
 import Layout from './components/Layout.jsx';
 import { api } from './api.js';
 import { APP } from './appSettings.js';
+import useRealtime from './hooks/useRealtime.js';
 
 import SuppliesStock from './pages/SuppliesStock/SuppliesStock.jsx';
 import WarehouseUserLogin from './pages/WarehouseUserLogin/WarehouseUserLogin.jsx';
@@ -17,6 +18,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState('');
+  useRealtime({ user, onUser: setUser });
 
   useEffect(() => {
     let active = true;

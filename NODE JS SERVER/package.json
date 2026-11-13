@@ -8,22 +8,19 @@
     "server": "node server.js",
     "start": "node server.js",
     "migrate": "node migration/cli.js",
-    "test": "node --test tests/roles.policy.test.mjs tests/configuration.policy.test.mjs tests/product.validation.test.mjs tests/purchasing-workflow.test.mjs tests/sales-pricing.test.mjs tests/sales-routes.test.mjs tests/architecture.test.mjs tests/api-common.test.mjs tests/migration-runner.test.mjs tests/auth-scope.policy.test.mjs tests/vite-proxy.test.mjs",
-    "test:browser": "node --test tests/customer-form.browser.test.mjs tests/user-roles.browser.test.mjs tests/product-form.browser.test.mjs tests/configuration.browser.test.mjs tests/purchasing.browser.test.mjs tests/sales-currency.browser.test.mjs tests/system-accounts.browser.test.mjs tests/sales-pages.browser.test.mjs",
-    "test:sql": "node --test tests/sales.integration.test.mjs",
-    "test:browser:sql": "node --test tests/sales.browser.test.mjs"
+    "test": "node --test tests/roles.policy.test.mjs tests/configuration.policy.test.mjs tests/product.validation.test.mjs tests/purchasing-workflow.test.mjs tests/sales-pricing.test.mjs tests/sales-routes.test.mjs tests/architecture.test.mjs tests/api-common.test.mjs tests/migration-runner.test.mjs tests/auth-scope.policy.test.mjs tests/vite-proxy.test.mjs tests/realtime.test.mjs",
+    "test:browser": "node --test tests/customer-form.browser.test.mjs tests/user-roles.browser.test.mjs tests/product-form.browser.test.mjs tests/configuration.browser.test.mjs tests/purchasing.browser.test.mjs tests/sales-currency.browser.test.mjs tests/system-accounts.browser.test.mjs tests/sales-pages.browser.test.mjs tests/realtime.browser.test.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "express": "5.3.0",
-    "mssql": "12.7.14"
+    "mssql": "12.7.14",
+    "socket.io": "^4.8.4"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0"
-  },
-  "optionalDependencies": {
-    "msnodesqlv8": "^6.2.2"
+    "@playwright/test": "^1.65.0",
+    "socket.io-client": "^4.8.4"
   }
 }

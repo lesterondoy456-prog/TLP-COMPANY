@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
+import useRealtime from './hooks/useRealtime.js';
 import { SALES_PAGES } from './salesNavigation.js';
 import Layout from './components/Layout.jsx';
 import SalesOverview from './components/SalesOverview.jsx';
@@ -25,10 +26,12 @@ export default function SalesApp({ user, onUser, onLogout }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const sequence = useRef(0);
+  const hasLoaded = useRef(false);
   const canManageUsers = user.role === 'admin' || user.role === 'saleshead';
-  const reload = useCallback(async () => {
+  const reload = useCallback(async ({ background = false } = {}) => {
     const request = ++sequence.current;
-    setLoading(true); setError('');
+    const quiet = background && hasLoaded.current;
+    if (!quiet) { setLoading(true); setError(''); }
     try {
       const [customers, products, orders, invoices, deliveries, shipments, users] = await Promise.all([
         api('/api/sales/customers'),
@@ -41,12 +44,14 @@ export default function SalesApp({ user, onUser, onLogout }) {
       ]);
       if (sequence.current === request) {
         setData({ customers: customers.records || [], products: products.records || [], 'sales-orders': orders.records || [], 'sales-invoices': invoices.records || [], 'delivery-receipts': deliveries.records || [], 'shipping-invoices': shipments.records || [], users: users.records || [] });
+        hasLoaded.current = true;
         setLoaded(true);
       }
-    } catch (error) { if (sequence.current === request) setError(error.message); }
+    } catch (error) { if (sequence.current === request && !quiet) setError(error.message); }
     finally { if (sequence.current === request) setLoading(false); }
   }, [canManageUsers, user.role]);
-  useEffect(() => { reload(); return () => { sequence.current++; }; }, [reload]);
+  useEffect(() => { reload({ background: hasLoaded.current }); return () => { sequence.current++; }; }, [reload]);
+  useRealtime({ user, onUser, onChange: () => reload({ background: true }) });
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 5500); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { if (!canManageUsers && page === 'users') setPage('customers'); }, [canManageUsers, page]);
   function saved(result, message = 'Changes saved to the database.') {

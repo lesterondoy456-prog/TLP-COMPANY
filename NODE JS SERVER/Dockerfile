@@ -2,7 +2,7 @@ FROM node:24-bookworm-slim
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=5189
 WORKDIR /app/server
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --omit=optional --no-audit --no-fund
+RUN npm ci --omit=dev --no-audit --no-fund
 COPY server.js db.js ./
 COPY Api/ ./Api/
 COPY migration/ ./migration/

@@ -226,15 +226,15 @@ const legacyKeys = new Set(['id', 'code', 'name', 'contactPerson', 'cpnumber', '
 
 const extendedKeys = Object.keys(defaults).filter(key => !legacyKeys.has(key));
 
-const PRODUCT_TEXT_LENGTHS = Object.freeze({
+const PRODUCT_TEXT_LENGTHS = {
   sku: 40, name: 180, description: 1000, unit: 30, revision: 30,
   secondaryUnit: 30, currency: 30, model: 150, category: 100,
   planType: 100, color: 80, remarks: 2000, tagColor: 30,
-});
+};
 
-const PRODUCT_QUANTITIES = Object.freeze([
+const PRODUCT_QUANTITIES = [
   'quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'divisor', 'thickness', 'weight',
-]);
+];
 
 const legacyFields = new Set(['id', 'sku', 'name', 'description', 'unit', 'price', 'stock', 'isActive']);
 

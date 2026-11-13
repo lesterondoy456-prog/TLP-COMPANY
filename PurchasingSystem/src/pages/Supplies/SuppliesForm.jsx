@@ -55,8 +55,8 @@ export function SuppliesForm({ record, options, onClose, onSaved }) {
       editor.setError('Please correct the highlighted fields before saving.');
       return;
     }
-    const body = Object.fromEntries(Object.keys(SUPPLIES_TEXT).map(key => [key, String(form[key]).trim()]));
-    Object.assign(body, {
+    const body = {
+      ...Object.fromEntries(Object.keys(SUPPLIES_TEXT).map(key => [key, String(form[key]).trim()])),
       productId: form.productId === '' ? null : Number(form.productId),
       offices: form.offices.map(row => ({ name: row.name })),
       minimumStock: Number(form.minimumStock), thickness: Number(form.thickness), netWeight: Number(form.netWeight),
@@ -64,7 +64,7 @@ export function SuppliesForm({ record, options, onClose, onSaved }) {
       inventorySchedules: form.inventorySchedules.map(row => ({ scheduleDate: row.scheduleDate || null, month: (row.month || '').trim() })),
       suppliers: form.suppliers.map(row => ({ supplierId: Number(row.supplierId), moq: Number(row.moq), price: Number(row.price), currency: row.currency || '', remarks: (row.remarks || '').trim() })),
       isActive: form.isActive,
-    });
+    };
     editor.setBusy(true);
     try {
       const result = record

@@ -14,38 +14,74 @@ router.get('/suppliers', async (req, res) => {
 router.get('/suppliers/:id', async (req, res) => {
   const scope = undefined;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const data = await request().input('id', sql.Int, id).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
-  if (!data.recordset.length) throw Object.assign(new Error('Supplier could not be found.'), { status: 404 });
+  if (!data.recordset.length) {
+    const error = new Error('Supplier could not be found.');
+    error.status = 404;
+    throw error;
+  }
   res.json({ record: data.recordset[0] });
 });
 
 router.post('/suppliers', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const value = { decimalInPrice: 2, decimalInTotalPrice: 2, vatInclusive: false, isActive: true, ...input };
     for (const key of ['name', 'shortName', 'businessStyle', 'address', 'remarks', 'tin', 'contactPerson', 'email', 'countryOfOrigin', 'country', 'cpnumber', 'faxNo', 'paymentTerm', 'vatCode', 'taxCode']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
     const vat = await request(scope).input('code', sql.NVarChar(sql.MAX), value.vatCode).query('SELECT id FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
-    if (!vat.recordset.length) throw Object.assign(new Error('Select an active configured Supplier VAT Code.'), { status: 400 });
+    if (!vat.recordset.length) {
+      const error = new Error('Select an active configured Supplier VAT Code.');
+      error.status = 400;
+      throw error;
+    }
     if (value.paymentTerm) {
       const term = await request(scope).input('term', sql.NVarChar(sql.MAX), value.paymentTerm).query('SELECT id FROM dbo.ConfigPaymentTerms WHERE description=@term AND isActive=1 AND forSupplier=1');
-      if (!term.recordset.length) throw Object.assign(new Error('Select an active Supplier Payment Term.'), { status: 400 });
+      if (!term.recordset.length) {
+        const error = new Error('Select an active Supplier Payment Term.');
+        error.status = 400;
+        throw error;
+      }
     }
     const write = request(scope);
     for (const key of ['name', 'shortName', 'businessStyle', 'address', 'remarks', 'tin', 'contactPerson', 'email', 'countryOfOrigin', 'country', 'cpnumber', 'faxNo', 'paymentTerm', 'vatCode', 'taxCode']) write.input(key, sql.NVarChar(sql.MAX), value[key]);
     for (const key of ['decimalInPrice', 'decimalInTotalPrice']) {
-      if (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 6) throw Object.assign(new Error('Supplier price precision must be from 0 to 6.'), { status: 400 });
+      if (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 6) {
+        const error = new Error('Supplier price precision must be from 0 to 6.');
+        error.status = 400;
+        throw error;
+      }
       write.input(key, sql.Int, value[key]);
     }
     for (const key of ['vatInclusive', 'isActive']) {
-      if (typeof value[key] !== 'boolean') throw Object.assign(new Error(`${key} must be a boolean.`), { status: 400 });
+      if (typeof value[key] !== 'boolean') {
+        const error = new Error(`${key} must be a boolean.`);
+        error.status = 400;
+        throw error;
+      }
       write.input(key, sql.Bit, value[key]);
     }
     const inserted = await write.query(`INSERT INTO dbo.Suppliers([name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive]) OUTPUT INSERTED.id VALUES(@name,@shortName,@businessStyle,@address,@remarks,@tin,@contactPerson,@email,@countryOfOrigin,@country,@cpnumber,@faxNo,@paymentTerm,@vatCode,@taxCode,@decimalInPrice,@decimalInTotalPrice,@vatInclusive,@isActive)`);
@@ -61,38 +97,74 @@ router.post('/suppliers', async (req, res) => {
 });
 
 router.put('/suppliers/:id', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const record = await transaction(async scope => {
     const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`);
     const current = currentData.recordset[0];
-    if (!current) throw Object.assign(new Error('Supplier could not be found.'), { status: 404 });
+    if (!current) {
+      const error = new Error('Supplier could not be found.');
+      error.status = 404;
+      throw error;
+    }
     const value = { decimalInPrice: 2, decimalInTotalPrice: 2, vatInclusive: false, isActive: true, ...current, ...input };
     for (const key of ['name', 'shortName', 'businessStyle', 'address', 'remarks', 'tin', 'contactPerson', 'email', 'countryOfOrigin', 'country', 'cpnumber', 'faxNo', 'paymentTerm', 'vatCode', 'taxCode']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
     if (value.vatCode !== current.vatCode) {
       const vat = await request(scope).input('code', sql.NVarChar(sql.MAX), value.vatCode).query('SELECT id FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
-      if (!vat.recordset.length) throw Object.assign(new Error('Select an active configured Supplier VAT Code.'), { status: 400 });
+      if (!vat.recordset.length) {
+        const error = new Error('Select an active configured Supplier VAT Code.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (value.paymentTerm && value.paymentTerm !== current.paymentTerm) {
       const term = await request(scope).input('term', sql.NVarChar(sql.MAX), value.paymentTerm).query('SELECT id FROM dbo.ConfigPaymentTerms WHERE description=@term AND isActive=1 AND forSupplier=1');
-      if (!term.recordset.length) throw Object.assign(new Error('Select an active Supplier Payment Term.'), { status: 400 });
+      if (!term.recordset.length) {
+        const error = new Error('Select an active Supplier Payment Term.');
+        error.status = 400;
+        throw error;
+      }
     }
     const write = request(scope);
     for (const key of ['name', 'shortName', 'businessStyle', 'address', 'remarks', 'tin', 'contactPerson', 'email', 'countryOfOrigin', 'country', 'cpnumber', 'faxNo', 'paymentTerm', 'vatCode', 'taxCode']) write.input(key, sql.NVarChar(sql.MAX), value[key]);
     for (const key of ['decimalInPrice', 'decimalInTotalPrice']) {
-      if (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 6) throw Object.assign(new Error('Supplier price precision must be from 0 to 6.'), { status: 400 });
+      if (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 6) {
+        const error = new Error('Supplier price precision must be from 0 to 6.');
+        error.status = 400;
+        throw error;
+      }
       write.input(key, sql.Int, value[key]);
     }
     for (const key of ['vatInclusive', 'isActive']) {
-      if (typeof value[key] !== 'boolean') throw Object.assign(new Error(`${key} must be a boolean.`), { status: 400 });
+      if (typeof value[key] !== 'boolean') {
+        const error = new Error(`${key} must be a boolean.`);
+        error.status = 400;
+        throw error;
+      }
       write.input(key, sql.Bit, value[key]);
     }
     await write.input('id', sql.Int, id).query(`UPDATE dbo.Suppliers SET [name]=@name,[shortName]=@shortName,[businessStyle]=@businessStyle,[address]=@address,[remarks]=@remarks,[tin]=@tin,[contactPerson]=@contactPerson,[email]=@email,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[cpnumber]=@cpnumber,[faxNo]=@faxNo,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[vatInclusive]=@vatInclusive,[isActive]=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
@@ -109,11 +181,19 @@ router.put('/suppliers/:id', async (req, res) => {
 
 router.delete('/suppliers/:id', async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   await transaction(async scope => {
     const result = await request(scope).input('id', sql.Int, id).query('UPDATE dbo.Suppliers SET isActive=0,updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id');
-    if (!result.recordset.length) throw Object.assign(new Error('The master record could not be found.'), { status: 404 });
+    if (!result.recordset.length) {
+      const error = new Error('The master record could not be found.');
+      error.status = 404;
+      throw error;
+    }
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'suppliers')
       .input('action', sql.NVarChar(sql.MAX), 'deactivate').input('recordId', sql.NVarChar(sql.MAX), String(id))
@@ -141,7 +221,11 @@ router.get('/supplies', async (req, res) => {
 router.get('/supplies/:id', async (req, res) => {
   const scope = undefined;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
       FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
       SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
@@ -153,66 +237,142 @@ router.get('/supplies/:id', async (req, res) => {
     for (const { suppliesId, ...row } of recordData.recordsets[index + 1]) recordRows.get(suppliesId)?.[key].push(row);
   });
   const record = [...recordRows.values()][0];
-  if (!record) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+  if (!record) {
+    const error = new Error('Supplies could not be found.');
+    error.status = 404;
+    throw error;
+  }
   res.json({ record });
 });
 
 router.post('/supplies', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
-    if (Object.hasOwn(input, 'stock') || Object.hasOwn(input, 'openingStock')) throw Object.assign(new Error('Supplies stock changes only when a receiving receipt is posted.'), { status: 400 });
+    if (Object.hasOwn(input, 'stock') || Object.hasOwn(input, 'openingStock')) {
+      const error = new Error('Supplies stock changes only when a receiving receipt is posted.');
+      error.status = 400;
+      throw error;
+    }
     const value = { productId: null, inventorySetup: '', offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: 0, thickness: 0, netWeight: 0, ...input };
     for (const key of ['maker', 'name', 'description', 'remarks', 'color', 'unit', 'weightUnit', 'category']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
     for (const [key, places, positive, maximum] of ['minimumStock', 'thickness', 'netWeight'].map(key => [key, 6, false, 1000000000])) {
       const entered = value[key];
-      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+        const error = new Error(`${key} must be a valid decimal number.`);
+        error.status = 400;
+        throw error;
+      }
       const source = String(entered).trim();
-      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      if (!/^\d+(?:\.\d+)?$/.test(source)) {
+        const error = new Error(`${key} must be zero or greater.`);
+        error.status = 400;
+        throw error;
+      }
       const [whole, rawFraction = ''] = source.split('.');
       const fraction = rawFraction.replace(/0+$/, '');
-      if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+      if (fraction.length > places) {
+        const error = new Error(`${key} exceeds its supported decimal precision.`);
+        error.status = 400;
+        throw error;
+      }
       const factor = 10n ** BigInt(places);
       const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-      if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+      if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+        const error = new Error(`${key} is outside its supported range.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
     }
     value.productId = value.productId == null ? null : Number(value.productId);
-    if (value.productId !== null && (!Number.isSafeInteger(value.productId) || value.productId <= 0 || value.productId > 2147483647)) throw Object.assign(new Error('Enter a valid product id.'), { status: 400 });
+    if (value.productId !== null && (!Number.isSafeInteger(value.productId) || value.productId <= 0 || value.productId > 2147483647)) {
+      const error = new Error('Enter a valid product id.');
+      error.status = 400;
+      throw error;
+    }
     const unit = await request(scope).input('unit', sql.NVarChar(sql.MAX), value.unit).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@unit AND isActive=1 AND forSupplies=1');
-    if (!unit.recordset.length) throw Object.assign(new Error('Select an active Unit marked For Supplies.'), { status: 400 });
+    if (!unit.recordset.length) {
+      const error = new Error('Select an active Unit marked For Supplies.');
+      error.status = 400;
+      throw error;
+    }
     if (value.weightUnit) {
       const reference = await request(scope).input('value', sql.NVarChar(sql.MAX), value.weightUnit).query('SELECT id FROM dbo.ConfigUnits WHERE [shortName]=@value AND isActive=1');
-      if (!reference.recordset.length) throw Object.assign(new Error('Select an active Weight Unit.'), { status: 400 });
+      if (!reference.recordset.length) {
+        const error = new Error('Select an active Weight Unit.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (value.category) {
       const reference = await request(scope).input('value', sql.NVarChar(sql.MAX), value.category).query('SELECT id FROM dbo.ConfigSuppliesCategories WHERE [name]=@value AND isActive=1');
-      if (!reference.recordset.length) throw Object.assign(new Error('Select an active Supplies Category.'), { status: 400 });
+      if (!reference.recordset.length) {
+        const error = new Error('Select an active Supplies Category.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (value.productId) {
       const product = await request(scope).input('id', sql.Int, value.productId).query('SELECT id FROM dbo.Products WHERE id=@id AND isActive=1');
-      if (!product.recordset.length) throw Object.assign(new Error('Select an active Product Link.'), { status: 400 });
+      if (!product.recordset.length) {
+        const error = new Error('Select an active Product Link.');
+        error.status = 400;
+        throw error;
+      }
     }
     for (const key of ['offices', 'inventorySchedules', 'suppliers']) {
-      if (!Array.isArray(value[key]) || value[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send master detail rows as objects.'), { status: 400 });
+      if (!Array.isArray(value[key]) || value[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+        const error = new Error('Send master detail rows as objects.');
+        error.status = 400;
+        throw error;
+      }
     }
     const supplierIds = new Set();
     for (const row of value.suppliers) {
       row.supplierId = Number(row.supplierId);
-    if (!Number.isSafeInteger(row.supplierId) || row.supplierId <= 0 || row.supplierId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
-      if (supplierIds.has(row.supplierId)) throw Object.assign(new Error('A supplier can appear only once per Supplies.'), { status: 400 });
+    if (!Number.isSafeInteger(row.supplierId) || row.supplierId <= 0 || row.supplierId > 2147483647) {
+      const error = new Error('Enter a valid id.');
+      error.status = 400;
+      throw error;
+    }
+      if (supplierIds.has(row.supplierId)) {
+        const error = new Error('A supplier can appear only once per Supplies.');
+        error.status = 400;
+        throw error;
+      }
       supplierIds.add(row.supplierId);
       const supplier = await request(scope).input('id', sql.Int, row.supplierId).query('SELECT id,isActive FROM dbo.Suppliers WHERE id=@id');
-      if (!supplier.recordset.length || (!supplier.recordset[0].isActive)) throw Object.assign(new Error('Select an active Supplier.'), { status: 400 });
+      if (!supplier.recordset.length || (!supplier.recordset[0].isActive)) {
+        const error = new Error('Select an active Supplier.');
+        error.status = 400;
+        throw error;
+      }
       if (row.currency) {
         const currency = await request(scope).input('code', sql.NVarChar(sql.MAX), row.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
-        if (!currency.recordset.length) throw Object.assign(new Error('Select an active Supplier Currency.'), { status: 400 });
+        if (!currency.recordset.length) {
+          const error = new Error('Select an active Supplier Currency.');
+          error.status = 400;
+          throw error;
+        }
       }
     }
     const write = request(scope);
@@ -220,10 +380,18 @@ router.post('/supplies', async (req, res) => {
     for (const key of ['minimumStock', 'thickness', 'netWeight']) write.input(key, sql.VarChar(sql.MAX), value[key]);
     for (const key of ['inventorySetup']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
-    if (typeof value.isActive !== 'boolean') throw Object.assign(new Error('isActive must be a boolean.'), { status: 400 });
+    if (typeof value.isActive !== 'boolean') {
+      const error = new Error('isActive must be a boolean.');
+      error.status = 400;
+      throw error;
+    }
     write.input('productId', sql.Int, value.productId).input('inventorySetup', sql.NVarChar(sql.MAX), value.inventorySetup).input('isActive', sql.Bit, value.isActive);
     const inserted = await write.query(`INSERT INTO dbo.Supplies([maker],[name],[description],[remarks],[color],[unit],[weightUnit],[category],[minimumStock],[thickness],[netWeight],[productId],[inventorySetup],[isActive]) OUTPUT INSERTED.id VALUES(@maker,@name,@description,@remarks,@color,@unit,@weightUnit,@category,@minimumStock,@thickness,@netWeight,@productId,@inventorySetup,@isActive)`);
     const savedId = inserted.recordset[0].id;
@@ -231,7 +399,11 @@ router.post('/supplies', async (req, res) => {
     for (const [position, row] of value.offices.entries()) {
       for (const key of ['name']) {
         const entered = row[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         row[key] = entered.trim();
       }
       await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.SupplyOffices(suppliesId,position,name) VALUES(@id,@position,@name)');
@@ -240,7 +412,11 @@ router.post('/supplies', async (req, res) => {
     for (const [position, row] of value.inventorySchedules.entries()) {
       for (const key of ['month']) {
         const entered = row[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         row[key] = entered.trim();
       }
       await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(sql.MAX), row.scheduleDate || null).input('month', sql.NVarChar(sql.MAX), row.month).query('INSERT INTO dbo.SupplyInventorySchedules(suppliesId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
@@ -249,22 +425,42 @@ router.post('/supplies', async (req, res) => {
     for (const [position, row] of value.suppliers.entries()) {
       for (const key of ['currency', 'remarks']) {
         const entered = row[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         row[key] = entered.trim();
       }
       row.moq = row.moq ?? 0;
       row.price = row.price ?? 0;
       for (const [key, places, positive, maximum] of [['moq', 6, false, 1000000000], ['price', 6, false, 1000000000]]) {
         const entered = row[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         row[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
       await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('supplierId', sql.Int, row.supplierId)
@@ -287,19 +483,35 @@ router.post('/supplies', async (req, res) => {
       for (const { suppliesId, ...row } of savedData.recordsets[index + 1]) savedRows.get(suppliesId)?.[key].push(row);
     });
     const saved = [...savedRows.values()][0];
-    if (!saved) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+    if (!saved) {
+      const error = new Error('Supplies could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return saved;
   });
   res.status(201).json({ record });
 });
 
 router.put('/supplies/:id', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const record = await transaction(async scope => {
     const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
         FROM dbo.Supplies s WITH (UPDLOCK,HOLDLOCK) WHERE s.id=@id ORDER BY s.name,s.id;
@@ -312,61 +524,133 @@ router.put('/supplies/:id', async (req, res) => {
       for (const { suppliesId, ...row } of currentData.recordsets[index + 1]) currentRows.get(suppliesId)?.[key].push(row);
     });
     const current = [...currentRows.values()][0];
-    if (!current) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
-    if (Object.hasOwn(input, 'stock') || Object.hasOwn(input, 'openingStock')) throw Object.assign(new Error('Supplies stock changes only when a receiving receipt is posted.'), { status: 400 });
+    if (!current) {
+      const error = new Error('Supplies could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (Object.hasOwn(input, 'stock') || Object.hasOwn(input, 'openingStock')) {
+      const error = new Error('Supplies stock changes only when a receiving receipt is posted.');
+      error.status = 400;
+      throw error;
+    }
     const value = { productId: null, inventorySetup: '', offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: 0, thickness: 0, netWeight: 0, ...current, ...input };
     for (const key of ['maker', 'name', 'description', 'remarks', 'color', 'unit', 'weightUnit', 'category']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
     for (const [key, places, positive, maximum] of ['minimumStock', 'thickness', 'netWeight'].map(key => [key, 6, false, 1000000000])) {
       const entered = value[key];
-      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+        const error = new Error(`${key} must be a valid decimal number.`);
+        error.status = 400;
+        throw error;
+      }
       const source = String(entered).trim();
-      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      if (!/^\d+(?:\.\d+)?$/.test(source)) {
+        const error = new Error(`${key} must be zero or greater.`);
+        error.status = 400;
+        throw error;
+      }
       const [whole, rawFraction = ''] = source.split('.');
       const fraction = rawFraction.replace(/0+$/, '');
-      if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+      if (fraction.length > places) {
+        const error = new Error(`${key} exceeds its supported decimal precision.`);
+        error.status = 400;
+        throw error;
+      }
       const factor = 10n ** BigInt(places);
       const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-      if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+      if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+        const error = new Error(`${key} is outside its supported range.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
     }
     value.productId = value.productId == null ? null : Number(value.productId);
-    if (value.productId !== null && (!Number.isSafeInteger(value.productId) || value.productId <= 0 || value.productId > 2147483647)) throw Object.assign(new Error('Enter a valid product id.'), { status: 400 });
+    if (value.productId !== null && (!Number.isSafeInteger(value.productId) || value.productId <= 0 || value.productId > 2147483647)) {
+      const error = new Error('Enter a valid product id.');
+      error.status = 400;
+      throw error;
+    }
     if (value.unit !== current.unit) {
       const unit = await request(scope).input('unit', sql.NVarChar(sql.MAX), value.unit).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@unit AND isActive=1 AND forSupplies=1');
-      if (!unit.recordset.length) throw Object.assign(new Error('Select an active Unit marked For Supplies.'), { status: 400 });
+      if (!unit.recordset.length) {
+        const error = new Error('Select an active Unit marked For Supplies.');
+        error.status = 400;
+        throw error;
+      }
       const history = await request(scope).input('id', sql.Int, id).query('SELECT TOP(1) suppliesId FROM (SELECT suppliesId FROM dbo.PurchaseRequestItems WHERE suppliesId=@id UNION ALL SELECT suppliesId FROM dbo.ProductSupplies WHERE suppliesId=@id UNION ALL SELECT suppliesId FROM dbo.SupplyInventory WHERE suppliesId=@id) history');
-      if (history.recordset.length) throw Object.assign(new Error('Supplies UOM cannot change after purchasing history exists.'), { status: 409 });
+      if (history.recordset.length) {
+        const error = new Error('Supplies UOM cannot change after purchasing history exists.');
+        error.status = 409;
+        throw error;
+      }
     }
     if (value.weightUnit && value.weightUnit !== current.weightUnit) {
       const reference = await request(scope).input('value', sql.NVarChar(sql.MAX), value.weightUnit).query('SELECT id FROM dbo.ConfigUnits WHERE [shortName]=@value AND isActive=1');
-      if (!reference.recordset.length) throw Object.assign(new Error('Select an active Weight Unit.'), { status: 400 });
+      if (!reference.recordset.length) {
+        const error = new Error('Select an active Weight Unit.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (value.category && value.category !== current.category) {
       const reference = await request(scope).input('value', sql.NVarChar(sql.MAX), value.category).query('SELECT id FROM dbo.ConfigSuppliesCategories WHERE [name]=@value AND isActive=1');
-      if (!reference.recordset.length) throw Object.assign(new Error('Select an active Supplies Category.'), { status: 400 });
+      if (!reference.recordset.length) {
+        const error = new Error('Select an active Supplies Category.');
+        error.status = 400;
+        throw error;
+      }
     }
     if (value.productId && value.productId !== current.productId) {
       const product = await request(scope).input('id', sql.Int, value.productId).query('SELECT id FROM dbo.Products WHERE id=@id AND isActive=1');
-      if (!product.recordset.length) throw Object.assign(new Error('Select an active Product Link.'), { status: 400 });
+      if (!product.recordset.length) {
+        const error = new Error('Select an active Product Link.');
+        error.status = 400;
+        throw error;
+      }
     }
     for (const key of ['offices', 'inventorySchedules', 'suppliers']) {
-      if (!Array.isArray(value[key]) || value[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send master detail rows as objects.'), { status: 400 });
+      if (!Array.isArray(value[key]) || value[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+        const error = new Error('Send master detail rows as objects.');
+        error.status = 400;
+        throw error;
+      }
     }
     const supplierIds = new Set();
     for (const row of value.suppliers) {
       row.supplierId = Number(row.supplierId);
-    if (!Number.isSafeInteger(row.supplierId) || row.supplierId <= 0 || row.supplierId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
-      if (supplierIds.has(row.supplierId)) throw Object.assign(new Error('A supplier can appear only once per Supplies.'), { status: 400 });
+    if (!Number.isSafeInteger(row.supplierId) || row.supplierId <= 0 || row.supplierId > 2147483647) {
+      const error = new Error('Enter a valid id.');
+      error.status = 400;
+      throw error;
+    }
+      if (supplierIds.has(row.supplierId)) {
+        const error = new Error('A supplier can appear only once per Supplies.');
+        error.status = 400;
+        throw error;
+      }
       supplierIds.add(row.supplierId);
       const supplier = await request(scope).input('id', sql.Int, row.supplierId).query('SELECT id,isActive FROM dbo.Suppliers WHERE id=@id');
-      if (!supplier.recordset.length || (!supplier.recordset[0].isActive && !current.suppliers.some(item => item.supplierId === row.supplierId))) throw Object.assign(new Error('Select an active Supplier.'), { status: 400 });
+      if (!supplier.recordset.length || (!supplier.recordset[0].isActive && !current.suppliers.some(item => item.supplierId === row.supplierId))) {
+        const error = new Error('Select an active Supplier.');
+        error.status = 400;
+        throw error;
+      }
       if (row.currency) {
         const currency = await request(scope).input('code', sql.NVarChar(sql.MAX), row.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
-        if (!currency.recordset.length) throw Object.assign(new Error('Select an active Supplier Currency.'), { status: 400 });
+        if (!currency.recordset.length) {
+          const error = new Error('Select an active Supplier Currency.');
+          error.status = 400;
+          throw error;
+        }
       }
     }
     const write = request(scope);
@@ -374,10 +658,18 @@ router.put('/supplies/:id', async (req, res) => {
     for (const key of ['minimumStock', 'thickness', 'netWeight']) write.input(key, sql.VarChar(sql.MAX), value[key]);
     for (const key of ['inventorySetup']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
-    if (typeof value.isActive !== 'boolean') throw Object.assign(new Error('isActive must be a boolean.'), { status: 400 });
+    if (typeof value.isActive !== 'boolean') {
+      const error = new Error('isActive must be a boolean.');
+      error.status = 400;
+      throw error;
+    }
     write.input('productId', sql.Int, value.productId).input('inventorySetup', sql.NVarChar(sql.MAX), value.inventorySetup).input('isActive', sql.Bit, value.isActive);
     await write.input('id', sql.Int, id).query(`UPDATE dbo.Supplies SET [maker]=@maker,[name]=@name,[description]=@description,[remarks]=@remarks,[color]=@color,[unit]=@unit,[weightUnit]=@weightUnit,[category]=@category,[minimumStock]=@minimumStock,[thickness]=@thickness,[netWeight]=@netWeight,[productId]=@productId,[inventorySetup]=@inventorySetup,[isActive]=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
     const savedId = id;
@@ -386,7 +678,11 @@ router.put('/supplies/:id', async (req, res) => {
       for (const [position, row] of value.offices.entries()) {
         for (const key of ['name']) {
           const entered = row[key] ?? '';
-          if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+          if (typeof entered !== 'string' || entered.includes('\0')) {
+            const error = new Error(`${key} must be text without null characters.`);
+            error.status = 400;
+            throw error;
+          }
           row[key] = entered.trim();
         }
         await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.SupplyOffices(suppliesId,position,name) VALUES(@id,@position,@name)');
@@ -397,7 +693,11 @@ router.put('/supplies/:id', async (req, res) => {
       for (const [position, row] of value.inventorySchedules.entries()) {
         for (const key of ['month']) {
           const entered = row[key] ?? '';
-          if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+          if (typeof entered !== 'string' || entered.includes('\0')) {
+            const error = new Error(`${key} must be text without null characters.`);
+            error.status = 400;
+            throw error;
+          }
           row[key] = entered.trim();
         }
         await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(sql.MAX), row.scheduleDate || null).input('month', sql.NVarChar(sql.MAX), row.month).query('INSERT INTO dbo.SupplyInventorySchedules(suppliesId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
@@ -408,22 +708,42 @@ router.put('/supplies/:id', async (req, res) => {
       for (const [position, row] of value.suppliers.entries()) {
         for (const key of ['currency', 'remarks']) {
           const entered = row[key] ?? '';
-          if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+          if (typeof entered !== 'string' || entered.includes('\0')) {
+            const error = new Error(`${key} must be text without null characters.`);
+            error.status = 400;
+            throw error;
+          }
           row[key] = entered.trim();
         }
         row.moq = row.moq ?? 0;
         row.price = row.price ?? 0;
         for (const [key, places, positive, maximum] of [['moq', 6, false, 1000000000], ['price', 6, false, 1000000000]]) {
           const entered = row[key];
-          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+            const error = new Error(`${key} must be a valid decimal number.`);
+            error.status = 400;
+            throw error;
+          }
           const source = String(entered).trim();
-          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          if (!/^\d+(?:\.\d+)?$/.test(source)) {
+            const error = new Error(`${key} must be zero or greater.`);
+            error.status = 400;
+            throw error;
+          }
           const [whole, rawFraction = ''] = source.split('.');
           const fraction = rawFraction.replace(/0+$/, '');
-          if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+          if (fraction.length > places) {
+            const error = new Error(`${key} exceeds its supported decimal precision.`);
+            error.status = 400;
+            throw error;
+          }
           const factor = 10n ** BigInt(places);
           const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-          if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+          if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+            const error = new Error(`${key} is outside its supported range.`);
+            error.status = 400;
+            throw error;
+          }
           row[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
         }
         await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('supplierId', sql.Int, row.supplierId)
@@ -447,7 +767,11 @@ router.put('/supplies/:id', async (req, res) => {
       for (const { suppliesId, ...row } of savedData.recordsets[index + 1]) savedRows.get(suppliesId)?.[key].push(row);
     });
     const saved = [...savedRows.values()][0];
-    if (!saved) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
+    if (!saved) {
+      const error = new Error('Supplies could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return saved;
   });
   res.json({ record });
@@ -455,11 +779,19 @@ router.put('/supplies/:id', async (req, res) => {
 
 router.delete('/supplies/:id', async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   await transaction(async scope => {
     const result = await request(scope).input('id', sql.Int, id).query('UPDATE dbo.Supplies SET isActive=0,updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id');
-    if (!result.recordset.length) throw Object.assign(new Error('The master record could not be found.'), { status: 404 });
+    if (!result.recordset.length) {
+      const error = new Error('The master record could not be found.');
+      error.status = 404;
+      throw error;
+    }
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'supplies')
       .input('action', sql.NVarChar(sql.MAX), 'deactivate').input('recordId', sql.NVarChar(sql.MAX), String(id))
@@ -564,7 +896,11 @@ router.get('/purchase-requests', async (req, res) => {
 router.get('/purchase-requests/:id', async (req, res) => {
   const scope = undefined;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
       r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
       FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
@@ -579,7 +915,11 @@ router.get('/purchase-requests/:id', async (req, res) => {
   const recordRows = new Map(recordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
   for (const { requestId, ...item } of recordData.recordsets[1]) recordRows.get(requestId)?.items.push(item);
   const record = [...recordRows.values()][0];
-  if (!record) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+  if (!record) {
+    const error = new Error('Purchase Request could not be found.');
+    error.status = 404;
+    throw error;
+  }
   res.json({ record });
 });
 
@@ -606,7 +946,11 @@ router.get('/purchase-orders', async (req, res) => {
 router.get('/purchase-orders/:id', async (req, res) => {
   const scope = undefined;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
       CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
       o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -622,7 +966,11 @@ router.get('/purchase-orders/:id', async (req, res) => {
   const recordRows = new Map(recordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
   for (const { orderId, ...item } of recordData.recordsets[1]) recordRows.get(orderId)?.items.push(item);
   const record = [...recordRows.values()][0];
-  if (!record) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+  if (!record) {
+    const error = new Error('Purchase Order could not be found.');
+    error.status = 404;
+    throw error;
+  }
   res.json({ record });
 });
 
@@ -663,7 +1011,11 @@ router.get('/receivings', async (req, res) => {
 router.get('/receivings/:id', async (req, res) => {
   const scope = undefined;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const recordData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
       CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
       o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -693,54 +1045,114 @@ router.get('/receivings/:id', async (req, res) => {
   }
   for (const { receiptItemId, ...allocation } of recordData.recordsets[2]) recordItems.get(receiptItemId)?.allocations.push(allocation);
   const record = [...recordRows.values()][0];
-  if (!record) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+  if (!record) {
+    const error = new Error('Receiving receipt could not be found.');
+    error.status = 404;
+    throw error;
+  }
   res.json({ record });
 });
 
 router.post('/purchase-requests', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const value = { ...input };
     for (const key of ['number', 'requestedBy', 'requestedDept', 'checkedBy', 'approvedBy', 'approvedBy2', 'remarks']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
-    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+      const error = new Error('Send item rows as objects.');
+      error.status = 400;
+      throw error;
+    }
     value.items = value.items.map(row => {
       const line = { ...row, suppliesId: Number(row.suppliesId), neededDate: row.neededDate || value.neededDate };
-      if (!Number.isSafeInteger(line.suppliesId) || line.suppliesId <= 0 || line.suppliesId > 2147483647) throw Object.assign(new Error('Enter a valid supplies id.'), { status: 400 });
+      if (!Number.isSafeInteger(line.suppliesId) || line.suppliesId <= 0 || line.suppliesId > 2147483647) {
+        const error = new Error('Enter a valid supplies id.');
+        error.status = 400;
+        throw error;
+      }
       for (const key of ['unit', 'remarks']) {
         const entered = line[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = entered.trim();
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
         const entered = line[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
       return line;
     });
-    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 supplies lines.'), { status: 400 });
+    if (!value.items.length || value.items.length > 100) {
+      const error = new Error('Use 1-100 supplies lines.');
+      error.status = 400;
+      throw error;
+    }
     const snapshots = [];
     for (const item of value.items) {
       const suppliesData = await request(scope).input('id', sql.Int, item.suppliesId).query('SELECT id,code,name,description,unit,isActive FROM dbo.Supplies WHERE id=@id');
       const supplies = suppliesData.recordset[0];
-      if (!supplies) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
-      if (!supplies.isActive) throw Object.assign(new Error('Select active Supplies for every PR line.'), { status: 400 });
-      if (item.unit && item.unit !== supplies.unit) throw Object.assign(new Error('PR UOM must match the Supplies master.'), { status: 400 });
+      if (!supplies) {
+        const error = new Error('Supplies could not be found.');
+        error.status = 404;
+        throw error;
+      }
+      if (!supplies.isActive) {
+        const error = new Error('Select active Supplies for every PR line.');
+        error.status = 400;
+        throw error;
+      }
+      if (item.unit && item.unit !== supplies.unit) {
+        const error = new Error('PR UOM must match the Supplies master.');
+        error.status = 400;
+        throw error;
+      }
       snapshots.push({ ...item, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit });
     }
     let number = value.number;
@@ -788,19 +1200,35 @@ router.post('/purchase-requests', async (req, res) => {
     const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { requestId, ...item } of savedRecordData.recordsets[1]) savedRecordRows.get(requestId)?.items.push(item);
     const savedRecord = [...savedRecordRows.values()][0];
-    if (!savedRecord) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (!savedRecord) {
+      const error = new Error('Purchase Request could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return savedRecord;
   });
   res.status(201).json({ record });
 });
 
 router.put('/purchase-requests/:id', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const record = await transaction(async scope => {
     const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
         r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
@@ -816,46 +1244,102 @@ router.put('/purchase-requests/:id', async (req, res) => {
     const currentRows = new Map(currentData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { requestId, ...item } of currentData.recordsets[1]) currentRows.get(requestId)?.items.push(item);
     const current = [...currentRows.values()][0];
-    if (!current) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
-    if (current && current.status !== 'draft') throw Object.assign(new Error('Only an unposted Purchase Request can be edited.'), { status: 409 });
+    if (!current) {
+      const error = new Error('Purchase Request could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (current && current.status !== 'draft') {
+      const error = new Error('Only an unposted Purchase Request can be edited.');
+      error.status = 409;
+      throw error;
+    }
     const value = { ...current, ...input };
     for (const key of ['number', 'requestedBy', 'requestedDept', 'checkedBy', 'approvedBy', 'approvedBy2', 'remarks']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
-    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+      const error = new Error('Send item rows as objects.');
+      error.status = 400;
+      throw error;
+    }
     value.items = value.items.map(row => {
       const line = { ...row, suppliesId: Number(row.suppliesId), neededDate: row.neededDate || value.neededDate };
-      if (!Number.isSafeInteger(line.suppliesId) || line.suppliesId <= 0 || line.suppliesId > 2147483647) throw Object.assign(new Error('Enter a valid supplies id.'), { status: 400 });
+      if (!Number.isSafeInteger(line.suppliesId) || line.suppliesId <= 0 || line.suppliesId > 2147483647) {
+        const error = new Error('Enter a valid supplies id.');
+        error.status = 400;
+        throw error;
+      }
       for (const key of ['unit', 'remarks']) {
         const entered = line[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = entered.trim();
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
         const entered = line[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
       return line;
     });
-    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 supplies lines.'), { status: 400 });
+    if (!value.items.length || value.items.length > 100) {
+      const error = new Error('Use 1-100 supplies lines.');
+      error.status = 400;
+      throw error;
+    }
     const snapshots = [];
     for (const item of value.items) {
       const suppliesData = await request(scope).input('id', sql.Int, item.suppliesId).query('SELECT id,code,name,description,unit,isActive FROM dbo.Supplies WHERE id=@id');
       const supplies = suppliesData.recordset[0];
-      if (!supplies) throw Object.assign(new Error('Supplies could not be found.'), { status: 404 });
-      if (!supplies.isActive) throw Object.assign(new Error('Select active Supplies for every PR line.'), { status: 400 });
-      if (item.unit && item.unit !== supplies.unit) throw Object.assign(new Error('PR UOM must match the Supplies master.'), { status: 400 });
+      if (!supplies) {
+        const error = new Error('Supplies could not be found.');
+        error.status = 404;
+        throw error;
+      }
+      if (!supplies.isActive) {
+        const error = new Error('Select active Supplies for every PR line.');
+        error.status = 400;
+        throw error;
+      }
+      if (item.unit && item.unit !== supplies.unit) {
+        const error = new Error('PR UOM must match the Supplies master.');
+        error.status = 400;
+        throw error;
+      }
       snapshots.push({ ...item, suppliesCode: supplies.code, suppliesName: supplies.name, description: supplies.description, unit: supplies.unit });
     }
     let number = value.number || current?.number;
@@ -901,83 +1385,183 @@ router.put('/purchase-requests/:id', async (req, res) => {
     const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { requestId, ...item } of savedRecordData.recordsets[1]) savedRecordRows.get(requestId)?.items.push(item);
     const savedRecord = [...savedRecordRows.values()][0];
-    if (!savedRecord) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (!savedRecord) {
+      const error = new Error('Purchase Request could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return savedRecord;
   });
   res.json({ record });
 });
 
 router.post('/purchase-orders', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const value = { ...input };
     value.supplierId = Number(value.supplierId);
-    if (!Number.isSafeInteger(value.supplierId) || value.supplierId <= 0 || value.supplierId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+    if (!Number.isSafeInteger(value.supplierId) || value.supplierId <= 0 || value.supplierId > 2147483647) {
+      const error = new Error('Enter a valid id.');
+      error.status = 400;
+      throw error;
+    }
     for (const key of ['currency', 'paymentTerm', 'shipment', 'suppliesCategory', 'vatCode', 'deliveryAddress', 'remarks']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
     value.rate = value.rate ?? 1;
     for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
       const entered = value[key];
-      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+        const error = new Error(`${key} must be a valid decimal number.`);
+        error.status = 400;
+        throw error;
+      }
       const source = String(entered).trim();
-      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      if (!/^\d+(?:\.\d+)?$/.test(source)) {
+        const error = new Error(`${key} must be zero or greater.`);
+        error.status = 400;
+        throw error;
+      }
       const [whole, rawFraction = ''] = source.split('.');
       const fraction = rawFraction.replace(/0+$/, '');
-      if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+      if (fraction.length > places) {
+        const error = new Error(`${key} exceeds its supported decimal precision.`);
+        error.status = 400;
+        throw error;
+      }
       const factor = 10n ** BigInt(places);
       const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-      if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+      if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+        const error = new Error(`${key} is outside its supported range.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
     }
     const requestItems = new Set();
-    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+      const error = new Error('Send item rows as objects.');
+      error.status = 400;
+      throw error;
+    }
     value.items = value.items.map(row => {
       const requestItemId = Number(row.requestItemId);
-      if (!Number.isSafeInteger(requestItemId) || requestItemId <= 0 || requestItemId > 2147483647) throw Object.assign(new Error('Enter a valid source item id.'), { status: 400 });
-      if (requestItems.has(requestItemId)) throw Object.assign(new Error('A PR line can appear only once in a purchase order.'), { status: 400 });
+      if (!Number.isSafeInteger(requestItemId) || requestItemId <= 0 || requestItemId > 2147483647) {
+        const error = new Error('Enter a valid source item id.');
+        error.status = 400;
+        throw error;
+      }
+      if (requestItems.has(requestItemId)) {
+        const error = new Error('A PR line can appear only once in a purchase order.');
+        error.status = 400;
+        throw error;
+      }
       requestItems.add(requestItemId);
-      if (row.currency && row.currency !== value.currency) throw Object.assign(new Error('PO line currency must match the header currency.'), { status: 400 });
+      if (row.currency && row.currency !== value.currency) {
+        const error = new Error('PO line currency must match the header currency.');
+        error.status = 400;
+        throw error;
+      }
       const line = { ...row, requestItemId, currency: value.currency, discountRate: row.discountRate ?? 0 };
       for (const key of ['remarks', 'unit']) {
         const entered = line[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = entered.trim();
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000], ['unitPrice', 6, false, 1000000000], ['discountRate', 6, false, 100]]) {
         const entered = line[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
       return line;
     });
-    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 PR lines.'), { status: 400 });
+    if (!value.items.length || value.items.length > 100) {
+      const error = new Error('Use 1-100 PR lines.');
+      error.status = 400;
+      throw error;
+    }
     const supplierData = await request(scope).input('id', sql.Int, value.supplierId).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
     const supplier = supplierData.recordset[0];
-    if (!supplier) throw Object.assign(new Error('Supplier could not be found.'), { status: 404 });
-    if (!supplier.isActive) throw Object.assign(new Error('Select an active Supplier.'), { status: 400 });
+    if (!supplier) {
+      const error = new Error('Supplier could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (!supplier.isActive) {
+      const error = new Error('Select an active Supplier.');
+      error.status = 400;
+      throw error;
+    }
     const vat = await request(scope).input('code', sql.NVarChar(sql.MAX), value.vatCode).query('SELECT rate FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
-    if (!vat.recordset.length) throw Object.assign(new Error('Select an active VAT Code.'), { status: 400 });
+    if (!vat.recordset.length) {
+      const error = new Error('Select an active VAT Code.');
+      error.status = 400;
+      throw error;
+    }
     const currency = await request(scope).input('code', sql.NVarChar(sql.MAX), value.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
-    if (!currency.recordset.length) throw Object.assign(new Error('Select an active Currency.'), { status: 400 });
+    if (!currency.recordset.length) {
+      const error = new Error('Select an active Currency.');
+      error.status = 400;
+      throw error;
+    }
     const term = await request(scope).input('term', sql.NVarChar(sql.MAX), value.paymentTerm).query('SELECT id FROM dbo.ConfigPaymentTerms WHERE description=@term AND isActive=1 AND forSupplier=1');
-    if (!term.recordset.length) throw Object.assign(new Error('Select an active Supplier Payment Term.'), { status: 400 });
+    if (!term.recordset.length) {
+      const error = new Error('Select an active Supplier Payment Term.');
+      error.status = 400;
+      throw error;
+    }
     if (value.suppliesCategory) {
       const category = await request(scope).input('name', sql.NVarChar(sql.MAX), value.suppliesCategory).query('SELECT id FROM dbo.ConfigSuppliesCategories WHERE name=@name AND isActive=1');
-      if (!category.recordset.length) throw Object.assign(new Error('Select an active Supplies Category.'), { status: 400 });
+      if (!category.recordset.length) {
+        const error = new Error('Select an active Supplies Category.');
+        error.status = 400;
+        throw error;
+      }
     }
     const snapshots = [];
     for (const item of value.items) {
@@ -985,40 +1569,92 @@ router.post('/purchase-orders', async (req, res) => {
         CONVERT(varchar(60),d.quantity) AS requestedQuantity,CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.PurchaseOrderItems i
         JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')),0)) AS orderedQuantity
         FROM dbo.PurchaseRequestItems d JOIN dbo.PurchaseRequests r ON r.id=d.requestId WHERE d.id=@id`);
-      if (!sourceData.recordset.length) throw Object.assign(new Error('Select a valid posted PR line.'), { status: 400 });
+      if (!sourceData.recordset.length) {
+        const error = new Error('Select a valid posted PR line.');
+        error.status = 400;
+        throw error;
+      }
       const source = sourceData.recordset[0];
-      if (!['posted', 'closed'].includes(source.requestStatus)) throw Object.assign(new Error('Purchase Orders can only use posted PR lines.'), { status: 409 });
+      if (!['posted', 'closed'].includes(source.requestStatus)) {
+        const error = new Error('Purchase Orders can only use posted PR lines.');
+        error.status = 409;
+        throw error;
+      }
       const balances = { requested: source.requestedQuantity, ordered: source.orderedQuantity, quantity: item.quantity };
       for (const [key, entered] of Object.entries(balances)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         balances[key] = units;
       }
       const remaining = balances.requested - balances.ordered;
-      if (balances.quantity > remaining) throw Object.assign(new Error('PO quantity exceeds the remaining Purchase Request balance.'), { status: 409 });
-      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('PO UOM must match the source PR line.'), { status: 400 });
+      if (balances.quantity > remaining) {
+        const error = new Error('PO quantity exceeds the remaining Purchase Request balance.');
+        error.status = 409;
+        throw error;
+      }
+      if (item.unit && item.unit !== source.unit) {
+        const error = new Error('PO UOM must match the source PR line.');
+        error.status = 400;
+        throw error;
+      }
       snapshots.push({ ...item, suppliesId: source.suppliesId, suppliesCode: source.suppliesCode, suppliesName: source.suppliesName, description: source.description, unit: source.unit });
     }
     const settings = { vatRate: vat.recordset[0].rate, vatInclusive: supplier.vatInclusive, decimalInPrice: supplier.decimalInPrice, decimalInTotalPrice: supplier.decimalInTotalPrice };
     const { vatRate = 0, vatInclusive = false, decimalInPrice = 6, decimalInTotalPrice = 2 } = settings;
-    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) throw Object.assign(new Error('Supplier price precision is outside the supported range.'), { status: 400 });
+    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) {
+      const error = new Error('Supplier price precision is outside the supported range.');
+      error.status = 400;
+      throw error;
+    }
     const totalFactor = 10n ** BigInt(decimalInTotalPrice);
     const vatUnits = { rate: vatRate };
     for (const [key, entered] of Object.entries(vatUnits)) {
-      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+        const error = new Error(`${key} must be a valid decimal number.`);
+        error.status = 400;
+        throw error;
+      }
       const source = String(entered).trim();
-      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      if (!/^\d+(?:\.\d+)?$/.test(source)) {
+        const error = new Error(`${key} must be zero or greater.`);
+        error.status = 400;
+        throw error;
+      }
       const [whole, rawFraction = ''] = source.split('.');
       const fraction = rawFraction.replace(/0+$/, '');
-      if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+      if (fraction.length > 6) {
+        const error = new Error(`${key} exceeds six decimal places.`);
+        error.status = 400;
+        throw error;
+      }
       const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-      if (units > 100n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+      if (units > 100n * 1000000n) {
+        const error = new Error(`${key} is too large.`);
+        error.status = 400;
+        throw error;
+      }
       vatUnits[key] = units;
     }
     const taxRateUnits = vatUnits.rate;
@@ -1027,22 +1663,46 @@ router.post('/purchase-orders', async (req, res) => {
     for (const item of snapshots) {
       const lineUnits = { quantity: item.quantity, unitPrice: item.unitPrice, discountRate: item.discountRate ?? 0 };
       for (const [key, entered] of Object.entries(lineUnits)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         lineUnits[key] = units;
       }
       const quantity = lineUnits.quantity;
-      if (!quantity) throw Object.assign(new Error('Quantity must be greater than zero.'), { status: 400 });
+      if (!quantity) {
+        const error = new Error('Quantity must be greater than zero.');
+        error.status = 400;
+        throw error;
+      }
       const step = 10n ** BigInt(6 - decimalInPrice);
       const price = ((lineUnits.unitPrice + step / 2n) / step) * step;
       const discount = lineUnits.discountRate;
-      if (discount > percentages) throw Object.assign(new Error('Discount rate is too large.'), { status: 400 });
+      if (discount > percentages) {
+        const error = new Error('Discount rate is too large.');
+        error.status = 400;
+        throw error;
+      }
       const grossAmount = (quantity * price * totalFactor + 500000000000n) / 1000000000000n;
       const discountAmount = (grossAmount * discount + percentages / 2n) / percentages;
       const afterDiscount = grossAmount - discountAmount;
@@ -1052,7 +1712,11 @@ router.post('/purchase-orders', async (req, res) => {
       const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
       for (const [key, amount] of Object.entries(values)) {
         totals[key] += amount;
-        if (totals[key] > 1000000000000n * totalFactor) throw Object.assign(new Error('The document total exceeds the supported amount.'), { status: 400 });
+        if (totals[key] > 1000000000000n * totalFactor) {
+          const error = new Error('The document total exceeds the supported amount.');
+          error.status = 400;
+          throw error;
+        }
         calculated[key] = `${amount / totalFactor}${decimalInTotalPrice ? '.' + String(amount % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
       }
       totals.items.push(calculated);
@@ -1110,19 +1774,35 @@ router.post('/purchase-orders', async (req, res) => {
     const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of savedRecordData.recordsets[1]) savedRecordRows.get(orderId)?.items.push(item);
     const savedRecord = [...savedRecordRows.values()][0];
-    if (!savedRecord) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!savedRecord) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return savedRecord;
   });
   res.status(201).json({ record });
 });
 
 router.put('/purchase-orders/:id', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const record = await transaction(async scope => {
     const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
         CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
@@ -1139,73 +1819,169 @@ router.put('/purchase-orders/:id', async (req, res) => {
     const currentRows = new Map(currentData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of currentData.recordsets[1]) currentRows.get(orderId)?.items.push(item);
     const current = [...currentRows.values()][0];
-    if (!current) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
-    if (current && current.status !== 'draft') throw Object.assign(new Error('Only an unposted Purchase Order can be edited.'), { status: 409 });
+    if (!current) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (current && current.status !== 'draft') {
+      const error = new Error('Only an unposted Purchase Order can be edited.');
+      error.status = 409;
+      throw error;
+    }
     const value = { ...current, ...input };
     value.supplierId = Number(value.supplierId);
-    if (!Number.isSafeInteger(value.supplierId) || value.supplierId <= 0 || value.supplierId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+    if (!Number.isSafeInteger(value.supplierId) || value.supplierId <= 0 || value.supplierId > 2147483647) {
+      const error = new Error('Enter a valid id.');
+      error.status = 400;
+      throw error;
+    }
     for (const key of ['currency', 'paymentTerm', 'shipment', 'suppliesCategory', 'vatCode', 'deliveryAddress', 'remarks']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
     value.rate = value.rate ?? 1;
     for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
       const entered = value[key];
-      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+        const error = new Error(`${key} must be a valid decimal number.`);
+        error.status = 400;
+        throw error;
+      }
       const source = String(entered).trim();
-      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      if (!/^\d+(?:\.\d+)?$/.test(source)) {
+        const error = new Error(`${key} must be zero or greater.`);
+        error.status = 400;
+        throw error;
+      }
       const [whole, rawFraction = ''] = source.split('.');
       const fraction = rawFraction.replace(/0+$/, '');
-      if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+      if (fraction.length > places) {
+        const error = new Error(`${key} exceeds its supported decimal precision.`);
+        error.status = 400;
+        throw error;
+      }
       const factor = 10n ** BigInt(places);
       const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-      if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+      if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+        const error = new Error(`${key} is outside its supported range.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
     }
     const requestItems = new Set();
-    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+      const error = new Error('Send item rows as objects.');
+      error.status = 400;
+      throw error;
+    }
     value.items = value.items.map(row => {
       const requestItemId = Number(row.requestItemId);
-      if (!Number.isSafeInteger(requestItemId) || requestItemId <= 0 || requestItemId > 2147483647) throw Object.assign(new Error('Enter a valid source item id.'), { status: 400 });
-      if (requestItems.has(requestItemId)) throw Object.assign(new Error('A PR line can appear only once in a purchase order.'), { status: 400 });
+      if (!Number.isSafeInteger(requestItemId) || requestItemId <= 0 || requestItemId > 2147483647) {
+        const error = new Error('Enter a valid source item id.');
+        error.status = 400;
+        throw error;
+      }
+      if (requestItems.has(requestItemId)) {
+        const error = new Error('A PR line can appear only once in a purchase order.');
+        error.status = 400;
+        throw error;
+      }
       requestItems.add(requestItemId);
-      if (row.currency && row.currency !== value.currency) throw Object.assign(new Error('PO line currency must match the header currency.'), { status: 400 });
+      if (row.currency && row.currency !== value.currency) {
+        const error = new Error('PO line currency must match the header currency.');
+        error.status = 400;
+        throw error;
+      }
       const line = { ...row, requestItemId, currency: value.currency, discountRate: row.discountRate ?? 0 };
       for (const key of ['remarks', 'unit']) {
         const entered = line[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = entered.trim();
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000], ['unitPrice', 6, false, 1000000000], ['discountRate', 6, false, 100]]) {
         const entered = line[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
       return line;
     });
-    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 PR lines.'), { status: 400 });
+    if (!value.items.length || value.items.length > 100) {
+      const error = new Error('Use 1-100 PR lines.');
+      error.status = 400;
+      throw error;
+    }
     const supplierData = await request(scope).input('id', sql.Int, value.supplierId).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
     const supplier = supplierData.recordset[0];
-    if (!supplier) throw Object.assign(new Error('Supplier could not be found.'), { status: 404 });
-    if (!supplier.isActive) throw Object.assign(new Error('Select an active Supplier.'), { status: 400 });
+    if (!supplier) {
+      const error = new Error('Supplier could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (!supplier.isActive) {
+      const error = new Error('Select an active Supplier.');
+      error.status = 400;
+      throw error;
+    }
     const vat = await request(scope).input('code', sql.NVarChar(sql.MAX), value.vatCode).query('SELECT rate FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
-    if (!vat.recordset.length) throw Object.assign(new Error('Select an active VAT Code.'), { status: 400 });
+    if (!vat.recordset.length) {
+      const error = new Error('Select an active VAT Code.');
+      error.status = 400;
+      throw error;
+    }
     const currency = await request(scope).input('code', sql.NVarChar(sql.MAX), value.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
-    if (!currency.recordset.length) throw Object.assign(new Error('Select an active Currency.'), { status: 400 });
+    if (!currency.recordset.length) {
+      const error = new Error('Select an active Currency.');
+      error.status = 400;
+      throw error;
+    }
     const term = await request(scope).input('term', sql.NVarChar(sql.MAX), value.paymentTerm).query('SELECT id FROM dbo.ConfigPaymentTerms WHERE description=@term AND isActive=1 AND forSupplier=1');
-    if (!term.recordset.length) throw Object.assign(new Error('Select an active Supplier Payment Term.'), { status: 400 });
+    if (!term.recordset.length) {
+      const error = new Error('Select an active Supplier Payment Term.');
+      error.status = 400;
+      throw error;
+    }
     if (value.suppliesCategory) {
       const category = await request(scope).input('name', sql.NVarChar(sql.MAX), value.suppliesCategory).query('SELECT id FROM dbo.ConfigSuppliesCategories WHERE name=@name AND isActive=1');
-      if (!category.recordset.length) throw Object.assign(new Error('Select an active Supplies Category.'), { status: 400 });
+      if (!category.recordset.length) {
+        const error = new Error('Select an active Supplies Category.');
+        error.status = 400;
+        throw error;
+      }
     }
     const snapshots = [];
     for (const item of value.items) {
@@ -1213,40 +1989,92 @@ router.put('/purchase-orders/:id', async (req, res) => {
         CONVERT(varchar(60),d.quantity) AS requestedQuantity,CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.PurchaseOrderItems i
         JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')),0)) AS orderedQuantity
         FROM dbo.PurchaseRequestItems d JOIN dbo.PurchaseRequests r ON r.id=d.requestId WHERE d.id=@id`);
-      if (!sourceData.recordset.length) throw Object.assign(new Error('Select a valid posted PR line.'), { status: 400 });
+      if (!sourceData.recordset.length) {
+        const error = new Error('Select a valid posted PR line.');
+        error.status = 400;
+        throw error;
+      }
       const source = sourceData.recordset[0];
-      if (!['posted', 'closed'].includes(source.requestStatus)) throw Object.assign(new Error('Purchase Orders can only use posted PR lines.'), { status: 409 });
+      if (!['posted', 'closed'].includes(source.requestStatus)) {
+        const error = new Error('Purchase Orders can only use posted PR lines.');
+        error.status = 409;
+        throw error;
+      }
       const balances = { requested: source.requestedQuantity, ordered: source.orderedQuantity, quantity: item.quantity };
       for (const [key, entered] of Object.entries(balances)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         balances[key] = units;
       }
       const remaining = balances.requested - balances.ordered;
-      if (balances.quantity > remaining) throw Object.assign(new Error('PO quantity exceeds the remaining Purchase Request balance.'), { status: 409 });
-      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('PO UOM must match the source PR line.'), { status: 400 });
+      if (balances.quantity > remaining) {
+        const error = new Error('PO quantity exceeds the remaining Purchase Request balance.');
+        error.status = 409;
+        throw error;
+      }
+      if (item.unit && item.unit !== source.unit) {
+        const error = new Error('PO UOM must match the source PR line.');
+        error.status = 400;
+        throw error;
+      }
       snapshots.push({ ...item, suppliesId: source.suppliesId, suppliesCode: source.suppliesCode, suppliesName: source.suppliesName, description: source.description, unit: source.unit });
     }
     const settings = { vatRate: vat.recordset[0].rate, vatInclusive: supplier.vatInclusive, decimalInPrice: supplier.decimalInPrice, decimalInTotalPrice: supplier.decimalInTotalPrice };
     const { vatRate = 0, vatInclusive = false, decimalInPrice = 6, decimalInTotalPrice = 2 } = settings;
-    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) throw Object.assign(new Error('Supplier price precision is outside the supported range.'), { status: 400 });
+    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) {
+      const error = new Error('Supplier price precision is outside the supported range.');
+      error.status = 400;
+      throw error;
+    }
     const totalFactor = 10n ** BigInt(decimalInTotalPrice);
     const vatUnits = { rate: vatRate };
     for (const [key, entered] of Object.entries(vatUnits)) {
-      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+        const error = new Error(`${key} must be a valid decimal number.`);
+        error.status = 400;
+        throw error;
+      }
       const source = String(entered).trim();
-      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      if (!/^\d+(?:\.\d+)?$/.test(source)) {
+        const error = new Error(`${key} must be zero or greater.`);
+        error.status = 400;
+        throw error;
+      }
       const [whole, rawFraction = ''] = source.split('.');
       const fraction = rawFraction.replace(/0+$/, '');
-      if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+      if (fraction.length > 6) {
+        const error = new Error(`${key} exceeds six decimal places.`);
+        error.status = 400;
+        throw error;
+      }
       const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-      if (units > 100n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+      if (units > 100n * 1000000n) {
+        const error = new Error(`${key} is too large.`);
+        error.status = 400;
+        throw error;
+      }
       vatUnits[key] = units;
     }
     const taxRateUnits = vatUnits.rate;
@@ -1255,22 +2083,46 @@ router.put('/purchase-orders/:id', async (req, res) => {
     for (const item of snapshots) {
       const lineUnits = { quantity: item.quantity, unitPrice: item.unitPrice, discountRate: item.discountRate ?? 0 };
       for (const [key, entered] of Object.entries(lineUnits)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         lineUnits[key] = units;
       }
       const quantity = lineUnits.quantity;
-      if (!quantity) throw Object.assign(new Error('Quantity must be greater than zero.'), { status: 400 });
+      if (!quantity) {
+        const error = new Error('Quantity must be greater than zero.');
+        error.status = 400;
+        throw error;
+      }
       const step = 10n ** BigInt(6 - decimalInPrice);
       const price = ((lineUnits.unitPrice + step / 2n) / step) * step;
       const discount = lineUnits.discountRate;
-      if (discount > percentages) throw Object.assign(new Error('Discount rate is too large.'), { status: 400 });
+      if (discount > percentages) {
+        const error = new Error('Discount rate is too large.');
+        error.status = 400;
+        throw error;
+      }
       const grossAmount = (quantity * price * totalFactor + 500000000000n) / 1000000000000n;
       const discountAmount = (grossAmount * discount + percentages / 2n) / percentages;
       const afterDiscount = grossAmount - discountAmount;
@@ -1280,7 +2132,11 @@ router.put('/purchase-orders/:id', async (req, res) => {
       const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
       for (const [key, amount] of Object.entries(values)) {
         totals[key] += amount;
-        if (totals[key] > 1000000000000n * totalFactor) throw Object.assign(new Error('The document total exceeds the supported amount.'), { status: 400 });
+        if (totals[key] > 1000000000000n * totalFactor) {
+          const error = new Error('The document total exceeds the supported amount.');
+          error.status = 400;
+          throw error;
+        }
         calculated[key] = `${amount / totalFactor}${decimalInTotalPrice ? '.' + String(amount % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
       }
       totals.items.push(calculated);
@@ -1337,99 +2193,203 @@ router.put('/purchase-orders/:id', async (req, res) => {
     const savedRecordRows = new Map(savedRecordData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of savedRecordData.recordsets[1]) savedRecordRows.get(orderId)?.items.push(item);
     const savedRecord = [...savedRecordRows.values()][0];
-    if (!savedRecord) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!savedRecord) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return savedRecord;
   });
   res.json({ record });
 });
 
 router.post('/receivings', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const value = { ...input };
     value.purchaseOrderId = Number(value.purchaseOrderId);
-    if (!Number.isSafeInteger(value.purchaseOrderId) || value.purchaseOrderId <= 0 || value.purchaseOrderId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+    if (!Number.isSafeInteger(value.purchaseOrderId) || value.purchaseOrderId <= 0 || value.purchaseOrderId > 2147483647) {
+      const error = new Error('Enter a valid id.');
+      error.status = 400;
+      throw error;
+    }
     for (const key of ['drNumber', 'pezaReference', 'invoiceNumber', 'remarks']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
     value.invoiceDate = value.invoiceDate || null;
     if (value.rate !== undefined) {
       for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
         const entered = value[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
     }
     const orderItemsUsed = new Set();
-    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+      const error = new Error('Send item rows as objects.');
+      error.status = 400;
+      throw error;
+    }
     value.items = value.items.map(row => {
       const orderItemId = Number(row.orderItemId);
-      if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || orderItemId > 2147483647) throw Object.assign(new Error('Enter a valid source item id.'), { status: 400 });
-      if (orderItemsUsed.has(orderItemId)) throw Object.assign(new Error('A PO line can appear only once in a receiving receipt.'), { status: 400 });
+      if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || orderItemId > 2147483647) {
+        const error = new Error('Enter a valid source item id.');
+        error.status = 400;
+        throw error;
+      }
+      if (orderItemsUsed.has(orderItemId)) {
+        const error = new Error('A PO line can appear only once in a receiving receipt.');
+        error.status = 400;
+        throw error;
+      }
       orderItemsUsed.add(orderItemId);
-      if (row.allocations !== undefined && (!Array.isArray(row.allocations) || row.allocations.some(allocation => !allocation || typeof allocation !== 'object' || Array.isArray(allocation)))) throw Object.assign(new Error('Send allocation rows as objects.'), { status: 400 });
+      if (row.allocations !== undefined && (!Array.isArray(row.allocations) || row.allocations.some(allocation => !allocation || typeof allocation !== 'object' || Array.isArray(allocation)))) {
+        const error = new Error('Send allocation rows as objects.');
+        error.status = 400;
+        throw error;
+      }
       const allocations = (row.allocations || []).map(allocation => {
         const entry = { ...allocation, expiryDate: allocation.expiryDate || null, mfgDate: allocation.mfgDate || null };
         for (const key of ['warehouseId', 'locationId']) {
           entry[key] = entry[key] == null ? null : Number(entry[key]);
-          if (entry[key] !== null && (!Number.isSafeInteger(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) throw Object.assign(new Error('Enter a valid stock destination id.'), { status: 400 });
+          if (entry[key] !== null && (!Number.isSafeInteger(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) {
+            const error = new Error('Enter a valid stock destination id.');
+            error.status = 400;
+            throw error;
+          }
         }
         for (const key of ['imLot', 'qcStatus']) {
           const entered = entry[key] ?? '';
-          if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+          if (typeof entered !== 'string' || entered.includes('\0')) {
+            const error = new Error(`${key} must be text without null characters.`);
+            error.status = 400;
+            throw error;
+          }
           entry[key] = entered.trim();
         }
         for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
           const entered = entry[key];
-          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+            const error = new Error(`${key} must be a valid decimal number.`);
+            error.status = 400;
+            throw error;
+          }
           const source = String(entered).trim();
-          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          if (!/^\d+(?:\.\d+)?$/.test(source)) {
+            const error = new Error(`${key} must be zero or greater.`);
+            error.status = 400;
+            throw error;
+          }
           const [whole, rawFraction = ''] = source.split('.');
           const fraction = rawFraction.replace(/0+$/, '');
-          if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+          if (fraction.length > places) {
+            const error = new Error(`${key} exceeds its supported decimal precision.`);
+            error.status = 400;
+            throw error;
+          }
           const factor = 10n ** BigInt(places);
           const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-          if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+          if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+            const error = new Error(`${key} is outside its supported range.`);
+            error.status = 400;
+            throw error;
+          }
           entry[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
         }
         return entry;
       });
-      if (allocations.length > 200) throw Object.assign(new Error('Use no more than 200 allocations per item.'), { status: 400 });
+      if (allocations.length > 200) {
+        const error = new Error('Use no more than 200 allocations per item.');
+        error.status = 400;
+        throw error;
+      }
       const line = { ...row, orderItemId, allocations };
       for (const key of ['unit', 'remarks']) {
         const entered = line[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = entered.trim();
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
         const entered = line[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
       return line;
     });
-    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 receiving lines.'), { status: 400 });
+    if (!value.items.length || value.items.length > 100) {
+      const error = new Error('Use 1-100 receiving lines.');
+      error.status = 400;
+      throw error;
+    }
     const orderData = await request(scope).input('id', sql.Int, value.purchaseOrderId).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
         CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
         o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -1445,53 +2405,117 @@ router.post('/receivings', async (req, res) => {
     const orderRows = new Map(orderData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of orderData.recordsets[1]) orderRows.get(orderId)?.items.push(item);
     const order = [...orderRows.values()][0];
-    if (!order) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
-    if (!['posted', 'closed'].includes(order.status)) throw Object.assign(new Error('Load a posted Purchase Order for receiving.'), { status: 409 });
+    if (!order) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (!['posted', 'closed'].includes(order.status)) {
+      const error = new Error('Load a posted Purchase Order for receiving.');
+      error.status = 409;
+      throw error;
+    }
     const orderItems = new Map(order.items.map(item => [item.id, item]));
     const snapshots = [];
     for (const item of value.items) {
       const source = orderItems.get(item.orderItemId);
-      if (!source) throw Object.assign(new Error('Receiving items must belong to the selected Purchase Order.'), { status: 400 });
-      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('Receiving UOM must match its Purchase Order.'), { status: 400 });
+      if (!source) {
+        const error = new Error('Receiving items must belong to the selected Purchase Order.');
+        error.status = 400;
+        throw error;
+      }
+      if (item.unit && item.unit !== source.unit) {
+        const error = new Error('Receiving UOM must match its Purchase Order.');
+        error.status = 400;
+        throw error;
+      }
       const balances = { ordered: source.quantity, received: source.receivedQuantity, quantity: item.quantity };
       for (const [key, entered] of Object.entries(balances)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         balances[key] = units;
       }
       const available = balances.ordered - balances.received;
-      if (balances.quantity > available) throw Object.assign(new Error('Receiving quantity exceeds the open Purchase Order balance.'), { status: 409 });
+      if (balances.quantity > available) {
+        const error = new Error('Receiving quantity exceeds the open Purchase Order balance.');
+        error.status = 409;
+        throw error;
+      }
       for (const allocation of item.allocations) {
         if (allocation.warehouseId) {
           const warehouse = await request(scope).input('id', sql.Int, allocation.warehouseId).query('SELECT id FROM dbo.ConfigWarehouses WHERE id=@id AND isActive=1');
-          if (!warehouse.recordset.length) throw Object.assign(new Error('Select active configured Warehouses and Locations.'), { status: 400 });
+          if (!warehouse.recordset.length) {
+            const error = new Error('Select active configured Warehouses and Locations.');
+            error.status = 400;
+            throw error;
+          }
         }
         if (allocation.locationId) {
           const location = await request(scope).input('id', sql.Int, allocation.locationId).query('SELECT id FROM dbo.ConfigLocations WHERE id=@id AND isActive=1');
-          if (!location.recordset.length) throw Object.assign(new Error('Select active configured Warehouses and Locations.'), { status: 400 });
+          if (!location.recordset.length) {
+            const error = new Error('Select active configured Warehouses and Locations.');
+            error.status = 400;
+            throw error;
+          }
         }
       }
       snapshots.push({ ...item, unitPrice: source.unitPrice, discountRate: source.discountRate });
     }
     const { vatRate = 0, vatInclusive = false, decimalInPrice = 6, decimalInTotalPrice = 2 } = order;
-    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) throw Object.assign(new Error('Supplier price precision is outside the supported range.'), { status: 400 });
+    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) {
+      const error = new Error('Supplier price precision is outside the supported range.');
+      error.status = 400;
+      throw error;
+    }
     const totalFactor = 10n ** BigInt(decimalInTotalPrice);
     const vatUnits = { rate: vatRate };
     for (const [key, entered] of Object.entries(vatUnits)) {
-      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+        const error = new Error(`${key} must be a valid decimal number.`);
+        error.status = 400;
+        throw error;
+      }
       const source = String(entered).trim();
-      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      if (!/^\d+(?:\.\d+)?$/.test(source)) {
+        const error = new Error(`${key} must be zero or greater.`);
+        error.status = 400;
+        throw error;
+      }
       const [whole, rawFraction = ''] = source.split('.');
       const fraction = rawFraction.replace(/0+$/, '');
-      if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+      if (fraction.length > 6) {
+        const error = new Error(`${key} exceeds six decimal places.`);
+        error.status = 400;
+        throw error;
+      }
       const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-      if (units > 100n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+      if (units > 100n * 1000000n) {
+        const error = new Error(`${key} is too large.`);
+        error.status = 400;
+        throw error;
+      }
       vatUnits[key] = units;
     }
     const taxRateUnits = vatUnits.rate;
@@ -1500,22 +2524,46 @@ router.post('/receivings', async (req, res) => {
     for (const item of snapshots) {
       const lineUnits = { quantity: item.quantity, unitPrice: item.unitPrice, discountRate: item.discountRate ?? 0 };
       for (const [key, entered] of Object.entries(lineUnits)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         lineUnits[key] = units;
       }
       const quantity = lineUnits.quantity;
-      if (!quantity) throw Object.assign(new Error('Quantity must be greater than zero.'), { status: 400 });
+      if (!quantity) {
+        const error = new Error('Quantity must be greater than zero.');
+        error.status = 400;
+        throw error;
+      }
       const step = 10n ** BigInt(6 - decimalInPrice);
       const price = ((lineUnits.unitPrice + step / 2n) / step) * step;
       const discount = lineUnits.discountRate;
-      if (discount > percentages) throw Object.assign(new Error('Discount rate is too large.'), { status: 400 });
+      if (discount > percentages) {
+        const error = new Error('Discount rate is too large.');
+        error.status = 400;
+        throw error;
+      }
       const grossAmount = (quantity * price * totalFactor + 500000000000n) / 1000000000000n;
       const discountAmount = (grossAmount * discount + percentages / 2n) / percentages;
       const afterDiscount = grossAmount - discountAmount;
@@ -1525,7 +2573,11 @@ router.post('/receivings', async (req, res) => {
       const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
       for (const [key, amount] of Object.entries(values)) {
         totals[key] += amount;
-        if (totals[key] > 1000000000000n * totalFactor) throw Object.assign(new Error('The document total exceeds the supported amount.'), { status: 400 });
+        if (totals[key] > 1000000000000n * totalFactor) {
+          const error = new Error('The document total exceeds the supported amount.');
+          error.status = 400;
+          throw error;
+        }
         calculated[key] = `${amount / totalFactor}${decimalInTotalPrice ? '.' + String(amount % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
       }
       totals.items.push(calculated);
@@ -1598,19 +2650,35 @@ router.post('/receivings', async (req, res) => {
     }
     for (const { receiptItemId, ...allocation } of savedRecordData.recordsets[2]) savedRecordItems.get(receiptItemId)?.allocations.push(allocation);
     const savedRecord = [...savedRecordRows.values()][0];
-    if (!savedRecord) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (!savedRecord) {
+      const error = new Error('Receiving receipt could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return savedRecord;
   });
   res.status(201).json({ record });
 });
 
 router.put('/receivings/:id', async (req, res) => {
-  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('Send this request as JSON.'), { status: 415 });
+  if (!req.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    const error = new Error('Send this request as JSON.');
+    error.status = 415;
+    throw error;
+  }
   const input = req.body;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error('Send a JSON object.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const record = await transaction(async scope => {
     const currentData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
         CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
@@ -1641,89 +2709,189 @@ router.put('/receivings/:id', async (req, res) => {
     }
     for (const { receiptItemId, ...allocation } of currentData.recordsets[2]) currentItems.get(receiptItemId)?.allocations.push(allocation);
     const current = [...currentRows.values()][0];
-    if (!current) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
-    if (current && current.status !== 'draft') throw Object.assign(new Error('Only an unposted receiving receipt can be edited.'), { status: 409 });
+    if (!current) {
+      const error = new Error('Receiving receipt could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (current && current.status !== 'draft') {
+      const error = new Error('Only an unposted receiving receipt can be edited.');
+      error.status = 409;
+      throw error;
+    }
     const value = { ...current, ...input };
     value.purchaseOrderId = Number(value.purchaseOrderId);
-    if (!Number.isSafeInteger(value.purchaseOrderId) || value.purchaseOrderId <= 0 || value.purchaseOrderId > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+    if (!Number.isSafeInteger(value.purchaseOrderId) || value.purchaseOrderId <= 0 || value.purchaseOrderId > 2147483647) {
+      const error = new Error('Enter a valid id.');
+      error.status = 400;
+      throw error;
+    }
     for (const key of ['drNumber', 'pezaReference', 'invoiceNumber', 'remarks']) {
       const entered = value[key] ?? '';
-      if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+      if (typeof entered !== 'string' || entered.includes('\0')) {
+        const error = new Error(`${key} must be text without null characters.`);
+        error.status = 400;
+        throw error;
+      }
       value[key] = entered.trim();
     }
     value.invoiceDate = value.invoiceDate || null;
     if (value.rate !== undefined) {
       for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
         const entered = value[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         value[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
     }
     const orderItemsUsed = new Set();
-    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) throw Object.assign(new Error('Send item rows as objects.'), { status: 400 });
+    if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+      const error = new Error('Send item rows as objects.');
+      error.status = 400;
+      throw error;
+    }
     value.items = value.items.map(row => {
       const orderItemId = Number(row.orderItemId);
-      if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || orderItemId > 2147483647) throw Object.assign(new Error('Enter a valid source item id.'), { status: 400 });
-      if (orderItemsUsed.has(orderItemId)) throw Object.assign(new Error('A PO line can appear only once in a receiving receipt.'), { status: 400 });
+      if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || orderItemId > 2147483647) {
+        const error = new Error('Enter a valid source item id.');
+        error.status = 400;
+        throw error;
+      }
+      if (orderItemsUsed.has(orderItemId)) {
+        const error = new Error('A PO line can appear only once in a receiving receipt.');
+        error.status = 400;
+        throw error;
+      }
       orderItemsUsed.add(orderItemId);
-      if (row.allocations !== undefined && (!Array.isArray(row.allocations) || row.allocations.some(allocation => !allocation || typeof allocation !== 'object' || Array.isArray(allocation)))) throw Object.assign(new Error('Send allocation rows as objects.'), { status: 400 });
+      if (row.allocations !== undefined && (!Array.isArray(row.allocations) || row.allocations.some(allocation => !allocation || typeof allocation !== 'object' || Array.isArray(allocation)))) {
+        const error = new Error('Send allocation rows as objects.');
+        error.status = 400;
+        throw error;
+      }
       const allocations = (row.allocations || []).map(allocation => {
         const entry = { ...allocation, expiryDate: allocation.expiryDate || null, mfgDate: allocation.mfgDate || null };
         for (const key of ['warehouseId', 'locationId']) {
           entry[key] = entry[key] == null ? null : Number(entry[key]);
-          if (entry[key] !== null && (!Number.isSafeInteger(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) throw Object.assign(new Error('Enter a valid stock destination id.'), { status: 400 });
+          if (entry[key] !== null && (!Number.isSafeInteger(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) {
+            const error = new Error('Enter a valid stock destination id.');
+            error.status = 400;
+            throw error;
+          }
         }
         for (const key of ['imLot', 'qcStatus']) {
           const entered = entry[key] ?? '';
-          if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+          if (typeof entered !== 'string' || entered.includes('\0')) {
+            const error = new Error(`${key} must be text without null characters.`);
+            error.status = 400;
+            throw error;
+          }
           entry[key] = entered.trim();
         }
         for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
           const entered = entry[key];
-          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+            const error = new Error(`${key} must be a valid decimal number.`);
+            error.status = 400;
+            throw error;
+          }
           const source = String(entered).trim();
-          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          if (!/^\d+(?:\.\d+)?$/.test(source)) {
+            const error = new Error(`${key} must be zero or greater.`);
+            error.status = 400;
+            throw error;
+          }
           const [whole, rawFraction = ''] = source.split('.');
           const fraction = rawFraction.replace(/0+$/, '');
-          if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+          if (fraction.length > places) {
+            const error = new Error(`${key} exceeds its supported decimal precision.`);
+            error.status = 400;
+            throw error;
+          }
           const factor = 10n ** BigInt(places);
           const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-          if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+          if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+            const error = new Error(`${key} is outside its supported range.`);
+            error.status = 400;
+            throw error;
+          }
           entry[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
         }
         return entry;
       });
-      if (allocations.length > 200) throw Object.assign(new Error('Use no more than 200 allocations per item.'), { status: 400 });
+      if (allocations.length > 200) {
+        const error = new Error('Use no more than 200 allocations per item.');
+        error.status = 400;
+        throw error;
+      }
       const line = { ...row, orderItemId, allocations };
       for (const key of ['unit', 'remarks']) {
         const entered = line[key] ?? '';
-        if (typeof entered !== 'string' || entered.includes('\0')) throw Object.assign(new Error(`${key} must be text without null characters.`), { status: 400 });
+        if (typeof entered !== 'string' || entered.includes('\0')) {
+          const error = new Error(`${key} must be text without null characters.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = entered.trim();
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
         const entered = line[key];
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > places) throw Object.assign(new Error(`${key} exceeds its supported decimal precision.`), { status: 400 });
+        if (fraction.length > places) {
+          const error = new Error(`${key} exceeds its supported decimal precision.`);
+          error.status = 400;
+          throw error;
+        }
         const factor = 10n ** BigInt(places);
         const units = BigInt(whole) * factor + BigInt(fraction.padEnd(places, '0') || '0');
-        if (units > BigInt(maximum) * factor || (positive && units === 0n)) throw Object.assign(new Error(`${key} is outside its supported range.`), { status: 400 });
+        if (units > BigInt(maximum) * factor || (positive && units === 0n)) {
+          const error = new Error(`${key} is outside its supported range.`);
+          error.status = 400;
+          throw error;
+        }
         line[key] = `${units / factor}${places ? '.' + String(units % factor).padStart(places, '0') : ''}`;
       }
       return line;
     });
-    if (!value.items.length || value.items.length > 100) throw Object.assign(new Error('Use 1-100 receiving lines.'), { status: 400 });
+    if (!value.items.length || value.items.length > 100) {
+      const error = new Error('Use 1-100 receiving lines.');
+      error.status = 400;
+      throw error;
+    }
     const orderData = await request(scope).input('id', sql.Int, value.purchaseOrderId).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
         CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
         o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -1739,53 +2907,117 @@ router.put('/receivings/:id', async (req, res) => {
     const orderRows = new Map(orderData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of orderData.recordsets[1]) orderRows.get(orderId)?.items.push(item);
     const order = [...orderRows.values()][0];
-    if (!order) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
-    if (!['posted', 'closed'].includes(order.status)) throw Object.assign(new Error('Load a posted Purchase Order for receiving.'), { status: 409 });
+    if (!order) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (!['posted', 'closed'].includes(order.status)) {
+      const error = new Error('Load a posted Purchase Order for receiving.');
+      error.status = 409;
+      throw error;
+    }
     const orderItems = new Map(order.items.map(item => [item.id, item]));
     const snapshots = [];
     for (const item of value.items) {
       const source = orderItems.get(item.orderItemId);
-      if (!source) throw Object.assign(new Error('Receiving items must belong to the selected Purchase Order.'), { status: 400 });
-      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('Receiving UOM must match its Purchase Order.'), { status: 400 });
+      if (!source) {
+        const error = new Error('Receiving items must belong to the selected Purchase Order.');
+        error.status = 400;
+        throw error;
+      }
+      if (item.unit && item.unit !== source.unit) {
+        const error = new Error('Receiving UOM must match its Purchase Order.');
+        error.status = 400;
+        throw error;
+      }
       const balances = { ordered: source.quantity, received: source.receivedQuantity, quantity: item.quantity };
       for (const [key, entered] of Object.entries(balances)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         balances[key] = units;
       }
       const available = balances.ordered - balances.received;
-      if (balances.quantity > available) throw Object.assign(new Error('Receiving quantity exceeds the open Purchase Order balance.'), { status: 409 });
+      if (balances.quantity > available) {
+        const error = new Error('Receiving quantity exceeds the open Purchase Order balance.');
+        error.status = 409;
+        throw error;
+      }
       for (const allocation of item.allocations) {
         if (allocation.warehouseId) {
           const warehouse = await request(scope).input('id', sql.Int, allocation.warehouseId).query('SELECT id FROM dbo.ConfigWarehouses WHERE id=@id AND isActive=1');
-          if (!warehouse.recordset.length) throw Object.assign(new Error('Select active configured Warehouses and Locations.'), { status: 400 });
+          if (!warehouse.recordset.length) {
+            const error = new Error('Select active configured Warehouses and Locations.');
+            error.status = 400;
+            throw error;
+          }
         }
         if (allocation.locationId) {
           const location = await request(scope).input('id', sql.Int, allocation.locationId).query('SELECT id FROM dbo.ConfigLocations WHERE id=@id AND isActive=1');
-          if (!location.recordset.length) throw Object.assign(new Error('Select active configured Warehouses and Locations.'), { status: 400 });
+          if (!location.recordset.length) {
+            const error = new Error('Select active configured Warehouses and Locations.');
+            error.status = 400;
+            throw error;
+          }
         }
       }
       snapshots.push({ ...item, unitPrice: source.unitPrice, discountRate: source.discountRate });
     }
     const { vatRate = 0, vatInclusive = false, decimalInPrice = 6, decimalInTotalPrice = 2 } = order;
-    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) throw Object.assign(new Error('Supplier price precision is outside the supported range.'), { status: 400 });
+    if (!Number.isInteger(decimalInPrice) || decimalInPrice < 0 || decimalInPrice > 6 || !Number.isInteger(decimalInTotalPrice) || decimalInTotalPrice < 0 || decimalInTotalPrice > 6) {
+      const error = new Error('Supplier price precision is outside the supported range.');
+      error.status = 400;
+      throw error;
+    }
     const totalFactor = 10n ** BigInt(decimalInTotalPrice);
     const vatUnits = { rate: vatRate };
     for (const [key, entered] of Object.entries(vatUnits)) {
-      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+      if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+        const error = new Error(`${key} must be a valid decimal number.`);
+        error.status = 400;
+        throw error;
+      }
       const source = String(entered).trim();
-      if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+      if (!/^\d+(?:\.\d+)?$/.test(source)) {
+        const error = new Error(`${key} must be zero or greater.`);
+        error.status = 400;
+        throw error;
+      }
       const [whole, rawFraction = ''] = source.split('.');
       const fraction = rawFraction.replace(/0+$/, '');
-      if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+      if (fraction.length > 6) {
+        const error = new Error(`${key} exceeds six decimal places.`);
+        error.status = 400;
+        throw error;
+      }
       const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-      if (units > 100n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+      if (units > 100n * 1000000n) {
+        const error = new Error(`${key} is too large.`);
+        error.status = 400;
+        throw error;
+      }
       vatUnits[key] = units;
     }
     const taxRateUnits = vatUnits.rate;
@@ -1794,22 +3026,46 @@ router.put('/receivings/:id', async (req, res) => {
     for (const item of snapshots) {
       const lineUnits = { quantity: item.quantity, unitPrice: item.unitPrice, discountRate: item.discountRate ?? 0 };
       for (const [key, entered] of Object.entries(lineUnits)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         lineUnits[key] = units;
       }
       const quantity = lineUnits.quantity;
-      if (!quantity) throw Object.assign(new Error('Quantity must be greater than zero.'), { status: 400 });
+      if (!quantity) {
+        const error = new Error('Quantity must be greater than zero.');
+        error.status = 400;
+        throw error;
+      }
       const step = 10n ** BigInt(6 - decimalInPrice);
       const price = ((lineUnits.unitPrice + step / 2n) / step) * step;
       const discount = lineUnits.discountRate;
-      if (discount > percentages) throw Object.assign(new Error('Discount rate is too large.'), { status: 400 });
+      if (discount > percentages) {
+        const error = new Error('Discount rate is too large.');
+        error.status = 400;
+        throw error;
+      }
       const grossAmount = (quantity * price * totalFactor + 500000000000n) / 1000000000000n;
       const discountAmount = (grossAmount * discount + percentages / 2n) / percentages;
       const afterDiscount = grossAmount - discountAmount;
@@ -1819,7 +3075,11 @@ router.put('/receivings/:id', async (req, res) => {
       const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
       for (const [key, amount] of Object.entries(values)) {
         totals[key] += amount;
-        if (totals[key] > 1000000000000n * totalFactor) throw Object.assign(new Error('The document total exceeds the supported amount.'), { status: 400 });
+        if (totals[key] > 1000000000000n * totalFactor) {
+          const error = new Error('The document total exceeds the supported amount.');
+          error.status = 400;
+          throw error;
+        }
         calculated[key] = `${amount / totalFactor}${decimalInTotalPrice ? '.' + String(amount % totalFactor).padStart(decimalInTotalPrice, '0') : ''}`;
       }
       totals.items.push(calculated);
@@ -1891,7 +3151,11 @@ router.put('/receivings/:id', async (req, res) => {
     }
     for (const { receiptItemId, ...allocation } of savedRecordData.recordsets[2]) savedRecordItems.get(receiptItemId)?.allocations.push(allocation);
     const savedRecord = [...savedRecordRows.values()][0];
-    if (!savedRecord) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (!savedRecord) {
+      const error = new Error('Receiving receipt could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return savedRecord;
   });
   res.json({ record });
@@ -1899,7 +3163,11 @@ router.put('/receivings/:id', async (req, res) => {
 
 router.post('/purchase-requests/:id/post', async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const valueData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
@@ -1916,9 +3184,17 @@ router.post('/purchase-requests/:id/post', async (req, res) => {
     const valueRows = new Map(valueData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { requestId, ...item } of valueData.recordsets[1]) valueRows.get(requestId)?.items.push(item);
     const value = [...valueRows.values()][0];
-    if (!value) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (!value) {
+      const error = new Error('Purchase Request could not be found.');
+      error.status = 404;
+      throw error;
+    }
     if (['posted', 'closed'].includes(value.status)) return value;
-    if (value.status !== 'draft' || !value.items.length) throw Object.assign(new Error('Only a nonempty unposted document can be posted.'), { status: 409 });
+    if (value.status !== 'draft' || !value.items.length) {
+      const error = new Error('Only a nonempty unposted document can be posted.');
+      error.status = 409;
+      throw error;
+    }
     await request(scope).input('id', sql.Int, id).input('user', sql.Int, user.id).query("UPDATE dbo.PurchaseRequests SET status='posted',postedById=@user,postedAt=SYSUTCDATETIME(),updatedAt=SYSUTCDATETIME() WHERE id=@id");
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-requests')
@@ -1938,7 +3214,11 @@ router.post('/purchase-requests/:id/post', async (req, res) => {
     const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { requestId, ...item } of savedData.recordsets[1]) savedRows.get(requestId)?.items.push(item);
     const saved = [...savedRows.values()][0];
-    if (!saved) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (!saved) {
+      const error = new Error('Purchase Request could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return saved;
   });
   res.json({ record });
@@ -1946,7 +3226,11 @@ router.post('/purchase-requests/:id/post', async (req, res) => {
 
 router.post('/purchase-requests/:id/cancel', async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const valueData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
@@ -1963,10 +3247,18 @@ router.post('/purchase-requests/:id/cancel', async (req, res) => {
     const valueRows = new Map(valueData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { requestId, ...item } of valueData.recordsets[1]) valueRows.get(requestId)?.items.push(item);
     const value = [...valueRows.values()][0];
-    if (!value) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (!value) {
+      const error = new Error('Purchase Request could not be found.');
+      error.status = 404;
+      throw error;
+    }
     if (value.status === 'cancelled') return value;
     const linked = await request(scope).input('id', sql.Int, id).query("SELECT TOP(1) i.id FROM dbo.PurchaseOrderItems i JOIN dbo.PurchaseRequestItems d ON d.id=i.requestItemId JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE d.requestId=@id AND o.status<>'cancelled'");
-    if (linked.recordset.length) throw Object.assign(new Error('Cancel downstream documents before cancelling this source document.'), { status: 409 });
+    if (linked.recordset.length) {
+      const error = new Error('Cancel downstream documents before cancelling this source document.');
+      error.status = 409;
+      throw error;
+    }
     await request(scope).input('id', sql.Int, id).query("UPDATE dbo.PurchaseRequests SET status='cancelled',updatedAt=SYSUTCDATETIME() WHERE id=@id");
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-requests')
@@ -1986,7 +3278,11 @@ router.post('/purchase-requests/:id/cancel', async (req, res) => {
     const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { requestId, ...item } of savedData.recordsets[1]) savedRows.get(requestId)?.items.push(item);
     const saved = [...savedRows.values()][0];
-    if (!saved) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+    if (!saved) {
+      const error = new Error('Purchase Request could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return saved;
   });
   res.json({ record });
@@ -1994,7 +3290,11 @@ router.post('/purchase-requests/:id/cancel', async (req, res) => {
 
 router.post('/purchase-orders/:id/post', async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const valueData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
@@ -2012,36 +3312,76 @@ router.post('/purchase-orders/:id/post', async (req, res) => {
     const valueRows = new Map(valueData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of valueData.recordsets[1]) valueRows.get(orderId)?.items.push(item);
     const value = [...valueRows.values()][0];
-    if (!value) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!value) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     if (['posted', 'closed'].includes(value.status)) return value;
-    if (value.status !== 'draft' || !value.items.length) throw Object.assign(new Error('Only a nonempty unposted document can be posted.'), { status: 409 });
+    if (value.status !== 'draft' || !value.items.length) {
+      const error = new Error('Only a nonempty unposted document can be posted.');
+      error.status = 409;
+      throw error;
+    }
     const requestIds = [...new Set(value.items.map(item => item.requestId))].sort((left, right) => left - right);
     for (const requestId of requestIds) {
       const sourceHeader = await request(scope).input('id', sql.Int, requestId).query('SELECT id FROM dbo.PurchaseRequests WITH (UPDLOCK,HOLDLOCK) WHERE id=@id');
-      if (!sourceHeader.recordset.length) throw Object.assign(new Error('Purchase Request could not be found.'), { status: 404 });
+      if (!sourceHeader.recordset.length) {
+        const error = new Error('Purchase Request could not be found.');
+        error.status = 404;
+        throw error;
+      }
     }
     for (const item of value.items) {
       const sourceData = await request(scope).input('id', sql.Int, item.requestItemId).query(`SELECT d.*,r.status AS requestStatus,r.number AS requestNumber,
           CONVERT(varchar(60),d.quantity) AS requestedQuantity,CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.PurchaseOrderItems i
           JOIN dbo.PurchaseOrders o ON o.id=i.orderId WHERE i.requestItemId=d.id AND o.status IN ('posted','closed')),0)) AS orderedQuantity
           FROM dbo.PurchaseRequestItems d JOIN dbo.PurchaseRequests r ON r.id=d.requestId WHERE d.id=@id`);
-        if (!sourceData.recordset.length) throw Object.assign(new Error('Select a valid posted PR line.'), { status: 400 });
+        if (!sourceData.recordset.length) {
+          const error = new Error('Select a valid posted PR line.');
+          error.status = 400;
+          throw error;
+        }
         const source = sourceData.recordset[0];
-      if (!['posted', 'closed'].includes(source.requestStatus)) throw Object.assign(new Error('Purchase Orders can only use posted PR lines.'), { status: 409 });
+      if (!['posted', 'closed'].includes(source.requestStatus)) {
+        const error = new Error('Purchase Orders can only use posted PR lines.');
+        error.status = 409;
+        throw error;
+      }
         const balances = { requested: source.requestedQuantity, ordered: source.orderedQuantity, quantity: item.quantity };
         for (const [key, entered] of Object.entries(balances)) {
-          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+            const error = new Error(`${key} must be a valid decimal number.`);
+            error.status = 400;
+            throw error;
+          }
           const source = String(entered).trim();
-          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          if (!/^\d+(?:\.\d+)?$/.test(source)) {
+            const error = new Error(`${key} must be zero or greater.`);
+            error.status = 400;
+            throw error;
+          }
           const [whole, rawFraction = ''] = source.split('.');
           const fraction = rawFraction.replace(/0+$/, '');
-          if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+          if (fraction.length > 6) {
+            const error = new Error(`${key} exceeds six decimal places.`);
+            error.status = 400;
+            throw error;
+          }
           const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-          if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+          if (units > 1000000000n * 1000000n) {
+            const error = new Error(`${key} is too large.`);
+            error.status = 400;
+            throw error;
+          }
           balances[key] = units;
         }
         const remaining = balances.requested - balances.ordered;
-        if (balances.quantity > remaining) throw Object.assign(new Error('PO quantity exceeds the remaining Purchase Request balance.'), { status: 409 });
+        if (balances.quantity > remaining) {
+          const error = new Error('PO quantity exceeds the remaining Purchase Request balance.');
+          error.status = 409;
+          throw error;
+        }
     }
     await request(scope).input('id', sql.Int, id).input('user', sql.Int, user.id).query("UPDATE dbo.PurchaseOrders SET status='posted',postedById=@user,postedAt=SYSUTCDATETIME(),updatedAt=SYSUTCDATETIME() WHERE id=@id");
     for (const requestId of requestIds) {
@@ -2069,7 +3409,11 @@ router.post('/purchase-orders/:id/post', async (req, res) => {
     const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of savedData.recordsets[1]) savedRows.get(orderId)?.items.push(item);
     const saved = [...savedRows.values()][0];
-    if (!saved) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!saved) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return saved;
   });
   res.json({ record });
@@ -2077,7 +3421,11 @@ router.post('/purchase-orders/:id/post', async (req, res) => {
 
 router.post('/purchase-orders/:id/cancel', async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const valueData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
@@ -2095,10 +3443,18 @@ router.post('/purchase-orders/:id/cancel', async (req, res) => {
     const valueRows = new Map(valueData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of valueData.recordsets[1]) valueRows.get(orderId)?.items.push(item);
     const value = [...valueRows.values()][0];
-    if (!value) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!value) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     if (value.status === 'cancelled') return value;
     const linked = await request(scope).input('id', sql.Int, id).query("SELECT TOP(1) id FROM dbo.SuppliesReceipts WHERE purchaseOrderId=@id AND status<>'cancelled'");
-    if (linked.recordset.length) throw Object.assign(new Error('Cancel downstream documents before cancelling this source document.'), { status: 409 });
+    if (linked.recordset.length) {
+      const error = new Error('Cancel downstream documents before cancelling this source document.');
+      error.status = 409;
+      throw error;
+    }
     await request(scope).input('id', sql.Int, id).query("UPDATE dbo.PurchaseOrders SET status='cancelled',updatedAt=SYSUTCDATETIME() WHERE id=@id");
     for (const requestId of new Set(value.items.map(item => item.requestId))) {
       await request(scope).input('id', sql.Int, requestId).query(`UPDATE r SET status=CASE WHEN EXISTS (
@@ -2125,7 +3481,11 @@ router.post('/purchase-orders/:id/cancel', async (req, res) => {
     const savedRows = new Map(savedData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of savedData.recordsets[1]) savedRows.get(orderId)?.items.push(item);
     const saved = [...savedRows.values()][0];
-    if (!saved) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
+    if (!saved) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return saved;
   });
   res.json({ record });
@@ -2133,7 +3493,11 @@ router.post('/purchase-orders/:id/cancel', async (req, res) => {
 
 router.post('/receivings/:id/post', async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const result = await transaction(async scope => {
     const receiptData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
@@ -2165,9 +3529,17 @@ router.post('/receivings/:id/post', async (req, res) => {
     }
     for (const { receiptItemId, ...allocation } of receiptData.recordsets[2]) receiptItems.get(receiptItemId)?.allocations.push(allocation);
     const receipt = [...receiptRows.values()][0];
-    if (!receipt) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (!receipt) {
+      const error = new Error('Receiving receipt could not be found.');
+      error.status = 404;
+      throw error;
+    }
     if (receipt.status === 'posted') return { record: receipt, alreadyPosted: true };
-    if (receipt.status !== 'draft') throw Object.assign(new Error('Only an unposted receiving receipt can be posted.'), { status: 409 });
+    if (receipt.status !== 'draft') {
+      const error = new Error('Only an unposted receiving receipt can be posted.');
+      error.status = 409;
+      throw error;
+    }
     const orderData = await request(scope).input('id', sql.Int, receipt.purchaseOrderId).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
         CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
         o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -2183,59 +3555,143 @@ router.post('/receivings/:id/post', async (req, res) => {
     const orderRows = new Map(orderData.recordsets[0].map(row => [row.id, { ...row, items: [] }]));
     for (const { orderId, ...item } of orderData.recordsets[1]) orderRows.get(orderId)?.items.push(item);
     const order = [...orderRows.values()][0];
-    if (!order) throw Object.assign(new Error('Purchase Order could not be found.'), { status: 404 });
-    if (!['posted', 'closed'].includes(order.status)) throw Object.assign(new Error('Receiving requires a posted purchase order.'), { status: 409 });
-    if (!receipt.items.length) throw Object.assign(new Error('Add at least one receiving item.'), { status: 400 });
+    if (!order) {
+      const error = new Error('Purchase Order could not be found.');
+      error.status = 404;
+      throw error;
+    }
+    if (!['posted', 'closed'].includes(order.status)) {
+      const error = new Error('Receiving requires a posted purchase order.');
+      error.status = 409;
+      throw error;
+    }
+    if (!receipt.items.length) {
+      const error = new Error('Add at least one receiving item.');
+      error.status = 400;
+      throw error;
+    }
     const sources = new Map(order.items.map(item => [item.id, item]));
     const usedItems = new Set();
     const movements = [];
     for (const item of receipt.items) {
       const source = sources.get(item.orderItemId);
-      if (!source || source.suppliesId !== item.suppliesId) throw Object.assign(new Error('Receiving items must match their purchase order Supplies.'), { status: 400 });
-      if (usedItems.has(source.id)) throw Object.assign(new Error('A purchase order line can appear only once in a receipt.'), { status: 400 });
+      if (!source || source.suppliesId !== item.suppliesId) {
+        const error = new Error('Receiving items must match their purchase order Supplies.');
+        error.status = 400;
+        throw error;
+      }
+      if (usedItems.has(source.id)) {
+        const error = new Error('A purchase order line can appear only once in a receipt.');
+        error.status = 400;
+        throw error;
+      }
       usedItems.add(source.id);
-      if (item.unit && item.unit !== source.unit) throw Object.assign(new Error('Receiving UOM must match the purchase order.'), { status: 400 });
+      if (item.unit && item.unit !== source.unit) {
+        const error = new Error('Receiving UOM must match the purchase order.');
+        error.status = 400;
+        throw error;
+      }
       const balances = { receiving: item.quantity, ordered: source.quantity, received: source.receivedQuantity || 0 };
       for (const [key, entered] of Object.entries(balances)) {
-        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+        if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+          const error = new Error(`${key} must be a valid decimal number.`);
+          error.status = 400;
+          throw error;
+        }
         const source = String(entered).trim();
-        if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+        if (!/^\d+(?:\.\d+)?$/.test(source)) {
+          const error = new Error(`${key} must be zero or greater.`);
+          error.status = 400;
+          throw error;
+        }
         const [whole, rawFraction = ''] = source.split('.');
         const fraction = rawFraction.replace(/0+$/, '');
-        if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+        if (fraction.length > 6) {
+          const error = new Error(`${key} exceeds six decimal places.`);
+          error.status = 400;
+          throw error;
+        }
         const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-        if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+        if (units > 1000000000n * 1000000n) {
+          const error = new Error(`${key} is too large.`);
+          error.status = 400;
+          throw error;
+        }
         balances[key] = units;
       }
       const quantity = balances.receiving;
-      if (!quantity) throw Object.assign(new Error('Receiving quantity must be greater than zero.'), { status: 400 });
+      if (!quantity) {
+        const error = new Error('Receiving quantity must be greater than zero.');
+        error.status = 400;
+        throw error;
+      }
       const outstanding = balances.ordered - balances.received;
-      if (quantity > outstanding) throw Object.assign(new Error('Receiving quantity exceeds the remaining purchase order balance.'), { status: 409 });
-      if (!item.allocations.length) throw Object.assign(new Error('Allocate every receiving item to stock before posting.'), { status: 400 });
+      if (quantity > outstanding) {
+        const error = new Error('Receiving quantity exceeds the remaining purchase order balance.');
+        error.status = 409;
+        throw error;
+      }
+      if (!item.allocations.length) {
+        const error = new Error('Allocate every receiving item to stock before posting.');
+        error.status = 400;
+        throw error;
+      }
       let allocated = 0n;
       for (const allocation of item.allocations) {
         const allocationUnits = { quantity: allocation.quantity };
         for (const [key, entered] of Object.entries(allocationUnits)) {
-          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) throw Object.assign(new Error(`${key} must be a valid decimal number.`), { status: 400 });
+          if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
+            const error = new Error(`${key} must be a valid decimal number.`);
+            error.status = 400;
+            throw error;
+          }
           const source = String(entered).trim();
-          if (!/^\d+(?:\.\d+)?$/.test(source)) throw Object.assign(new Error(`${key} must be zero or greater.`), { status: 400 });
+          if (!/^\d+(?:\.\d+)?$/.test(source)) {
+            const error = new Error(`${key} must be zero or greater.`);
+            error.status = 400;
+            throw error;
+          }
           const [whole, rawFraction = ''] = source.split('.');
           const fraction = rawFraction.replace(/0+$/, '');
-          if (fraction.length > 6) throw Object.assign(new Error(`${key} exceeds six decimal places.`), { status: 400 });
+          if (fraction.length > 6) {
+            const error = new Error(`${key} exceeds six decimal places.`);
+            error.status = 400;
+            throw error;
+          }
           const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
-          if (units > 1000000000n * 1000000n) throw Object.assign(new Error(`${key} is too large.`), { status: 400 });
+          if (units > 1000000000n * 1000000n) {
+            const error = new Error(`${key} is too large.`);
+            error.status = 400;
+            throw error;
+          }
           allocationUnits[key] = units;
         }
         const allocationQuantity = allocationUnits.quantity;
-        if (!allocationQuantity) throw Object.assign(new Error('Allocation quantity must be greater than zero.'), { status: 400 });
+        if (!allocationQuantity) {
+          const error = new Error('Allocation quantity must be greater than zero.');
+          error.status = 400;
+          throw error;
+        }
         allocated += allocationQuantity;
-        if (!Number.isInteger(allocation.warehouseId) || allocation.warehouseId <= 0 || !Number.isInteger(allocation.locationId) || allocation.locationId <= 0) throw Object.assign(new Error('Every allocation needs an active Warehouse and Location.'), { status: 400 });
+        if (!Number.isInteger(allocation.warehouseId) || allocation.warehouseId <= 0 || !Number.isInteger(allocation.locationId) || allocation.locationId <= 0) {
+          const error = new Error('Every allocation needs an active Warehouse and Location.');
+          error.status = 400;
+          throw error;
+        }
         const destination = await request(scope).input('warehouse', sql.Int, allocation.warehouseId).input('location', sql.Int, allocation.locationId)
           .query('SELECT w.id FROM dbo.ConfigWarehouses w CROSS JOIN dbo.ConfigLocations l WHERE w.id=@warehouse AND l.id=@location AND w.isActive=1 AND l.isActive=1');
-        if (destination.recordset.length !== 1) throw Object.assign(new Error('Every allocation needs an active Warehouse and Location.'), { status: 400 });
+        if (destination.recordset.length !== 1) {
+          const error = new Error('Every allocation needs an active Warehouse and Location.');
+          error.status = 400;
+          throw error;
+        }
         movements.push({ ...allocation, quantity: `${allocationQuantity / 1000000n}.${String(allocationQuantity % 1000000n).padStart(6, '0')}`, suppliesId: item.suppliesId, receiptId: id, receiptItemId: item.id, allocationId: allocation.id });
       }
-      if (allocated !== quantity) throw Object.assign(new Error('Allocated quantity must equal the receiving item quantity exactly.'), { status: 400 });
+      if (allocated !== quantity) {
+        const error = new Error('Allocated quantity must equal the receiving item quantity exactly.');
+        error.status = 400;
+        throw error;
+      }
     }
     // All source balances and destinations passed; every stock effect shares this transaction.
     for (const movement of movements) {
@@ -2249,7 +3705,11 @@ router.post('/receivings/:id/post', async (req, res) => {
           .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(sql.MAX), movement.imLot || '').input('qcStatus', sql.NVarChar(sql.MAX), movement.qcStatus || '')
           .input('expiryDate', sql.VarChar(sql.MAX), movement.expiryDate || null).input('mfgDate', sql.VarChar(sql.MAX), movement.mfgDate || null).input('quantity', sql.VarChar(sql.MAX), movement.quantity).input('id', sql.Int, inventoryId).query(`UPDATE dbo.SupplyInventory SET quantity=quantity+CONVERT(decimal(18,6),@quantity),updatedAt=SYSUTCDATETIME()
             OUTPUT INSERTED.id WHERE id=@id AND quantity<=CONVERT(decimal(18,6),'999999999999.999999')-CONVERT(decimal(18,6),@quantity)`);
-          if (!result.recordset.length) throw Object.assign(new Error('This inventory balance exceeds the supported stock quantity.'), { status: 409 });
+          if (!result.recordset.length) {
+            const error = new Error('This inventory balance exceeds the supported stock quantity.');
+            error.status = 409;
+            throw error;
+          }
         } else {
           const result = await request(scope).input('suppliesId', sql.Int, movement.suppliesId).input('warehouseId', sql.Int, movement.warehouseId)
           .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(sql.MAX), movement.imLot || '').input('qcStatus', sql.NVarChar(sql.MAX), movement.qcStatus || '')
@@ -2299,7 +3759,11 @@ router.post('/receivings/:id/post', async (req, res) => {
     }
     for (const { receiptItemId, ...allocation } of savedData.recordsets[2]) savedItems.get(receiptItemId)?.allocations.push(allocation);
     const saved = [...savedRows.values()][0];
-    if (!saved) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (!saved) {
+      const error = new Error('Receiving receipt could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return { record: saved, alreadyPosted: false };
   });
   res.json(result);
@@ -2307,7 +3771,11 @@ router.post('/receivings/:id/post', async (req, res) => {
 
 router.post('/receivings/:id/cancel', async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw Object.assign(new Error('Enter a valid id.'), { status: 400 });
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
   const user = req.purchasingUser;
   const record = await transaction(async scope => {
     const receiptData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
@@ -2339,9 +3807,17 @@ router.post('/receivings/:id/cancel', async (req, res) => {
     }
     for (const { receiptItemId, ...allocation } of receiptData.recordsets[2]) receiptItems.get(receiptItemId)?.allocations.push(allocation);
     const receipt = [...receiptRows.values()][0];
-    if (!receipt) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (!receipt) {
+      const error = new Error('Receiving receipt could not be found.');
+      error.status = 404;
+      throw error;
+    }
     if (receipt.status === 'cancelled') return receipt;
-    if (receipt.status !== 'draft') throw Object.assign(new Error('Posted receiving receipts cannot be cancelled from the inventory-only system.'), { status: 409 });
+    if (receipt.status !== 'draft') {
+      const error = new Error('Posted receiving receipts cannot be cancelled from the inventory-only system.');
+      error.status = 409;
+      throw error;
+    }
     await request(scope).input('id', sql.Int, id).query("UPDATE dbo.SuppliesReceipts SET status='cancelled',updatedAt=SYSUTCDATETIME() WHERE id=@id");
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'receivings')
@@ -2376,7 +3852,11 @@ router.post('/receivings/:id/cancel', async (req, res) => {
     }
     for (const { receiptItemId, ...allocation } of savedData.recordsets[2]) savedItems.get(receiptItemId)?.allocations.push(allocation);
     const saved = [...savedRows.values()][0];
-    if (!saved) throw Object.assign(new Error('Receiving receipt could not be found.'), { status: 404 });
+    if (!saved) {
+      const error = new Error('Receiving receipt could not be found.');
+      error.status = 404;
+      throw error;
+    }
     return saved;
   });
   res.json({ record });

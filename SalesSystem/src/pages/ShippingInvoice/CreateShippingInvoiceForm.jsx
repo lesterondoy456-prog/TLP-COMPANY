@@ -5,7 +5,16 @@ import { Icon } from '../../components/Icons.jsx';
 import { Modal, Field, FormFooter, ErrorNotice, Badge, PhotoField, roleLabel } from '../../components/UI.jsx';
 import useSave from '../../hooks/useSave.js';
 
-export default function CreateShippingInvoiceForm({ invoices, shippingInvoices, onClose, onSaved }) {
+export default function CreateShippingInvoiceForm({
+  invoices: initialInvoices,
+  shippingInvoices: initialShippingInvoices,
+  onClose,
+  onSaved
+}) {
+  // Keep an open document's choices stable while its surrounding lists refresh.
+  const [choices] = useState(() => ({ invoices: initialInvoices, shippingInvoices: initialShippingInvoices }));
+  const { invoices, shippingInvoices } = choices;
+
   const shipped = new Set(shippingInvoices.map(record => String(record.invoiceId)));
   const eligible = invoices.filter(invoice => !shipped.has(String(invoice.id)));
   const [form, setForm] = useState({ invoiceId: '', shippingDate: today(), carrier: '', trackingNumber: '', notes: '' });

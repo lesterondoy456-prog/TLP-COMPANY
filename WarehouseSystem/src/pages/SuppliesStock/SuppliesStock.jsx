@@ -3,6 +3,7 @@ import { api, dateLabel } from '../../api.js';
 import { Empty, ErrorNotice } from '../../components/UI.jsx';
 import { Icon } from '../../components/Icons.jsx';
 import '../../warehouse.css';
+import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 
 const quantityFormat = new Intl.NumberFormat('en-PH', { maximumFractionDigits: 6 });
 const quantity = value => quantityFormat.format(Number(value) || 0);
@@ -59,9 +60,9 @@ export default function SuppliesStock() {
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
-  const loadMovements = useCallback(async suppliesId => {
+  const loadMovements = useCallback(async (suppliesId, { background = false } = {}) => {
     const request = ++movementSequence.current;
-    setMovementBusy(true);
+    if (!background) setMovementBusy(true);
     setMovementError('');
     try {
       const result = await api('/api/warehouse/inventory/movements?suppliesId=' + suppliesId);
@@ -73,16 +74,16 @@ export default function SuppliesStock() {
     }
   }, []);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async ({ background = false } = {}) => {
     const request = ++requestSequence.current;
-    setLoading(true);
+    if (!background) setLoading(true);
     setError('');
     try {
       const result = await api('/api/warehouse/inventory');
       if (request !== requestSequence.current) return;
       setRecords(result.records || []);
-      setMovements({});
-      if (expandedRef.current != null) loadMovements(expandedRef.current);
+      if (!background) setMovements({});
+      if (expandedRef.current != null) loadMovements(expandedRef.current, { background });
     } catch (error) {
       if (request === requestSequence.current) setError(error.message);
     } finally {
@@ -94,6 +95,8 @@ export default function SuppliesStock() {
     reload();
     return () => { requestSequence.current++; movementSequence.current++; };
   }, [reload]);
+
+  useRealtimeRefresh(() => reload({ background: true }));
 
   function toggle(suppliesId) {
     if (expanded === suppliesId) {

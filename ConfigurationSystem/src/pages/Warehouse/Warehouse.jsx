@@ -1,3 +1,4 @@
+import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import WarehouseForm from './WarehouseForm.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api.js';
@@ -28,19 +29,23 @@ export default function Warehouse({ user, onNotice }) {
   const [dialog, setDialog] = useState(null);
   const [saving, setSaving] = useState(false);
   const sequence = useRef(0);
+  const hasLoaded = useRef(false);
   const admin = user.role === 'admin';
-  const load = useCallback(async () => {
+  const load = useCallback(async (quiet = false) => {
+    const background = quiet === true && hasLoaded.current;
     const id = ++sequence.current;
-    setLoading(true); setError('');
+    if (!background) { setLoading(true); setError(''); }
     try {
       const [definition, result] = await Promise.all([api('/api/configuration/masters'), api('/api/configuration/masters/warehouses')]);
       if (id !== sequence.current) return;
       const module = definition.modules?.find(item => item.kind === kind);
       if (!module) throw new Error('Configuration fields could not be loaded. Please refresh.');
       setMetadata(withConfigurationValidation(module)); setRecords(result.records || []);
-    } catch (failure) { if (id === sequence.current) setError(failure.message); }
+      hasLoaded.current = true; setError('');
+    } catch (failure) { if (id === sequence.current && !background) setError(failure.message); }
     finally { if (id === sequence.current) setLoading(false); }
   }, [kind]);
+  useRealtimeRefresh(() => load(true));
   useEffect(() => { load(); return () => { sequence.current++; }; }, [load]);
   const fields = metadata?.fields || [];
   const readOnly = kind === 'audit-trail' || metadata?.readOnly;

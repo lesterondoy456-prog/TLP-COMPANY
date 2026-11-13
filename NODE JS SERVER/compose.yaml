@@ -7,24 +7,11 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${API_PORT:-5189}:5189"
+      - "0.0.0.0:5189:5189"
+    env_file: .env
     environment:
-      NODE_ENV: production
-      HOST: 0.0.0.0
       PORT: "5189"
-      FRONTEND_ORIGINS: "${FRONTEND_ORIGINS:?Set FRONTEND_ORIGINS in .env}"
-      DB_AUTH: sql
       DB_SERVER: host.docker.internal
-      DB_PORT: "${DB_PORT:-1433}"
-      DB_NAME: "${DB_NAME:-TLPCompany}"
-      DB_USER: "${DB_USER:?Set DB_USER in .env}"
-      DB_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
-      DB_ENCRYPT: "true"
-      DB_TRUST_SERVER_CERTIFICATE: "true"
-      SESSION_SECRET: "${SESSION_SECRET:?Set SESSION_SECRET in .env}"
-      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}"
-      ADMIN_NAME: "${ADMIN_NAME:-Lester}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
   sales-system:
@@ -33,7 +20,7 @@ services:
       context: ../SalesSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${SALES_PORT:-5188}:5188"
+      - "0.0.0.0:5188:5188"
     environment:
       API_PROXY_TARGET: http://nodejs-server:5189
     depends_on:
@@ -45,7 +32,7 @@ services:
       context: ../WarehouseSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${WAREHOUSE_PORT:-5190}:5190"
+      - "0.0.0.0:5190:5190"
     environment:
       API_PROXY_TARGET: http://nodejs-server:5189
     depends_on:
@@ -57,7 +44,7 @@ services:
       context: ../PurchasingSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${PURCHASING_PORT:-5191}:5191"
+      - "0.0.0.0:5191:5191"
     environment:
       API_PROXY_TARGET: http://nodejs-server:5189
     depends_on:
@@ -69,7 +56,7 @@ services:
       context: ../ConfigurationSystem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${CONFIGURATION_PORT:-5192}:5192"
+      - "0.0.0.0:5192:5192"
     environment:
       API_PROXY_TARGET: http://nodejs-server:5189
     depends_on:

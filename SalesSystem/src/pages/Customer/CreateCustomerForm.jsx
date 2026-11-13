@@ -164,13 +164,16 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
       setTab(invalidTab); setFocusTarget(first); setError('Please correct the highlighted fields before saving.'); return;
     }
     const body = Object.fromEntries(Object.keys(TEXT_FIELDS).map(key => [key, String(form[key]).trim()]));
-    Object.assign(body, {
-      deliveryAddresses: form.deliveryAddresses.map(address => address.trim()).filter(Boolean),
-      decimalInPrice: Number(form.decimalInPrice), decimalInTotalPrice: Number(form.decimalInTotalPrice),
-      salesAddressType: form.salesAddressType, drAddressType: form.drAddressType,
-      discount: form.discount === '' ? 0 : Number(form.discount), discountType: form.discountType,
-      includePoInInvoice: form.includePoInInvoice, vatInclusive: form.vatInclusive, isActive: form.isActive,
-    });
+    body.deliveryAddresses = form.deliveryAddresses.map(address => address.trim()).filter(Boolean);
+    body.decimalInPrice = Number(form.decimalInPrice);
+    body.decimalInTotalPrice = Number(form.decimalInTotalPrice);
+    body.salesAddressType = form.salesAddressType;
+    body.drAddressType = form.drAddressType;
+    body.discount = form.discount === '' ? 0 : Number(form.discount);
+    body.discountType = form.discountType;
+    body.includePoInInvoice = form.includePoInInvoice;
+    body.vatInclusive = form.vatInclusive;
+    body.isActive = form.isActive;
     if (form.salesInChargeId !== '__legacy__') body.salesInChargeId = form.salesInChargeId === '' ? null : Number(form.salesInChargeId);
     setBusy(true);
     try { const result = await api(record ? '/api/sales/customers/' + record.id : '/api/sales/customers', { method: record ? 'PUT' : 'POST', body }); onSaved(result); }

@@ -6,11 +6,15 @@ import { Modal, Field, FormFooter, ErrorNotice, Badge, PhotoField, roleLabel } f
 import useSave from '../../hooks/useSave.js';
 
 export default function CreateInvoiceForm({
-  orders,
-  customers,
+  orders: initialOrders,
+  customers: initialCustomers,
   onClose,
   onSaved
 }) {
+  // Keep an open document's choices stable while its surrounding lists refresh.
+  const [choices] = useState(() => ({ orders: initialOrders, customers: initialCustomers }));
+  const { orders, customers } = choices;
+
   const invoice = true;
   const eligible = orders.filter(order => order.status === 'confirmed' && !order.invoiced);
   const [form, setForm] = useState({

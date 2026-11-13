@@ -18,7 +18,7 @@ TLP COMPANY/
 
 ## Run
 
-Requires Node.js 22 or later and SQL Server. Windows integrated authentication also needs Microsoft ODBC Driver 18. The configured local instance is `.\MSSQLSERVER01`.
+Requires Node.js 22 or later and SQL Server with TCP and SQL authentication enabled. `db.js` uses the `mssql` package with a connection object, like LSS. Local development connects to `localhost:1433`; Docker connects to the same Windows SQL Server through `host.docker.internal:1433`. No ODBC driver or connection string is needed.
 
 ## Docker and LAN access
 
@@ -39,11 +39,11 @@ Each frontend container runs its own built React app with Vite preview. The Node
 | PurchasingSystem | http://localhost:5191 |
 | ConfigurationSystem | http://localhost:5192 |
 
-For LAN access, replace `localhost` with this computer's LAN IP. Each frontend uses `@vitejs/plugin-react` and inline Vite proxy entries for `/api`, `/Uploads`, and `/socket.io`, with `changeOrigin: true` and WebSocket proxying for `/socket.io`. The target defaults to `http://localhost:5189`; Docker sets `API_PROXY_TARGET=http://nodejs-server:5189`. The last two paths are proxy configuration only; upload storage and a Socket.IO backend are not implemented.
+For LAN access, replace `localhost` with this computer's LAN IP. Each frontend uses `@vitejs/plugin-react` and inline Vite proxy entries for `/api`, `/Uploads`, and `/socket.io`, with `changeOrigin: true` and WebSocket proxying for `/socket.io`. The target defaults to `http://localhost:5189`; Docker sets `API_PROXY_TARGET=http://nodejs-server:5189`. `/socket.io` carries authenticated live updates; `/Uploads` remains a reserved proxy path without upload storage.
 
-Set `FRONTEND_ORIGINS` in the backend's local `.env` to the comma-separated frontend URLs allowed to call the API, for example `http://localhost:5188,http://localhost:5190,http://localhost:5191,http://localhost:5192`, plus the equivalent LAN URLs. Update these URLs when the LAN IP or published ports change. This allows login through the proxy while rejecting requests from unknown browser origins.
+The four frontend ports and the API port are set directly in `compose.yaml`. Browser API calls use each frontend's same-origin Vite proxy. Every write request sends JSON, including bodyless actions; the backend rejects simple form submissions and does not enable cross-origin CORS requests. There is no frontend-origin list to update when the LAN IP changes.
 
-Sign in separately to each app with its local administrator account. Startup creates an administrator from the server's local `.env` only when that system has none. User accounts and salted password hashes are stored in `SalesUserLogin`, `PurchasingUserLogin`, `WarehouseUserLogin`, and `ConfigurationUserLogin`. Credentials remain in the local environment file.
+Sign in separately to each app with its existing administrator account. User accounts and salted password hashes are stored in `SalesUserLogin`, `PurchasingUserLogin`, `WarehouseUserLogin`, and `ConfigurationUserLogin`. Startup does not create or reset accounts; administrator credentials are not kept in `.env`.
 
 Docker uses the existing Windows SQL Server instance at `host.docker.internal:1433`, database `TLPCompany`. Its dedicated SQL login is scoped to that database; credentials and session configuration come from the local `.env`, which is excluded from the Docker build context and Git. SQL Server must remain running. Business data remains in SQL Server when the app container is restarted or rebuilt.
 
@@ -89,7 +89,7 @@ const salesApi = require('./Api/SalesApi');
 app.use('/api/sales', salesApi);
 ```
 
-A relative Sales route such as `/customers` is available at `/api/sales/customers`. React pages pass that full endpoint explicitly, for example `api('/api/sales/customers')`; the HTTP helper does not prepend a hidden prefix. Each sidebar item has its own named page under `src/pages`, with its forms inside the page folder or beside the page file. Shared layout and UI remain under `src/components`.
+A relative Sales route such as `/customers` is available at `/api/sales/customers`. React pages pass that full endpoint explicitly, for example `api('/api/sales/customers')`; the HTTP helper does not prepend a hidden prefix. Each sidebar item has its own folder under `src/pages`, containing the matching page and descriptively named forms, for example `SalesOrder/SalesOrder.jsx` and `SalesOrder/CreateOrderForm.jsx`. Shared layout and UI remain under `src/components`.
 
 | System | API namespace | User table | Account roles |
 | --- | --- | --- | --- |
@@ -100,11 +100,19 @@ A relative Sales route such as `/customers` is available at `/api/sales/customer
 
 `Api/LoginApiSystem.js` centralizes login, JWT authentication, profile and account management. Password checking and JWT creation are inline in the login endpoint; JWT verification is inline in its namespace middleware. Each namespace retains its own `/auth/login`, `/auth/session`, `/auth/logout`, `/auth/profile`, and `/users` endpoints. Signed HS256 JWT tokens contain the system, audience, user ID and expiry. They are stored in separate HttpOnly cookies scoped to the relevant system; the signing key is derived separately for each system. An account or session from one system does not authenticate another. Configuration masters use `/api/configuration/masters`; other business paths follow their owning system's prefix. Purchasing actor foreign keys reference PurchasingUserLogin. Shared audit records identify the actor's system as well as the account ID.
 
-All SQL files and database/schema checking live under `migration/`: `schema.sql`, `system-accounts.sql`, `configuration-schema.sql`, `erp-schema.sql`, `text-max.sql`, and `run.js`. Backend startup applies these idempotent migrations before listening. Run `npm run migrate` to apply migrations without starting HTTP. The migration runner also creates an administrator from the local environment for each system that has no active administrator; it does not create business records. Backend startup uses the same migration runner. The backend contains the actual local `.env`; no `.env.example` is required.
+All SQL files and database/schema checking live under `migration/`: `schema.sql`, `system-accounts.sql`, `configuration-schema.sql`, `erp-schema.sql`, `text-max.sql`, and `run.js`. Backend startup applies these idempotent migrations before listening. Run `npm run migrate` to apply migrations without starting HTTP. Migrations only manage the database schema; they do not create administrator accounts or business records. A new installation needs its department accounts provisioned in the database before users can sign in. Backend startup uses the same migration runner. The backend contains the actual local `.env`; no `.env.example` is required.
+
+## Realtime updates
+
+Each signed-in frontend maintains its own Socket.IO connection. The existing JWT-protected API issues a short-lived, single-use connection ticket; sockets join only their authenticated system room. Tickets and connection state stay in memory, with no extra database records.
+
+After a successful API save, post, cancel or delete, the server emits an invalidation event. Frontends fetch fresh authorized records in the background and update React state without reloading the document or closing open forms. Burst events are combined, and reconnecting fetches changes missed while offline. Each project owns its `src/hooks/useRealtime.js` implementation.
+
+Purchasing receipt changes refresh Warehouse inventory and receiving movements, related Purchasing monitors refresh together, and Configuration changes refresh dependent views. Events contain only resource names and timestamps; account changes and logout revoke affected realtime connections. Direct edits made outside these APIs do not emit application events.
 
 ## Administrator and configuration
 
-The actual local configuration is `.env` inside this server folder. It contains `ADMIN_USERNAME`, `ADMIN_PASSWORD`, a private session secret, and the SQL Server connection settings. Sign in using those administrator credentials. Passwords in `SalesUserLogin` are stored as salted hashes. The `.env` file is excluded from Git; keep a private backup when moving the application to another computer.
+The local `.env` contains only `PORT`, `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `SESSION_SECRET`. `PORT` is the local Node API port; `DB_SERVER` is `localhost` and `DB_NAME` is `TLPCompany`. The SQL login authenticates the backend to SQL Server; it is separate from department user accounts. `SESSION_SECRET` signs JWTs. Docker overrides the SQL hostname to `host.docker.internal` and uses its fixed API port. The `.env` file is excluded from Git and Docker images; keep a private backup when moving the application to another computer.
 
 The initial administrator is named Lester. Add your mobile number, email, and profile photo through each app's own profile form. Administrators manage accounts in that app's UserLogin screen. Sales retains the following account permissions:
 
@@ -160,4 +168,4 @@ npm run test:browser
 
 The default tests run against frontend form validation, the actual receiving SQL route with an in-memory transactional database adapter, and mocked browser API routes. They do not connect to SQL or save business records. HTTP checks use an in-process Express app and invalid requests; Vite proxy checks use a fake local API. Browser tests use installed Google Chrome; run `npm run build` inside each frontend first. Screenshots are saved under `.qa/screenshots/`.
 
-Historical SQL integration suites remain behind the explicit `test:sql` and `test:browser:sql` scripts. They still target the earlier endpoint/hosting layout and need adaptation before use with these independent apps. They create disposable databases and business fixtures; they were not run for this update because test transactions were prohibited. The verified commands above use only pure and mocked tests.
+The obsolete ODBC integration scripts for the earlier combined app have been retired. The maintained suites use only isolated fake data and do not create databases or save transactions to SQL Server.

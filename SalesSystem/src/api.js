@@ -4,11 +4,15 @@ export const SYSTEM = 'sales';
 
 export async function api(path, options = {}) {
   validateSalesRequest(path, options);
+  const method = (options.method || 'GET').toUpperCase();
+  const write = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+  const headers = new Headers(options.headers);
+  if (write) headers.set('Content-Type', 'application/json');
   let response;
   try {
     response = await fetch(path, {
-      credentials: 'same-origin', ...options,
-      ...(options.body ? { headers: { 'Content-Type': 'application/json', ...options.headers }, body: JSON.stringify(options.body) } : {}),
+      credentials: 'same-origin', ...options, method, headers,
+      ...(write ? { body: JSON.stringify(options.body ?? {}) } : {}),
     });
   } catch {
     throw new Error('Cannot connect to the server. Check that NODE JS SERVER is running, then try again.');

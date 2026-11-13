@@ -4,6 +4,7 @@ import { APP } from '../../appSettings.js';
 import { Avatar, Badge, ErrorNotice, roleLabel } from '../../components/UI.jsx';
 import { Icon } from '../../components/Icons.jsx';
 import UserAccountForm from './UserAccountForm.jsx';
+import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 
 export default function WarehouseUserLogin({ user, onUser, onNotice }) {
   const [records, setRecords] = useState([]);
@@ -14,9 +15,9 @@ export default function WarehouseUserLogin({ user, onUser, onNotice }) {
   const [dialog, setDialog] = useState(null);
   const sequence = useRef(0);
 
-  async function load() {
+  async function load({ background = false } = {}) {
     const request = ++sequence.current;
-    setLoading(true);
+    if (!background) setLoading(true);
     setError('');
     try {
       const result = await api('/api/warehouse/users');
@@ -32,6 +33,8 @@ export default function WarehouseUserLogin({ user, onUser, onNotice }) {
     if (user.role === 'admin' && user.system === SYSTEM) load();
     return () => { sequence.current++; };
   }, [user.role, user.system]);
+
+  useRealtimeRefresh(() => load({ background: true }));
 
   function saved(record) {
     const ownAccount = record.system === user.system && record.id === user.id;

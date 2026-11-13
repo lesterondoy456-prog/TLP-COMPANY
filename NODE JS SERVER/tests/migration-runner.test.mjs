@@ -1,87 +1,80 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { scrypt as scryptCallback } from 'node:crypto';
-import { promisify } from 'node:util';
 import test from 'node:test';
 import { MIGRATION_FILES, runMigrations } from '../migration/run.js';
 
-function fakePools({ failBatch = 0, databaseExists = true, existingAdmins = true, failInsert = 0 } = {}) {
+function fakePools({ failBatch = 0, databaseExists = true, failCreate = false } = {}) {
   const events = [];
   const batches = [];
-  const inserts = [];
-  const createPool = database => ({
-    async connect() { events.push(['connect', database]); return this; },
-    async close() { events.push(['close', database]); },
-    on() { return this; },
-    request() {
-      const inputs = {};
-      return {
-        input(name, _type, value) { inputs[name] = value; return this; },
-        async query(statement) {
-          events.push(['query', database, statement]);
-          if (database === 'master') return { recordset: databaseExists ? [{ database_id: 1 }] : [] };
-          if (/^SELECT TOP\(1\) id FROM dbo\.\w+UserLogin WHERE role='admin' AND isActive=1$/.test(statement)) return { recordset: existingAdmins ? [{ id: 19, username: 'renamed_admin', role: 'admin', isActive: true }] : [] };
-          if (statement.startsWith('INSERT INTO dbo.')) {
-            inserts.push({ statement, inputs });
-            if (inserts.length === failInsert) throw new Error('Mock administrator bootstrap failure');
+  const createPool = database => {
+    events.push(['pool', database]);
+    return {
+      async connect() { events.push(['connect', database]); return this; },
+      async close() { events.push(['close', database]); },
+      on() { return this; },
+      request() {
+        const inputs = {};
+        return {
+          input(name, _type, value) { inputs[name] = value; return this; },
+          async query(statement) {
+            events.push(['query', database, statement, inputs]);
+            assert.equal(database, 'master', 'Schema migrations must not inspect, create or reset user accounts.');
+            if (statement === 'SELECT database_id FROM sys.databases WHERE name = @name') return { recordset: databaseExists ? [{ database_id: 1 }] : [] };
+            assert.match(statement, /^CREATE DATABASE \[/);
+            if (failCreate) throw new Error('Mock database creation failure');
             return { recordset: [] };
-          }
-          throw new Error('Unexpected query in fake migration pool.');
-        },
-        async batch(statement) {
-          batches.push(statement);
-          if (batches.length === failBatch) throw new Error('Mock migration failure');
-          return {};
-        },
-      };
-    },
-  });
-  return { createPool, events, batches, inserts, sql: { NVarChar: length => ({ length }), VarChar: length => ({ length }) } };
+          },
+          async batch(statement) {
+            batches.push(statement);
+            if (batches.length === failBatch) throw new Error('Mock migration failure');
+            return {};
+          },
+        };
+      },
+    };
+  };
+  return { createPool, events, batches, sql: { MAX: -1, NVarChar: length => ({ length }) } };
 }
 
-test('migration runner reads the relocated SQL files in dependency order using only injected fake pools', async () => {
+test('migration runner applies the five SQL files in order without querying or changing account records', async () => {
   const fake = fakePools();
   await runMigrations({ database: 'MockMigrationDatabase', ...fake });
   assert.deepEqual([...MIGRATION_FILES], ['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'text-max.sql']);
   const expected = await Promise.all(MIGRATION_FILES.map(filename => readFile(new URL('../migration/' + filename, import.meta.url), 'utf8')));
   assert.deepEqual(fake.batches, expected);
+  assert.deepEqual(fake.events.filter(event => event[0] === 'query').map(event => event[1]), ['master']);
   assert.ok(fake.events.some(event => event[0] === 'close' && event[1] === 'master'));
   assert.equal(fake.events.some(event => event[0] === 'close' && event[1] === 'MockMigrationDatabase'), false);
-  assert.deepEqual(fake.inserts, [], 'An existing active administrator, including a renamed account, must prevent bootstrap.');
 });
 
-test('migration failure closes its injected pool and invalid database names never reach a pool', async () => {
-  const fake = fakePools({ failBatch: 2 });
-  await assert.rejects(runMigrations({ database: 'MockMigrationDatabase', ...fake }), /Mock migration failure/);
-  assert.equal(fake.batches.length, 2);
-  assert.ok(fake.events.some(event => event[0] === 'close' && event[1] === 'MockMigrationDatabase'));
+test('an absent database is created with an escaped identifier but no administrator is provisioned', async () => {
+  const fake = fakePools({ databaseExists: false });
+  await runMigrations({ database: 'Mock]MigrationDatabase', ...fake });
+  const queries = fake.events.filter(event => event[0] === 'query');
+  assert.equal(queries[0][3].name, 'Mock]MigrationDatabase');
+  assert.equal(queries[1][2], 'CREATE DATABASE [Mock]]MigrationDatabase]');
+  assert.equal(fake.batches.length, MIGRATION_FILES.length);
+  assert.ok(queries.every(event => event[1] === 'master'));
+});
+
+test('creation and migration failures close their fake pools and invalid names reach no pool', async () => {
+  const creation = fakePools({ databaseExists: false, failCreate: true });
+  await assert.rejects(runMigrations({ database: 'MockMigrationDatabase', ...creation }), /Mock database creation failure/);
+  assert.ok(creation.events.some(event => event[0] === 'close' && event[1] === 'master'));
+  assert.equal(creation.events.some(event => event[0] === 'pool' && event[1] === 'MockMigrationDatabase'), false);
+  assert.equal(creation.batches.length, 0);
+  const migration = fakePools({ failBatch: 2 });
+  await assert.rejects(runMigrations({ database: 'MockMigrationDatabase', ...migration }), /Mock migration failure/);
+  assert.equal(migration.batches.length, 2);
+  assert.ok(migration.events.some(event => event[0] === 'close' && event[1] === 'MockMigrationDatabase'));
   const invalid = fakePools();
   await assert.rejects(runMigrations({ database: 'Mock;DROP', ...invalid }), /Invalid DB_NAME/);
   assert.deepEqual(invalid.events, []);
 });
 
-test('missing administrators bootstrap only four own-login accounts with separately salted hashes in fake pools', async () => {
-  const fake = fakePools({ existingAdmins: false });
-  await runMigrations({ database: 'MockMigrationDatabase', ...fake, env: { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'admin123', ADMIN_NAME: 'Mock Administrator' } });
-  assert.equal(fake.inserts.length, 4);
-  assert.deepEqual(fake.inserts.map(row => row.statement.match(/INSERT INTO dbo\.(\w+)/)[1]).sort(), ['SalesUserLogin', 'PurchasingUserLogin', 'WarehouseUserLogin', 'ConfigurationUserLogin'].sort());
-  const salts = new Set();
-  const scrypt = promisify(scryptCallback);
-  for (const { statement, inputs } of fake.inserts) {
-    assert.match(statement, /'admin'/);
-    assert.equal(inputs.username, 'admin');
-    assert.equal(inputs.name, 'Mock Administrator');
-    assert.match(inputs.passwordHash, /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/);
-    const [, salt, hash] = inputs.passwordHash.split('$');
-    salts.add(salt);
-    assert.equal((await scrypt('admin123', salt, 64)).toString('hex'), hash);
-  }
-  assert.equal(salts.size, 4);
-});
-
-test('administrator bootstrap failure closes the fake target pool', async () => {
-  const fake = fakePools({ existingAdmins: false, failInsert: 1 });
-  await assert.rejects(runMigrations({ database: 'MockMigrationDatabase', ...fake, env: { ADMIN_PASSWORD: 'admin123' } }), /Mock administrator bootstrap failure/);
-  assert.equal(fake.inserts.length, 1);
-  assert.ok(fake.events.some(event => event[0] === 'close' && event[1] === 'MockMigrationDatabase'));
+test('retired bootstrap configuration is never read and schema scripts contain no account-record mutations', async () => {
+  const fake = fakePools();
+  const retiredEnvironment = new Proxy({}, { get() { throw new Error('Migration must not read administrator configuration.'); } });
+  await runMigrations({ database: 'MockMigrationDatabase', ...fake, env: retiredEnvironment });
+  for (const schema of fake.batches) assert.doesNotMatch(schema, /\b(?:INSERT\s+(?:INTO\s+)?|UPDATE\s+|DELETE\s+(?:FROM\s+)?|MERGE\s+(?:INTO\s+)?)dbo\.(?:Sales|Purchasing|Warehouse|Configuration)UserLogin\b/i);
 });
