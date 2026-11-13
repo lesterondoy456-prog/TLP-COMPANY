@@ -1,0 +1,70 @@
+{
+  "observedAt": "2026-11-13",
+  "method": "Read-only inspection of the native CAS application through Windows UI. Blank forms and existing monitoring rows were inspected without typing, saving, posting, cancelling, deleting, or printing business records.",
+  "scope": ["SalesSystem", "PurchasingSystem", "WarehouseSystem inventory view", "ConfigurationSystem"],
+  "excluded": ["Production", "Supplies Adjustment", "Supplies Issuance", "Supplies Return"],
+  "product": {
+    "tabs": ["Basic Info", "Customer", "Inventory Sched", "Link Supplies"],
+    "basic": ["Product Id read-only", "Code required", "Rev default 0", "Description", "UOP required", "UOP 2", "Qty per UOP 2", "MOQ", "SPQ", "VAT Customer Setting/Inclusive/Exclusive", "Unit Cost", "Selling Price", "Currency required", "ordered Process rows", "Model", "Category", "Plan Type", "Color", "Divisor", "Remarks", "Thickness", "Weight", "Product Header", "Office checkboxes", "Tag Color"],
+    "customer": ["Name", "Approval Date", "EOL Date", "Approval Remarks", "EOL Remarks"],
+    "inventory": { "setup": ["", "Monthly", "Quarterly"], "columns": ["Sched date picker", "Month text"] },
+    "supplies": ["Supplies Name", "Supplies Description derived", "Qty", "UOM derived"]
+  },
+  "supplier": {
+    "fields": ["Supplier Id read-only", "Name required", "Short Name required", "Business Style required", "Office Address required", "Remarks", "TIN", "Contact Person", "Email Address", "Country Of Origin", "Country", "Phone No.", "Fax No.", "Decimal in Price required default 2", "Decimal in Total Price required default 2", "Payment Term", "VAT Code required", "Inclusive/Exclusive default Exclusive", "Tax Code"]
+  },
+  "supplies": {
+    "tabs": ["Basic Info", "Inventory Sched"],
+    "fields": ["Supplies Id read-only", "Product Link", "Maker", "Name required", "Description", "Remarks", "Office checkboxes", "Minimum Stock", "Color", "Thickness", "Unit of Measure required", "Net Weight", "Weight Unit", "Category"],
+    "supplierColumns": ["Supplier", "Moq", "Price", "Curr", "Remarks"],
+    "inventory": { "setup": ["", "Monthly", "Quarterly"], "columns": ["Sched date", "Month text"] },
+    "stock": "No opening-stock field was observed. Receiving supplies does not create finished-product inventory."
+  },
+  "purchaseRequest": {
+    "header": ["Branch current company", "PR #", "PR Date", "PR Needed Date", "Remarks", "Prepared By", "Requested By", "Requested Dept", "Checked By", "Approved By", "Approved By (2nd)", "Status"],
+    "columns": ["Sort", "Supplies Id", "Supplies Code", "Description", "Qty", "UOM", "Needed Date", "Remarks"],
+    "monitorColumns": ["Branch", "PR #", "PR Date", "Request By", "Dept", "Remarks Header", "Date Needed", "Qty", "Balance", "Supplies Name", "Supplies Description", "Remarks", "UOM", "PO #"],
+    "monitorActions": ["Refresh", "New", "Print", "Post", "Close"],
+    "statuses": ["Not Yet Posted", "Posted", "Cancelled", "Closed"]
+  },
+  "purchaseOrder": {
+    "header": ["Branch required", "PO # read-only", "Supplier required", "Contact Person derived", "Address derived", "PO Date required", "Delivery Date required", "Currency required", "Rate required default 1", "Payment Term required", "Shipment required", "Supplies Category", "VAT Code required", "Gross Amt", "Disc. Amt", "Vat Amt", "Net Amount", "Amount", "Re-Prints read-only", "Status", "Delivery Address", "Remarks", "Load Open PR"],
+    "shipmentChoices": ["By Air", "By Land", "By Boat", "N/A"],
+    "columns": ["Sort", "Supplies Id", "Supplies Name", "Supplies Description", "UOP", "Qty", "Price", "Curr", "Gross Amount", "Disc Rate (%)", "Disc Amount", "VAT %", "Net Amount", "Amount", "PR No"],
+    "monitor": "Line monitoring includes Qty and Bal. Existing source rows with Qty greater than Bal confirm partial fulfillment. PR reference is displayed per PO line."
+  },
+  "receiving": {
+    "title": "Supplies RR",
+    "tabs": ["SRR Info", "SRR Summary"],
+    "header": ["Branch required", "SRR # read-only", "SRR Date required", "DR #", "Supplier required", "Address derived", "PEZA Ref #", "Currency required", "Rate required default 1", "SI # required", "SI Date", "PO Ref #", "VAT Code required", "Gross Amt", "Disc. Amt", "Vat Amt", "Net Amount", "Amount", "Re-Prints read-only", "Status", "Remarks", "Received By"],
+    "summary": ["Supplies Name", "Supplies Description", "Qty", "Balance", "UOP", "SRR Qty", "Allocated Qty", "Balance Qty"],
+    "allocationColumns": ["Qty", "Exp. Date", "MFG Date", "IMLot #", "QC Status", "Warehouse", "Location"],
+    "posting": "Save and Post are separate controls. The application implementation posts a complete warehouse allocation atomically and updates PO receipt balances. Actual CAS posting effects were not exercised."
+  },
+  "warehouse": {
+    "summary": ["Category", "Supplies Name", "Description", "UOP", "Total Stock"],
+    "expandedDetail": ["Form", "Branch", "Ref No.", "Received Date", "Supplies Name", "Supplies Description", "UOP", "Qty", "Available Qty", "Warehouse"],
+    "scope": "Read-only supplies totals, storage allocations, and receipt history."
+  },
+  "configuration": {
+    "ATC": ["Code", "Description", "Rate (%)", "Account Code", "Deleted Date"],
+    "Bank": ["Name", "Short Name", "Account No.", "Account Name", "Swift Code", "Branch Name", "Address", "Account Type", "Curr", "Account", "Deleted Date"],
+    "Country": ["Name", "Deleted Date"],
+    "Currency": ["Name", "Short Name", "Check Name", "Symbol", "Default", "Deleted Date"],
+    "Customer Category": ["Name", "Deleted Date"],
+    "Payment Term": ["Description", "Days", "Month", "Date Of Month", "Day Of Month", "DueDate(EOM)", "For Customer", "For Supplier", "Deleted Date"],
+    "Product Category": ["Product Category", "Deleted Date"],
+    "Supplies Category": ["Name", "Deleted Date"],
+    "Unit of Product": ["Description", "Short Name", "For Product", "For Supplies", "Decimal", "Deleted Date"],
+    "VAT": ["Code", "Description", "Type", "Class", "Rate (%)", "Prod. VAT Ind.", "Deleted Date", "Account Code"],
+    "Warehouse": ["Code", "Description", "Deleted Date"],
+    "Warehouse Location": ["Code", "Description", "Deleted Date"],
+    "Audit Trail": "Read-only changes recorded by the TLP web application; CAS business data is not imported."
+  },
+  "limitations": [
+    "CAS financial calculations, printing, posting, unposting, cancellation and persistence were not executed.",
+    "QC Status choices were not visible without a receiving line; preserve the entered label without inventing a QC process.",
+    "No automatic conversion between supplies and finished products is included while Production is excluded.",
+    "Configuration records are not seeded from the source company's business data."
+  ]
+}

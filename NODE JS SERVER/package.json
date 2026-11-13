@@ -1,0 +1,28 @@
+{
+  "name": "tlp-company-sales-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node dev.mjs",
+    "server": "node server.js",
+    "build": "npm --prefix ../SalesSystem run build",
+    "start": "node server.js --production",
+    "test": "node --test tests/roles.policy.test.mjs tests/configuration.policy.test.mjs tests/product.validation.test.mjs tests/purchasing-workflow.test.mjs tests/sales-pricing.test.mjs",
+    "test:browser": "node --test tests/customer-form.browser.test.mjs tests/user-roles.browser.test.mjs tests/product-form.browser.test.mjs tests/configuration.browser.test.mjs tests/purchasing.browser.test.mjs tests/sales-currency.browser.test.mjs",
+    "test:sql": "node --test tests/sales.integration.test.mjs",
+    "test:browser:sql": "node --test tests/sales.browser.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "mssql": "12.7.14"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0"
+  },
+  "optionalDependencies": {
+    "msnodesqlv8": "^6.2.2"
+  }
+}

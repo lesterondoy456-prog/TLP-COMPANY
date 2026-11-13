@@ -1,0 +1,314 @@
+{
+  "customer": {
+    "list": [
+      "Name",
+      "Short Name",
+      "Business Style",
+      "Address",
+      "TIN",
+      "Contact Person",
+      "Phone No",
+      "Fax No",
+      "Country Of Origin",
+      "Country",
+      "Email Address",
+      "Payment Term",
+      "Category",
+      "Decimal In Price",
+      "Decimal In Total Price",
+      "Vat Incl.",
+      "VAT",
+      "Tax",
+      "Sales Address",
+      "Last Sales Date",
+      "DR Address",
+      "Remarks"
+    ],
+    "basic": [
+      "Company Id (generated/read-only)",
+      "Sales In-charge",
+      "Name required",
+      "Short Name required",
+      "Business Style required",
+      "Office Address required",
+      "multiple Delivery Addresses",
+      "TIN",
+      "Contact Person",
+      "Email Address",
+      "Country Of Origin",
+      "Country",
+      "Fax No",
+      "Phone No",
+      "Category",
+      "Remarks"
+    ],
+    "salesDR": [
+      "Sales Name required",
+      "Decimal in Price required default2",
+      "Decimal in Total Price required default2",
+      "Payment Term",
+      "Sales Address office/delivery",
+      "Discount value and Percent type",
+      "Include P.O. in Invoice",
+      "DR Name required",
+      "DR Address office/delivery",
+      "VAT Code required",
+      "Inclusive/Exclusive VAT",
+      "Tax Code"
+    ],
+    "actions": [
+      "name filter",
+      "status All filter",
+      "New",
+      "Refresh",
+      "Print",
+      "Save/Close in entry"
+    ]
+  },
+  "product": {
+    "basic": [
+      "Product Id read-only",
+      "Code required",
+      "Rev default0",
+      "Description",
+      "UOP required",
+      "UOP2",
+      "Qty per UOP2",
+      "MOQ",
+      "SPQ",
+      "VAT customer setting/inclusive/exclusive",
+      "Unit Cost",
+      "Selling Price",
+      "Currency required",
+      "Process grid",
+      "Model",
+      "Category",
+      "Plan Type",
+      "Color",
+      "Divisor",
+      "Remarks",
+      "Thickness",
+      "Weight",
+      "Product Header",
+      "Office",
+      "Tag Color"
+    ],
+    "customer": [
+      "Customer Name",
+      "Approval Date",
+      "EOL Date",
+      "Approval Remarks",
+      "EOL Remarks"
+    ],
+    "inventory": [
+      "Inventory Setup",
+      "Schedule/Month grid"
+    ],
+    "linkedSupplies": [
+      "Supplies Name",
+      "Supplies Description",
+      "Qty",
+      "UOM"
+    ],
+    "actions": [
+      "product-name/status filter",
+      "New",
+      "Refresh",
+      "Print",
+      "Save/Close entry"
+    ]
+  },
+  "salesOrder": {
+    "filters": [
+      "SO number",
+      "Product Name",
+      "Covered Date from/to",
+      "Branch",
+      "Status All/Posted/Not Yet Posted/Cancelled"
+    ],
+    "columns": [
+      "SO #",
+      "Branch",
+      "Customer",
+      "Prepared By",
+      "SO Date",
+      "Ref #",
+      "Product Name",
+      "Product Description",
+      "Unit Price",
+      "Qty",
+      "Bal Qty",
+      "Gross Amount",
+      "Disc. Amount",
+      "Net Amount",
+      "VAT Amount",
+      "Amount",
+      "Delivery Date"
+    ],
+    "actions": [
+      "Refresh",
+      "New (not used)",
+      "Print (not used)",
+      "Post (not used)",
+      "Unpost permission control observed",
+      "Close"
+    ],
+    "limit": "No records shown for current November2026 filters; no transaction created or opened."
+  },
+  "invoice": {
+    "filters": [
+      "Sales Invoice number",
+      "Product Name",
+      "Covered Date from/to",
+      "Transaction Covered Date from/to",
+      "Branch",
+      "Status"
+    ],
+    "columns": [
+      "SI #",
+      "Branch",
+      "Bill To",
+      "Prepared By",
+      "SI Transaction Date",
+      "Due Date",
+      "Currency",
+      "Gross Amount",
+      "Discount Amount",
+      "Net Amount",
+      "VAT Amount",
+      "Total Amount",
+      "Credit Amount",
+      "Balance"
+    ],
+    "actions": [
+      "Refresh",
+      "New (not used)",
+      "Print (not used)",
+      "Post (not used)",
+      "Unpost permission control observed",
+      "Close"
+    ],
+    "limit": "No records displayed; posting, saving, print output, and transaction entry not executed."
+  },
+  "deliveryReceipt": {
+    "filters": [
+      "DR number",
+      "Product Name",
+      "DR Date from/to",
+      "Branch",
+      "Status All/Posted/Not Yet Posted/Cancelled"
+    ],
+    "columns": [
+      "Branch",
+      "DR #",
+      "Customer Name",
+      "Product Code",
+      "DR Date",
+      "Remarks",
+      "Description",
+      "UOP",
+      "Qty",
+      "Allocated Qty",
+      "Detail Remarks",
+      "SO No."
+    ],
+    "actions": [
+      "Refresh",
+      "New (not used)",
+      "Print (not used)",
+      "Post (not used)",
+      "Close"
+    ],
+    "legend": [
+      "Cancelled",
+      "Closed"
+    ],
+    "limit": "No records displayed; no transaction entry, save, post or print executed."
+  },
+  "shippingInvoice": {
+    "filters": [
+      "Shipping Invoice number",
+      "Product Name",
+      "Covered Date from/to",
+      "Branch",
+      "Status"
+    ],
+    "columns": [
+      "Shipping Invoice #",
+      "Branch",
+      "Prepared By",
+      "Customer Name",
+      "Invoice Date",
+      "Due Date",
+      "Product Name",
+      "Product Description",
+      "Qty",
+      "UOM",
+      "Price",
+      "Currency",
+      "Gross Amount",
+      "Discount Rate",
+      "Discount Amount",
+      "VAT Amount",
+      "Net Amount",
+      "Total Amount"
+    ],
+    "actions": [
+      "Refresh",
+      "New (not used)",
+      "Print (not used)",
+      "Post (not used)",
+      "Close"
+    ],
+    "limit": "Monitor has no records under current filters. Entry form, source-document linkage, saving, posting and print output remain unverified."
+  },
+  "inspection": {
+    "date": "2026-11-13",
+    "mode": "read-only inspection of live native CAS via Windows UI",
+    "modulesOpened": [
+      "Customer",
+      "Product",
+      "Sales Order",
+      "Invoice",
+      "Delivery Receipt",
+      "Shipping Invoice"
+    ],
+    "blankMasterFormsInspected": [
+      "Customer Basic Info and Sales/DR",
+      "Product Basic Info, Customer, Inventory Sched, Link Supplies"
+    ],
+    "transactionActionsNotExecuted": [
+      "New sales order/invoice/delivery/shipping transaction",
+      "Save",
+      "Post",
+      "Unpost",
+      "Cancel transaction",
+      "Delete",
+      "Print"
+    ],
+    "typedBusinessData": false,
+    "limitations": [
+      "No transaction records displayed in currently selected November2026 filters.",
+      "Customer and product blank forms were inspected and closed unchanged; no entries were typed or saved.",
+      "Visible controls and columns are observations, not proof of calculation, save, posting, fulfillment or printing behavior.",
+      "Shipping invoice entry fields and source linkage have not been verified."
+    ]
+  },
+  "comparisonWithCurrentWebSystem": {
+    "confirmedMissingFieldsOrControls": [
+      "Customer short name, business style, TIN, multiple delivery addresses, sales/DR names, sales in-charge, terms and VAT/tax settings.",
+      "Product revision, secondary unit/conversion quantity, MOQ/SPQ, VAT mode, unit cost, currency, customer approval and EOL information.",
+      "Sales transaction date/status/branch filters, prepared-by/reference fields and separate Post controls.",
+      "Gross/discount/net/VAT totals and invoice credit amount fields.",
+      "Sales order balance quantity and delivery allocated quantity/detail remarks."
+    ],
+    "notYetValidated": [
+      "Transaction entry fields and required source-document relationships.",
+      "Whether partial invoicing or partial delivery is supported and under which rules.",
+      "Actual Post/Unpost/cancellation permissions and persistence effects.",
+      "Shipping Invoice source linkage and calculation behavior; current web carrier/tracking fields were not observed in the CAS monitor.",
+      "Actual print templates and saved-transaction calculation behavior."
+    ],
+    "constraint": "No schema, business records, source code, or Docker deployment changes made during this inspection."
+  }
+}
