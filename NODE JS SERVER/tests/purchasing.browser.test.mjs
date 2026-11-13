@@ -44,6 +44,7 @@ test('independent Purchasing and Warehouse apps share mocked receipt state witho
     for (const marker of await emptyMaster.locator('.required-mark').all()) {
       assert.equal(await marker.evaluate(element => getComputedStyle(element).color), 'rgb(255, 113, 130)', 'CAS-required master markers must be red in dark mode.');
     }
+    if (master.page === 'Supplies') for (const label of ['Minimum Stock', 'Thickness', 'Net Weight']) await expect(emptyMaster.getByLabel(label, { exact: true })).toHaveValue('');
     await emptyMaster.getByRole('button', { name: master.save, exact: true }).click();
     await expect(emptyMaster).toBeVisible();
     await expect(emptyMaster.getByLabel('Name *', { exact: true })).toBeFocused();
@@ -68,6 +69,8 @@ test('independent Purchasing and Warehouse apps share mocked receipt state witho
   await save('Save purchase request');
   await expect(page.getByRole('cell', { name: 'PR-MOCK-001', exact: true })).toBeVisible();
   assert.equal(purchasing.writes[0].body.items[0].quantity, '2');
+  for (const key of ['checkedBy', 'approvedBy', 'approvedBy2', 'remarks']) assert.equal(purchasing.writes[0].body[key], null);
+  assert.equal(purchasing.writes[0].body.items[0].remarks, null);
   await post('purchase request');
   await expect(page.getByRole('cell', { name: 'Posted', exact: true })).toBeVisible();
   await screenshot('purchase-request-monitor-mocked.png');
@@ -95,6 +98,9 @@ test('independent Purchasing and Warehouse apps share mocked receipt state witho
   assert.equal(poWrite.body.items[0].requestItemId, 100);
   assert.equal(poWrite.body.items[0].unitPrice, '0.115300');
   assert.equal(poWrite.body.items[0].currency, 'PHP');
+  assert.equal(poWrite.body.items[0].discountRate, null);
+  assert.equal(poWrite.body.remarks, null);
+  assert.equal(poWrite.body.deliveryAddress, null);
   await post('purchase order');
   await expect(page.getByRole('cell', { name: 'PO-MOCK-001', exact: true })).toBeVisible();
   await screenshot('purchase-order-monitor-mocked.png');
@@ -117,6 +123,9 @@ test('independent Purchasing and Warehouse apps share mocked receipt state witho
   }
   await screenshot('receiving-allocations-mocked.png');
   await save('Save receiving receipt');
+  const receiptWrite = purchasing.writes.find(write => write.method === 'POST' && write.pathname === '/api/receivings');
+  for (const key of ['drNumber', 'pezaReference', 'remarks']) assert.equal(receiptWrite.body[key], null);
+  assert.equal(receiptWrite.body.items[0].allocations[0].qcStatus, null);
   assert.deepEqual(purchasing.snapshot().inventory, {}, 'Saving a draft must not change stock.');
   await page.getByRole('button', { name: 'Post', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Post receiving receipt', exact: true });

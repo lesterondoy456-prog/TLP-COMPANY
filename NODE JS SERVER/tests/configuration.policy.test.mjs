@@ -45,8 +45,8 @@ test('unit precision and payment-term calendar controls accept only supported va
   assert.deepEqual(validateConfiguration('units', unit), { description: 'Piece', shortName: 'pc', forProduct: true, forSupplies: false, decimal: 6, isActive: true });
   for (const invalid of [{ decimal: 7 }, { decimal: -1 }, { decimal: 1.5 }, { shortName: '' }, { forProduct: 1 }]) rejects400(() => validateConfiguration('units', { ...unit, ...invalid }));
   const term = validateConfiguration('payment-terms', { description: '30 DAYS', days: 30, dateOfMonth: 31, dueDateEom: true, forCustomer: true });
-  assert.equal(term.month, 0);
-  assert.equal(term.dayOfMonth, 0);
+  assert.equal(term.month, null);
+  assert.equal(term.dayOfMonth, null);
   assert.equal(term.forSupplier, false);
   for (const invalid of [{ days: -1 }, { days: 1.5 }, { dateOfMonth: 32 }, { dayOfMonth: -1 }, { dueDateEom: 'false' }]) rejects400(() => validateConfiguration('payment-terms', { description: 'Terms', ...invalid }));
 });
@@ -63,7 +63,7 @@ test('bank and currency fields roundtrip without accepting writable audit or ide
   assert.equal(bank.isActive, false);
   for (const readonly of ['id', 'deletedDate', 'createdAt']) assert.equal(Object.hasOwn(bank, readonly), false);
   assert.deepEqual(validateConfiguration('currencies', { name: 'Philippine Peso', shortName: 'PHP', symbol: '₱', isDefault: true }), {
-    name: 'Philippine Peso', shortName: 'PHP', checkName: '', symbol: '₱', isDefault: true, isActive: true,
+    name: 'Philippine Peso', shortName: 'PHP', checkName: null, symbol: '₱', isDefault: true, isActive: true,
   });
 });
 
@@ -93,4 +93,51 @@ test('non-admin configuration writes are rejected before any transaction or data
   await assert.rejects(call('POST', { system: 'configuration', role: 'admin' }, 'audit-trail'), error => error.status === 405);
   await assert.rejects(call('DELETE', { system: 'configuration', role: 'admin' }, 'audit-trail'), error => error.status === 405);
   assert.equal(databaseCalls, 0);
+});
+
+test('configuration API stores absent optional values as NULL and enforces former SQL checks', async () => {
+  let record;
+  let writes = 0;
+  const database = {
+    sql: new Proxy({}, { get: () => () => ({}) }),
+    transaction: async work => work({}),
+    request: () => {
+      const values = {};
+      return {
+        input(key, type, value) { values[key] = value; return this; },
+        async query(statement) {
+          if (statement.startsWith('SELECT ')) return { recordset: record ? [structuredClone(record)] : [] };
+          if (statement.startsWith('INSERT INTO dbo.AuditTrail')) { assert.match(statement, /createdAt\).*SYSUTCDATETIME\(\)/); return { recordset: [] }; }
+          writes++;
+          if (statement.startsWith('INSERT INTO ')) assert.match(statement, /createdAt,updatedAt\).*SYSUTCDATETIME\(\),SYSUTCDATETIME\(\)/);
+          record = { ...record, ...values, id: 101 };
+          return { recordset: [{ id: 101 }] };
+        },
+      };
+    },
+  };
+  const router = loadRouterWithDatabase('configuration', database);
+  const call = (method, kind, body) => invokeRoute(router, method, method === 'POST' ? '/masters/:kind' : '/masters/:kind/:id', {
+    configurationUser: { id: 1, system: 'configuration', role: 'admin', name: 'Mock Administrator' },
+    params: { kind, id: '101' }, body, get: () => 'application/json',
+  });
+  const created = (await call('POST', 'payment-terms', { description: 'Mock Terms' })).body.record;
+  for (const key of ['days', 'month', 'dateOfMonth', 'dayOfMonth']) assert.equal(created[key], null);
+  assert.equal(created.forSupplier, false);
+  const edited = (await call('PUT', 'payment-terms', { days: 0, month: '' })).body.record;
+  assert.equal(edited.days, 0, 'An explicitly supplied zero must be retained.');
+  assert.equal(edited.month, null);
+  const beforeInvalid = writes;
+  for (const method of ['POST', 'PUT']) for (const [kind, body] of [
+    ['atc', { code: 'MOCK', description: 'Mock', rate: 101 }],
+    ['vat-codes', { code: 'MOCK', description: 'Mock', rate: -1 }],
+    ['vat-codes', { code: 'MOCK', description: 'Mock', type: 'forged' }],
+    ['vat-codes', { code: 'MOCK', description: 'Mock', class: 'forged' }],
+    ['payment-terms', { description: 'Mock', days: -1 }],
+    ['payment-terms', { description: 'Mock', month: -1 }],
+    ['payment-terms', { description: 'Mock', dateOfMonth: 32 }],
+    ['payment-terms', { description: 'Mock', dayOfMonth: -1 }],
+    ['units', { description: 'Mock', shortName: 'mock', decimal: 7 }],
+  ]) await assert.rejects(call(method, kind, body), error => error.status === 400);
+  assert.equal(writes, beforeInvalid, 'Constraint-invalid values must be rejected before any table write.');
 });

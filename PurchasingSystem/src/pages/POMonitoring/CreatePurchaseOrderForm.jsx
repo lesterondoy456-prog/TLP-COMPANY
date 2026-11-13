@@ -35,8 +35,8 @@ export function CreatePurchaseOrderForm({ record, requests, options, user, onClo
     const selected = openRequests.filter(row => selectedRequests.includes(Number(row.id)));
     const items = selected.map(row => {
       const supply = (options.supplies || []).find(item => Number(item.id) === Number(row.suppliesId));
-      const price = (supply?.suppliers || []).find(item => Number(item.supplierId) === Number(form.supplierId))?.price || 0;
-      return { requestItemId: row.id, quantity: row.balanceQuantity, unitPrice: price, discountRate: 0, remarks: '', unit: row.unit };
+      const price = (supply?.suppliers || []).find(item => Number(item.supplierId) === Number(form.supplierId))?.price ?? '';
+      return { requestItemId: row.id, quantity: row.balanceQuantity, unitPrice: price, discountRate: '', remarks: '', unit: row.unit };
     });
     editor.set('items', [...form.items, ...items].slice(0, 100));
     setSelectedRequests([]);
@@ -50,8 +50,8 @@ export function CreatePurchaseOrderForm({ record, requests, options, user, onClo
     if (editor.reject(invalid)) return;
     const body = {
       supplierId: Number(form.supplierId), poDate: form.poDate, deliveryDate: form.deliveryDate, currency: form.currency, rate: String(form.rate), paymentTerm: form.paymentTerm,
-      shipment: form.shipment, suppliesCategory: form.suppliesCategory, vatCode: form.vatCode, deliveryAddress: form.deliveryAddress.trim(), remarks: form.remarks.trim(),
-      items: form.items.map(row => ({ requestItemId: Number(row.requestItemId), quantity: String(row.quantity), unitPrice: String(row.unitPrice), discountRate: String(row.discountRate || 0), currency: form.currency, unit: row.unit || '', remarks: row.remarks || '' })),
+      shipment: form.shipment, suppliesCategory: form.suppliesCategory || null, vatCode: form.vatCode, deliveryAddress: form.deliveryAddress.trim() || null, remarks: form.remarks.trim() || null,
+      items: form.items.map(row => ({ requestItemId: Number(row.requestItemId), quantity: String(row.quantity), unitPrice: String(row.unitPrice), discountRate: row.discountRate == null || String(row.discountRate).trim() === '' ? null : String(row.discountRate), currency: form.currency, unit: row.unit || '', remarks: String(row.remarks ?? '').trim() || null })),
     };
     editor.setBusy(true);
     editor.setError('');
@@ -98,7 +98,7 @@ export function CreatePurchaseOrderForm({ record, requests, options, user, onClo
             <td><input {...props('items.' + index + '.quantity', 'PO Qty ' + (index + 1))} type="number" min="0.000001" max={1e9} step="0.000001" value={row.quantity} onChange={event => editor.updateItem(index, 'quantity', event.target.value)} />{feedback('items.' + index + '.quantity')}<small className="purchase-quantity-hint">PR balance: {quantityLabel(source.balanceQuantity)}</small></td>
             <td><input {...props('items.' + index + '.unitPrice', 'PO Price ' + (index + 1))} type="number" min={0} max={1e9} step="0.000001" value={row.unitPrice} onChange={event => editor.updateItem(index, 'unitPrice', event.target.value)} />{feedback('items.' + index + '.unitPrice')}</td>
             <td>{form.currency || '—'}</td><td className="numeric">{quantityLabel(values.grossAmount)}</td>
-            <td><input {...props('items.' + index + '.discountRate', 'Discount Rate ' + (index + 1))} type="number" min={0} max={100} step="0.000001" value={row.discountRate} onChange={event => editor.updateItem(index, 'discountRate', event.target.value)} />{feedback('items.' + index + '.discountRate')}</td>
+            <td><input {...props('items.' + index + '.discountRate', 'Discount Rate ' + (index + 1))} type="number" min={0} max={100} step="0.000001" value={row.discountRate ?? ''} onChange={event => editor.updateItem(index, 'discountRate', event.target.value)} />{feedback('items.' + index + '.discountRate')}</td>
             <td className="numeric">{quantityLabel(values.discountAmount)}</td><td className="numeric">{quantityLabel(calculation.vatRate)}</td><td className="numeric">{quantityLabel(values.netAmount)}</td><td className="numeric">{quantityLabel(values.amount)}</td><td>{source.sourceNumber || row.requestNumber}</td>
             <td><button type="button" className="icon-button danger-text" aria-label={'Remove PO line ' + (index + 1)} onClick={() => editor.set('items', form.items.filter((_, rowIndex) => rowIndex !== index))}><Icon name="x" size={16} /></button></td>
           </tr>;

@@ -40,7 +40,7 @@ function textErrors(fields, form) {
   return errors;
 }
 
-function validNumber(value, places, min = 0) { return validDecimal(value, places) && Number(value) >= min; }
+function validNumber(value, places, min = 0) { return value == null || String(value).trim() === '' || (validDecimal(value, places) && Number(value) >= min); }
 
 function validDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -115,7 +115,7 @@ export function validatePurchaseOrder(form) {
   form.items.forEach((row, index) => {
     if (!validDecimal(row.quantity, 6, { positive: true })) invalid['items.' + index + '.quantity'] = 'Enter a positive quantity with up to 6 decimal places.';
     if (!validDecimal(row.unitPrice, 6)) invalid['items.' + index + '.unitPrice'] = 'Enter a nonnegative Price with up to 6 decimal places.';
-    if (!validDecimal(row.discountRate, 6, { maximum: 100 })) invalid['items.' + index + '.discountRate'] = 'Discount must be from 0 to 100.';
+    if (row.discountRate != null && String(row.discountRate).trim() !== '' && !validDecimal(row.discountRate, 6, { maximum: 100 })) invalid['items.' + index + '.discountRate'] = 'Discount must be from 0 to 100.';
   });
   if (form.deliveryAddress.length > 500) invalid.deliveryAddress = 'Use 500 characters or fewer.';
   if (form.remarks.length > 2000) invalid.remarks = 'Use 2,000 characters or fewer.';

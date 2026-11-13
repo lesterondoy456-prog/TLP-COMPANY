@@ -89,12 +89,12 @@ export function CreateReceivingReceiptForm({ record, orders, options, user, onCl
       return;
     }
     const body = {
-      purchaseOrderId: Number(form.purchaseOrderId), srrDate: form.srrDate, drNumber: form.drNumber.trim(), pezaReference: form.pezaReference.trim(),
-      invoiceNumber: form.invoiceNumber.trim(), invoiceDate: form.invoiceDate || null, rate: String(form.rate), remarks: form.remarks.trim(),
+      purchaseOrderId: Number(form.purchaseOrderId), srrDate: form.srrDate, drNumber: form.drNumber.trim() || null, pezaReference: form.pezaReference.trim() || null,
+      invoiceNumber: form.invoiceNumber.trim(), invoiceDate: form.invoiceDate || null, rate: String(form.rate), remarks: form.remarks.trim() || null,
       items: form.items.map(item => ({
-        orderItemId: Number(item.orderItemId), quantity: String(item.quantity), unit: item.unit || '', remarks: item.remarks || '',
+        orderItemId: Number(item.orderItemId), quantity: String(item.quantity), unit: item.unit || '', remarks: String(item.remarks ?? '').trim() || null,
         allocations: item.allocations.map(row => ({
-          quantity: String(row.quantity), expiryDate: row.expiryDate || null, mfgDate: row.mfgDate || null, imLot: (row.imLot || '').trim(), qcStatus: (row.qcStatus || '').trim(),
+          quantity: String(row.quantity), expiryDate: row.expiryDate || null, mfgDate: row.mfgDate || null, imLot: (row.imLot || '').trim() || null, qcStatus: (row.qcStatus || '').trim() || null,
           warehouseId: row.warehouseId === '' || row.warehouseId == null ? null : Number(row.warehouseId),
           locationId: row.locationId === '' || row.locationId == null ? null : Number(row.locationId),
         })),

@@ -74,7 +74,7 @@ export async function priceOnRoute(items, settings = {}, { receiving = false, up
   const base = receiving ? '/receivings' : '/purchase-orders';
   const body = receiving ? {
     purchaseOrderId: 10, srrDate: '2026-11-13', invoiceNumber: 'MOCK-SI', invoiceDate: null, rate: '1', remarks,
-    items: items.map((item, index) => ({ orderItemId: index + 100, quantity: item.quantity, unit: 'pcs', allocations: [] })),
+    items: items.map((item, index) => ({ orderItemId: index + 100, quantity: item.quantity, unit: 'pcs', allocations: item.allocations || [] })),
   } : {
     supplierId: 2, poDate: '2026-11-13', deliveryDate: '2026-11-14', currency: 'PHP', rate: 1,
     paymentTerm: 'Mock cash', shipment: 'N/A', vatCode: 'MOCK', remarks,
@@ -87,5 +87,6 @@ export async function priceOnRoute(items, settings = {}, { receiving = false, up
   });
   assert.equal(response.statusCode, update ? 200 : 201);
   assert.equal(committed.audit.length, 1, 'A successful draft saves its audit in the same transaction.');
+  if (!update) assert.equal(response.body.record.number, receiving ? 'SRR-00000001' : 'PO-00000010', 'The API must store its identity-based document number in the same transaction.');
   return response.body.record;
 }

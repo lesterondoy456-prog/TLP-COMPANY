@@ -20,7 +20,10 @@ export default function Profile({ user, onClose, onSaved }) {
     if (busy) return;
     setBusy(true);
     setError('');
-    const body = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
+    const body = {
+      name: form.name.trim(), username: form.username.trim(),
+      cpnumber: form.cpnumber.trim() || null, email: form.email.trim() || null, photo: form.photo.trim() || null,
+    };
     try {
       validateAccountForm(body);
       const result = await api('/api/warehouse/auth/profile', { method: 'PUT', body });

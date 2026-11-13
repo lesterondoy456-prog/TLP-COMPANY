@@ -88,20 +88,21 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   for (const title of ['Sales', 'Delivery Receipt', 'TAX']) await expect(sales.getByRole('heading', { name: title, exact: true })).toBeVisible();
   await expect(salesField('Decimal in Price *')).toHaveValue('2');
   await expect(salesField('Decimal in Total Price *')).toHaveValue('2');
-  await expect(salesField('Discount Type')).toHaveValue('percent');
+  await expect(salesField('Discount Type')).toHaveValue('');
+  await expect(salesField('Discount')).toHaveValue('');
   const optionsFor = field => field.evaluate(element => [...document.getElementById(element.getAttribute('list')).options].map(option => option.value));
   const vatCodes = await optionsFor(salesField('VAT Code *'));
   for (const code of ['VS', 'VE', 'VZ']) assert.ok(vatCodes.includes(code));
   const paymentTerms = await optionsFor(salesField('Payment Term'));
   assert.ok(paymentTerms.includes('7 DAYS'), 'Configured payment terms must replace fallback suggestions.');
   assert.equal(paymentTerms.includes('30 DAYS'), false);
-  await expect(sales.getByRole('radio', { name: 'Exclusive', exact: true })).toBeChecked();
+  await expect(sales.getByRole('radio', { name: 'Exclusive', exact: true })).not.toBeChecked();
   await expect(sales.getByRole('radio', { name: 'Inclusive', exact: true })).not.toBeChecked();
   await expect(sales.getByRole('checkbox', { name: 'Include P.O. in Invoice', exact: true })).not.toBeChecked();
   const salesAddress = sales.getByRole('group', { name: 'Sales Address', exact: true });
   const drAddress = sales.getByRole('group', { name: 'Delivery Receipt Address', exact: true });
-  await expect(salesAddress.getByRole('radio', { name: 'Office Address', exact: true })).toBeChecked();
-  await expect(drAddress.getByRole('radio', { name: 'Office Address', exact: true })).toBeChecked();
+  await expect(salesAddress.getByRole('radio', { name: 'Office Address', exact: true })).not.toBeChecked();
+  await expect(drAddress.getByRole('radio', { name: 'Office Address', exact: true })).not.toBeChecked();
   assert.equal(customerWrites.length, 0);
 
   async function invalidFromOtherTab(targetTab, field, expectedWriteCount = 0) {
@@ -175,6 +176,7 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await salesField('Payment Term').fill('30 days');
   await salesAddress.getByRole('radio', { name: 'Delivery Address', exact: true }).check();
   await drAddress.getByRole('radio', { name: 'Delivery Address', exact: true }).check();
+  await salesField('Discount Type').selectOption('percent');
   await salesField('Discount').fill('101');
   await invalidFromOtherTab(salesTab, salesField('Discount'));
   await salesField('Discount Type').selectOption('amount');
@@ -282,5 +284,24 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await expect(dialog).toHaveCount(0);
   assert.equal(customerWrites.length, 4);
   assert.deepEqual(customerWrites[3].body, { ...editedExpected, salesInChargeId: null });
+  await page.getByRole('button', { name: 'New customer', exact: false }).click();
+  for (const [label, value] of [['Name *', 'Nullable Customer'], ['Short Name *', 'NULL'], ['Business Style *', 'Trade'], ['Office Address *', 'Office']]) await basicField(label).fill(value);
+  await salesTab.click();
+  for (const [label, value] of [['Sales Name', 'Nullable Customer'], ['DR Name', 'Nullable Customer'], ['VAT Code *', 'VS']]) await salesField(label).fill(value);
+  await save.click();
+  await expect(dialog).toHaveCount(0);
+  const emptyOptional = customerWrites.at(-1).body;
+  for (const key of ['tin', 'contactPerson', 'email', 'countryOfOrigin', 'country', 'faxNo', 'cpnumber', 'category', 'remarks', 'paymentTerm', 'taxCode', 'discount', 'discountType', 'salesAddressType', 'drAddressType', 'includePoInInvoice', 'vatInclusive']) assert.equal(emptyOptional[key], null, key + ' must stay NULL when no value is entered.');
+  await page.getByRole('row').filter({ hasText: 'Nullable Customer' }).getByRole('button', { name: 'Edit', exact: true }).click();
+  await salesTab.click();
+  await salesField('Discount').fill('0');
+  const includePo = sales.getByRole('checkbox', { name: 'Include P.O. in Invoice', exact: true });
+  await includePo.check(); await includePo.uncheck();
+  await sales.getByRole('radio', { name: 'Exclusive', exact: true }).check();
+  await save.click();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(customerWrites.at(-1).body.discount, 0);
+  assert.equal(customerWrites.at(-1).body.includePoInInvoice, false);
+  assert.equal(customerWrites.at(-1).body.vatInclusive, false);
   assertSafe();
 });

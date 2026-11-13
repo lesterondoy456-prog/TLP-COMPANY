@@ -53,7 +53,7 @@ export default function CreateDeliveryReceiptForm({
       deliveryDate: form.deliveryDate,
       receivedBy: form.receivedBy.trim(),
       address: form.address.trim(),
-      notes: form.notes
+      notes: String(form.notes ?? '').trim() || null
     };
     save(() => api('/api/sales/delivery-receipts', {
       method: 'POST',

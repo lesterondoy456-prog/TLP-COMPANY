@@ -8,7 +8,7 @@ function text(input, key, max, required = false) {
   if (typeof value !== 'string' || value.trim().length > max || /\x00/.test(value)) throw new ApiError(400, `${key} must be text with at most ${max} characters.`);
   const result = value.trim();
   if (required && !result) throw new ApiError(400, `${key} is required.`);
-  return result;
+  return required ? result : result || null;
 }
 
 function email(input) {
@@ -50,7 +50,7 @@ function date(input, key) {
 
 function photo(input) {
   const value = text(input, 'photo', 750000);
-  if (!value) return '';
+  if (!value) return null;
   if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) return value;
   try { const url = new URL(value); if (url.protocol === 'https:' && !url.username && !url.password) return value; } catch { /* Invalid URL below. */ }
   throw new ApiError(400, 'Photo must be a PNG, JPEG or WebP upload, or an HTTPS image URL.');
@@ -100,11 +100,11 @@ function validateCustomer(input, current) {
       result[key] = key === 'email' ? v.email(input) : v.text(input, key, textLengths[key], required);
     }
   }
-  for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (has(input, key)) result[key] = v.bool(input, key);
+  for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (has(input, key)) result[key] = key !== 'isActive' && input[key] === null ? null : v.bool(input, key);
   for (const key of ['decimalInPrice', 'decimalInTotalPrice']) if (has(input, key)) result[key] = decimalPlaces(input, key);
-  for (const key of ['salesAddressType', 'drAddressType']) if (has(input, key)) result[key] = choice(input, key, ['office', 'delivery']);
-  if (has(input, 'discountType')) result.discountType = choice(input, 'discountType', ['percent', 'amount']);
-  if (has(input, 'discount')) result.discount = v.numeric(input, 'discount', { min: 0, max: 1e9, places: 6 });
+  for (const key of ['salesAddressType', 'drAddressType']) if (has(input, key)) result[key] = input[key] === null || input[key] === '' ? null : choice(input, key, ['office', 'delivery']);
+  if (has(input, 'discountType')) result.discountType = input.discountType === null || input.discountType === '' ? null : choice(input, 'discountType', ['percent', 'amount']);
+  if (has(input, 'discount')) result.discount = input.discount === null || String(input.discount).trim() === '' ? null : v.numeric(input, 'discount', { min: 0, max: 1e9, places: 6 });
   if (result.discountType === 'percent' && result.discount > 100) throw new ApiError(400, 'Percentage discount cannot exceed 100.');
   if (has(input, 'deliveryAddresses')) result.deliveryAddresses = deliveryAddresses(input.deliveryAddresses);
   if (current && !result.code) result.code = current.code;
@@ -137,12 +137,12 @@ function namedRows(value, label, maximum) {
 
 function validateProduct(input, current) {
   const result = {
-    ...Object.fromEntries(Object.keys(PRODUCT_TEXT_LENGTHS).map(key => [key, ''])),
-    ...Object.fromEntries(PRODUCT_QUANTITIES.map(key => [key, 0])),
-    revision: '0', vatMode: 'customer', productHeaderId: null,
-    price: 0, stock: 0, isActive: true,
+    ...Object.fromEntries(Object.keys(PRODUCT_TEXT_LENGTHS).map(key => [key, null])),
+    ...Object.fromEntries(PRODUCT_QUANTITIES.map(key => [key, null])),
+    revision: null, vatMode: null, productHeaderId: null,
+    price: null, stock: 0, isActive: true,
     processes: [], offices: [], customerApprovals: [], linkedSupplies: [],
-    inventorySetup: '',
+    inventorySetup: null,
     ...(current || {}),
   };
   const creating = !current;
@@ -156,19 +156,19 @@ function validateProduct(input, current) {
   }
   if (!result.name) result.name = result.sku;
   for (const key of PRODUCT_QUANTITIES) {
-    if (has(input, key)) result[key] = v.numeric(input, key, { places: 6 });
+    if (has(input, key)) result[key] = input[key] === null || String(input[key]).trim() === '' ? null : v.numeric(input, key, { places: 6 });
   }
-  if (has(input, 'price')) result.price = v.numeric(input, 'price', { places: 6 });
+  if (has(input, 'price')) result.price = input.price === null || String(input.price).trim() === '' ? null : v.numeric(input, 'price', { places: 6 });
   if (has(input, 'stock')) result.stock = v.numeric(input, 'stock', { places: 3 });
   if (has(input, 'isActive')) result.isActive = v.bool(input, 'isActive');
   if (has(input, 'vatMode')) {
-    if (!['customer', 'inclusive', 'exclusive'].includes(input.vatMode)) throw new ApiError(400, 'VAT mode must be customer, inclusive or exclusive.');
-    result.vatMode = input.vatMode;
+    if (input.vatMode !== null && input.vatMode !== '' && !['customer', 'inclusive', 'exclusive'].includes(input.vatMode)) throw new ApiError(400, 'VAT mode must be customer, inclusive or exclusive.');
+    result.vatMode = input.vatMode || null;
   }
   if (has(input, 'productHeaderId')) result.productHeaderId = input.productHeaderId === null ? null : v.idValue(input.productHeaderId, 'product header');
   if (has(input, 'inventorySetup')) {
-    if (!['', 'monthly', 'quarterly'].includes(input.inventorySetup)) throw new ApiError(400, 'Inventory Setup must be blank, Monthly or Quarterly.');
-    result.inventorySetup = input.inventorySetup;
+    if (input.inventorySetup !== null && !['', 'monthly', 'quarterly'].includes(input.inventorySetup)) throw new ApiError(400, 'Inventory Setup must be blank, Monthly or Quarterly.');
+    result.inventorySetup = input.inventorySetup || null;
   }
   if (result.secondaryUnit && result.quantityPerSecondaryUnit <= 0) throw new ApiError(400, 'Qty per UOP2 must be greater than zero when UOP2 is selected.');
   if (has(input, 'processes')) result.processes = namedRows(input.processes, 'Processes', 100);
@@ -207,10 +207,10 @@ const textLengths = {
 };
 
 const defaults = {
-  ...Object.fromEntries(Object.keys(textLengths).map(key => [key, ''])),
+  ...Object.fromEntries(Object.keys(textLengths).map(key => [key, null])),
   isActive: true, decimalInPrice: 2, decimalInTotalPrice: 2,
-  salesAddressType: 'office', drAddressType: 'office', discount: 0,
-  discountType: 'percent', includePoInInvoice: false, vatInclusive: false,
+  salesAddressType: null, drAddressType: null, discount: null,
+  discountType: null, includePoInInvoice: null, vatInclusive: null,
   deliveryAddresses: [], salesInChargeId: null,
 };
 
@@ -340,22 +340,22 @@ export function validateCustomerForm(form) {
     if (definition.required && !value) errors[key] = definition.label + ' is required.';
     else if (value.length > definition.max) errors[key] = definition.label + ' must be ' + definition.max + ' characters or fewer.';
   }
-  if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errors.email = 'Enter a valid Email Address.';
+  if (String(form.email ?? '').trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.email ?? '').trim())) errors.email = 'Enter a valid Email Address.';
   form.deliveryAddresses.forEach((address, index) => {
     if (String(address).trim().length > 500) errors['deliveryAddresses.' + index] = 'Use 500 characters or fewer for this delivery address.';
   });
   for (const [key, label] of [['decimalInPrice', 'Decimal in Price'], ['decimalInTotalPrice', 'Decimal in Total Price']]) {
     if (String(form[key] ?? '').trim() === '' || !Number.isInteger(Number(form[key])) || Number(form[key]) < 0 || Number(form[key]) > 6) errors[key] = label + ' must be a whole number from 0 to 6.';
   }
-  const discount = form.discount === '' ? 0 : Number(form.discount);
-  if (!Number.isFinite(discount) || discount < 0 || discount > 1e9 || Math.abs(discount * 1e6 - Math.round(discount * 1e6)) > 0.00001) errors.discount = 'Enter a discount from 0 to 1,000,000,000 with up to 6 decimal places.';
+  const discount = String(form.discount ?? '').trim() === '' ? null : Number(form.discount);
+  if (discount !== null && (!Number.isFinite(discount) || discount < 0 || discount > 1e9 || Math.abs(discount * 1e6 - Math.round(discount * 1e6)) > 0.00001)) errors.discount = 'Enter a discount from 0 to 1,000,000,000 with up to 6 decimal places.';
   else if (form.discountType === 'percent' && discount > 100) errors.discount = 'A Percent discount cannot exceed 100.';
   return errors;
 }
 
 const PRODUCT_FORM_FIELDS = {
   sku: { label: 'Code', max: 40, required: true },
-  revision: { label: 'Rev', max: 30, initial: '0' },
+  revision: { label: 'Rev', max: 30 },
   description: { label: 'Description', max: 1000 },
   unit: { label: 'UOP', max: 30, required: true },
   secondaryUnit: { label: 'UOP2', max: 30 },
@@ -404,7 +404,7 @@ export function validateProductForm(form) {
     else if (value.length > field.max) errors[key] = 'Use ' + field.max + ' characters or fewer.';
   }
   for (const [key, field] of Object.entries(PRODUCT_FORM_NUMBERS)) {
-    if (!numberIsValid(form[key], field.places)) errors[key] = 'Enter a value from 0 to 1,000,000,000 with up to ' + field.places + ' decimal places.';
+    if (String(form[key] ?? '').trim() !== '' && !numberIsValid(form[key], field.places)) errors[key] = 'Enter a value from 0 to 1,000,000,000 with up to ' + field.places + ' decimal places.';
   }
   if (form.secondaryUnit && Number(form.quantityPerSecondaryUnit) <= 0) errors.quantityPerSecondaryUnit = 'Enter a positive conversion quantity when UOP2 is selected.';
   const seenCustomers = new Set();

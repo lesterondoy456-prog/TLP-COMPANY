@@ -37,7 +37,7 @@ export function SupplierForm({ record, options, onClose, onSaved }) {
       return;
     }
     const body = {
-      ...Object.fromEntries(Object.keys(SUPPLIER_TEXT).map(key => [key, String(form[key]).trim()])),
+      ...Object.fromEntries(Object.keys(SUPPLIER_TEXT).map(key => [key, String(form[key] ?? '').trim() || null])),
       decimalInPrice: Number(form.decimalInPrice), decimalInTotalPrice: Number(form.decimalInTotalPrice),
       vatInclusive: form.vatInclusive, isActive: form.isActive,
     };

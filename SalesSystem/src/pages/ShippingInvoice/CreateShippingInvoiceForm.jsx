@@ -28,7 +28,7 @@ export default function CreateShippingInvoiceForm({
   }
   function submit(event) {
     event.preventDefault();
-    const body = { invoiceId: Number(form.invoiceId), shippingDate: form.shippingDate, carrier: form.carrier.trim(), trackingNumber: form.trackingNumber.trim(), notes: form.notes.trim() };
+    const body = { invoiceId: Number(form.invoiceId), shippingDate: form.shippingDate, carrier: form.carrier.trim() || null, trackingNumber: form.trackingNumber.trim() || null, notes: form.notes.trim() || null };
     save(() => api('/api/sales/shipping-invoices', { method: 'POST', body }));
   }
   return <Modal title="New shipping invoice" subtitle="Choose an existing invoice and enter its shipping details." onClose={onClose} busy={busy}>

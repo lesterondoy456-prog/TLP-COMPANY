@@ -87,7 +87,12 @@ export function validateConfiguration(metadata, input, current) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('', 'Check the configuration fields before saving.');
   const result = {};
   for (const field of [...metadata.fields, { key: 'isActive', label: 'Active', type: 'boolean', default: true }]) {
-    const value = input[field.key] !== undefined ? input[field.key] : current?.[field.key] ?? field.default;
+    const value = input[field.key] !== undefined ? input[field.key] : current?.[field.key] !== undefined ? current[field.key]
+      : field.type === 'boolean' || field.required ? field.default : null;
+    if (!field.required && field.type !== 'boolean' && (value == null || (typeof value === 'string' && !value.trim()))) {
+      result[field.key] = null;
+      continue;
+    }
     if (field.type === 'boolean') {
       if (typeof value !== 'boolean') invalid(field.key, `${field.label} must be true or false.`);
       result[field.key] = value;
@@ -112,7 +117,7 @@ export function validateAccountForm(input, { existing = false, profile = false }
   for (const [key, label, max] of [['name', 'Full name', 150], ['username', 'Username', 80], ['cpnumber', 'Mobile number', 30], ['email', 'Email', 254], ['photo', 'Photo', 750000]]) {
     const value = input[key] ?? '';
     if (typeof value !== 'string' || value.trim().length > max || value.includes('\0')) invalid(key, `${label} must contain at most ${max} characters.`);
-    body[key] = value.trim();
+    body[key] = ['name', 'username'].includes(key) ? value.trim() : value.trim() || null;
   }
   if (!body.name) invalid('name', 'Full name is required.');
   body.username = body.username.toLowerCase();

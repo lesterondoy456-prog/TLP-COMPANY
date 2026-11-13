@@ -1,6 +1,6 @@
 const { readFile } = require('node:fs/promises');
 const { join } = require('node:path');
-const MIGRATION_FILES = ['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'text-max.sql'];
+const MIGRATION_FILES = ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'text-max.sql'];
 
 async function runMigrations({ database, createPool, sql, onPoolError }) {
   if (typeof database !== 'string' || !database || database.length > 128 || /[;\x00-\x1f]/.test(database)) {
@@ -19,14 +19,19 @@ async function runMigrations({ database, createPool, sql, onPoolError }) {
 
   const pool = createPool(database);
   if (onPoolError) pool.on('error', onPoolError);
+  let migration;
   try {
     await pool.connect();
+    migration = new sql.Transaction(pool);
+    await migration.begin();
     for (const filename of MIGRATION_FILES) {
       const schema = await readFile(join(__dirname, filename), 'utf8');
-      await pool.request().batch(schema);
+      await migration.request().batch(schema);
     }
+    await migration.commit();
     return pool;
   } catch (error) {
+    if (migration) try { await migration.rollback(); } catch { /* A failed SQL batch may already have rolled back. */ }
     await pool.close();
     throw error;
   }

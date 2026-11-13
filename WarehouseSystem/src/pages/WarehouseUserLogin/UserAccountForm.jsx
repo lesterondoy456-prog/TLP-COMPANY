@@ -19,8 +19,8 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
     setBusy(true);
     setError('');
     const body = {
-      name: form.name.trim(), username: form.username.trim(), cpnumber: (form.cpnumber || '').trim(),
-      email: (form.email || '').trim(), photo: form.photo || '', role: form.role, isActive: record ? form.isActive : true,
+      name: form.name.trim(), username: form.username.trim(), cpnumber: (form.cpnumber || '').trim() || null,
+      email: (form.email || '').trim() || null, photo: form.photo || null, role: form.role, isActive: record ? form.isActive : true,
     };
     if (form.password) body.password = form.password;
     try {

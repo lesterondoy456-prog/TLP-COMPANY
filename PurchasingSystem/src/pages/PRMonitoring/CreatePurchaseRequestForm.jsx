@@ -12,7 +12,7 @@ export function CreatePurchaseRequestForm({ record, options, user, onClose, onSa
     number: record?.number || '', prDate: dateInput(record?.prDate) || today(), neededDate: dateInput(record?.neededDate) || today(),
     requestedBy: record?.requestedBy || '', requestedDept: record?.requestedDept || '', checkedBy: record?.checkedBy || '',
     approvedBy: record?.approvedBy || '', approvedBy2: record?.approvedBy2 || '', remarks: record?.remarks || '',
-    items: record?.items?.map(row => ({ ...row, neededDate: dateInput(row.neededDate) })) || [{ suppliesId: '', quantity: 1, unit: '', neededDate: today(), remarks: '' }],
+    items: record?.items?.map(row => ({ ...row, neededDate: dateInput(row.neededDate) })) || [{ suppliesId: '', quantity: 1, unit: '', neededDate: '', remarks: '' }],
   }));
   const { form, input, props, feedback } = editor;
   const supplies = options.supplies || [];
@@ -28,7 +28,7 @@ export function CreatePurchaseRequestForm({ record, options, user, onClose, onSa
     if (editor.busy) return;
     const invalid = validatePurchaseRequest(form);
     if (editor.reject(invalid)) return;
-    const body = { ...form, number: form.number.trim(), remarks: form.remarks.trim(), items: form.items.map(row => ({ suppliesId: Number(row.suppliesId), quantity: String(row.quantity), unit: row.unit, neededDate: row.neededDate || form.neededDate, remarks: (row.remarks || '').trim() })) };
+    const body = { ...form, number: form.number.trim() || null, ...Object.fromEntries(['requestedBy', 'requestedDept', 'checkedBy', 'approvedBy', 'approvedBy2', 'remarks'].map(key => [key, String(form[key] ?? '').trim() || null])), items: form.items.map(row => ({ suppliesId: Number(row.suppliesId), quantity: String(row.quantity), unit: row.unit, neededDate: row.neededDate || null, remarks: (row.remarks || '').trim() || null })) };
     editor.setBusy(true);
     editor.setError('');
     try {
@@ -54,7 +54,7 @@ export function CreatePurchaseRequestForm({ record, options, user, onClose, onSa
         <ReadonlyField label="Status" value={statusLabel(record?.status || 'draft')} />
       </div>{input('remarks', 'Remarks', { maxLength: 2000, multiline: true, wide: true })}
       <datalist id={editor.id + '-users'}>{(options.users || []).map(account => <option key={account.id} value={account.name} label={account.username} />)}</datalist></section>
-      <section className="purchase-section"><div className="purchase-section-heading"><h3>Supplies</h3><button type="button" className="button secondary small" disabled={form.items.length >= 100} onClick={() => editor.set('items', [...form.items, { suppliesId: '', quantity: 1, unit: '', neededDate: form.neededDate, remarks: '' }])}>Add supply line</button></div>{feedback('items')}
+      <section className="purchase-section"><div className="purchase-section-heading"><h3>Supplies</h3><button type="button" className="button secondary small" disabled={form.items.length >= 100} onClick={() => editor.set('items', [...form.items, { suppliesId: '', quantity: 1, unit: '', neededDate: '', remarks: '' }])}>Add supply line</button></div>{feedback('items')}
         <div className="table-scroll purchase-entry-table purchase-wide-lines"><table><thead><tr><th>Sort</th><th>Supplies Id</th><th>Supplies Code</th><th>Description</th><th>Qty</th><th>UOM</th><th>Needed Date</th><th>Remarks</th><th>Actions</th></tr></thead><tbody>{form.items.map((row, index) => {
           const supply = supplies.find(item => Number(item.id) === Number(row.suppliesId));
           return <tr key={index}>

@@ -52,7 +52,7 @@ export default function CreateInvoiceForm({
       orderId: Number(form.orderId),
       invoiceDate: form.invoiceDate,
       dueDate: form.dueDate,
-      notes: form.notes
+      notes: String(form.notes ?? '').trim() || null
     };
     save(() => api('/api/sales/sales-invoices', {
       method: 'POST',

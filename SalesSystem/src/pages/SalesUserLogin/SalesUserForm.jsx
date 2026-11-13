@@ -19,6 +19,7 @@ export default function SalesUserForm({ record, profile = false, actorRole = 'sa
       return;
     }
     const body = trimFields({ name: form.name, username: form.username, cpnumber: form.cpnumber, email: form.email, photo: form.photo });
+    for (const key of ['cpnumber', 'email', 'photo']) if (!body[key]) body[key] = null;
     if (!profile) { body.role = canAssignRoles ? form.role : 'sales'; body.isActive = record ? form.isActive : true; if (form.password) body.password = form.password; }
     save(() => api(profile ? '/api/sales/auth/profile' : record ? '/api/sales/users/' + record.id : '/api/sales/users', { method: profile || record ? 'PUT' : 'POST', body }));
   }

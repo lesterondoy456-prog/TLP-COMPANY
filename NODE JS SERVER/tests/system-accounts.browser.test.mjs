@@ -29,6 +29,11 @@ for (const settings of systems) {
         return { json: { user: actor } };
       }
       if (method === 'POST' && pathname === '/api/auth/logout') { actor = null; return { json: { success: true } }; }
+      if (method === 'PUT' && pathname === '/api/auth/profile') {
+        writes.push({ method, pathname, body });
+        actor = { ...actor, ...body };
+        return { json: { user: actor } };
+      }
       if (method === 'GET' && pathname === '/api/users') return actor?.role === 'admin'
         ? { json: { records: [...accounts, { ...accounts[0], system: 'sales', name: 'Foreign Sales Administrator' }] } }
         : { status: 403, json: { message: 'Local administrators only.' } };
@@ -86,6 +91,7 @@ for (const settings of systems) {
       assert.equal(writes.at(-1).body.role, role);
       assert.equal(writes.at(-1).body.isActive, true, 'New accounts must start active.');
       assert.equal(writes.at(-1).body.password, password, 'Exactly six characters must be accepted for new accounts.');
+      for (const key of ['cpnumber', 'email', 'photo']) assert.equal(writes.at(-1).body[key], null, 'Blank optional account fields must submit NULL.');
     }
     await page.getByRole('row').filter({ hasText: 'Mock Local Worker' }).getByRole('button', { name: 'Edit', exact: true }).click();
     const edit = page.getByRole('dialog');
@@ -120,9 +126,12 @@ for (const settings of systems) {
     const profile = page.getByRole('dialog', { name: 'My profile', exact: true });
     await expect(profile.getByLabel('Role', { exact: true })).toHaveValue(settings.label);
     await expect(profile.getByLabel('Role', { exact: true })).toBeDisabled();
-    await profile.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await profile.getByRole('button', { name: 'Save profile', exact: true }).click();
+    await expect(profile).toHaveCount(0);
+    for (const key of ['cpnumber', 'email', 'photo']) assert.equal(writes.at(-1).body[key], null, 'Blank optional profile fields must submit NULL.');
+    assert.equal(Object.hasOwn(writes.at(-1).body, 'role'), false);
     assert.equal(apiRequests.slice(workerStart).some(call => call.pathname === '/api/users'), false, 'Workers must not load the account manager.');
-    assert.equal(writes.length, 4);
+    assert.equal(writes.length, 5);
     assert.ok(apiRequests.every(call => call.system === settings.system && call.requestPathname.startsWith(`/api/${settings.system}/`)));
     assertSafe();
   });

@@ -14,7 +14,7 @@ const TABS = [
 
 const TEXT_FIELDS = {
   sku: { label: 'Code', max: 40, required: true },
-  revision: { label: 'Rev', max: 30, initial: '0' },
+  revision: { label: 'Rev', max: 30 },
   description: { label: 'Description', max: 1000 },
   unit: { label: 'UOP', max: 30, required: true },
   secondaryUnit: { label: 'UOP2', max: 30 },
@@ -61,11 +61,11 @@ const QUARTERLY_SCHEDULE = [
 
 function initialValues(record) {
   const text = Object.fromEntries(Object.entries(TEXT_FIELDS).map(([key, field]) => [key, record?.[key] ?? field.initial ?? '']));
-  const numbers = Object.fromEntries(Object.keys(NUMBER_FIELDS).map(key => [key, record?.[key] ?? 0]));
+  const numbers = Object.fromEntries(Object.keys(NUMBER_FIELDS).map(key => [key, record?.[key] ?? '']));
   return {
     ...text,
     ...numbers,
-    vatMode: record?.vatMode || 'customer',
+    vatMode: record?.vatMode ?? '',
     productHeaderId: record?.productHeaderId ?? '',
     processes: (record?.processes || []).map(row => ({ name: row.name || '' })),
     offices: (record?.offices || []).map(row => ({ name: row.name || '', selected: true })),
@@ -217,9 +217,9 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
       setError('Please correct the highlighted fields before saving.');
       return;
     }
-    const body = Object.fromEntries(Object.keys(TEXT_FIELDS).map(key => [key, String(form[key]).trim()]));
-    for (const key of Object.keys(NUMBER_FIELDS)) body[key] = Number(form[key]);
-    body.vatMode = form.vatMode;
+    const body = Object.fromEntries(Object.keys(TEXT_FIELDS).map(key => [key, String(form[key] ?? '').trim() || null]));
+    for (const key of Object.keys(NUMBER_FIELDS)) body[key] = String(form[key] ?? '').trim() === '' ? null : Number(form[key]);
+    body.vatMode = form.vatMode || null;
     body.productHeaderId = form.productHeaderId === '' ? null : Number(form.productHeaderId);
     body.processes = form.processes.map(row => ({ name: row.name.trim() }));
     body.offices = form.offices.filter(row => row.selected).map(row => ({ name: row.name.trim() }));
@@ -227,10 +227,10 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
         customerId: Number(row.customerId),
         approvalDate: row.approvalDate || null,
         eolDate: row.eolDate || null,
-        approvalRemarks: (row.approvalRemarks || '').trim(),
-        eolRemarks: (row.eolRemarks || '').trim(),
+        approvalRemarks: (row.approvalRemarks || '').trim() || null,
+        eolRemarks: (row.eolRemarks || '').trim() || null,
       }));
-    body.inventorySetup = form.inventorySetup;
+    body.inventorySetup = form.inventorySetup || null;
     body.linkedSupplies = form.linkedSupplies.map(row => ({ suppliesId: Number(row.suppliesId), quantity: Number(row.quantity), unit: row.unit || '' }));
     body.isActive = record ? form.isActive : true;
     setBusy(true);

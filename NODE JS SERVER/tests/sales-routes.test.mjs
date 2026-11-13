@@ -4,7 +4,9 @@ import { loadRouterWithDatabase, invokeRoute } from './helpers/load-api.mjs';
 
 // This adapter receives SQL text/parameters in memory. It cannot open SQL Server.
 const step = (match, rows = [], check) => ({ match, result: Array.isArray(rows) ? { recordset: rows } : rows, check });
-const audit = () => step(/INSERT INTO dbo\.AuditTrail/, [], values => {
+const audit = () => step(/INSERT INTO dbo\.AuditTrail/, [], (values, _state, query) => {
+  assert.match(query, /createdAt/);
+  assert.match(query, /SYSUTCDATETIME\(\)/);
   assert.equal(values.system, 'sales');
   assert.equal(values.userId, 1);
 });
@@ -22,7 +24,7 @@ function routeFixture(steps, initial = {}) {
           const next = pending.shift();
           assert.ok(next, 'Unexpected SQL: ' + query);
           assert.match(query, next.match);
-          next.check?.(values, state);
+          next.check?.(values, state, query);
           return next.result;
         },
       };
@@ -59,7 +61,7 @@ test('customer creation allocates its generated code and ordered delivery addres
   const fixture = routeFixture([
     step(/TABLOCKX,HOLDLOCK/, [{ total: 0 }]), step(/sys\.identity_columns/, [{ nextId: 7 }]),
     step(/WHERE code=@code/, []),
-    step(/INSERT INTO dbo\.Customers/, [{ id: 7 }], values => { assert.equal(values.code, 'C-00000007'); assert.equal(values.isActive, true); }),
+    step(/INSERT INTO dbo\.Customers/, [{ id: 7 }], (values, _state, query) => { assert.equal(values.code, 'C-00000007'); assert.equal(values.isActive, true); assert.equal(values.discount, null); assert.equal(values.discountType, null); assert.equal(values.cpnumber, null); assert.match(query, /createdAt,updatedAt/); }),
     step(/DELETE FROM dbo\.CustomerDeliveryAddresses/),
     step(/INSERT INTO dbo\.CustomerDeliveryAddresses/, [], values => { assert.equal(values.position, 0); assert.equal(values.address, 'Delivery A'); }),
     step(/INSERT INTO dbo\.CustomerDeliveryAddresses/, [], values => { assert.equal(values.position, 1); assert.equal(values.address, 'Delivery B'); }),
@@ -145,7 +147,8 @@ test('a successful delivery deducts stock within its receipt transaction and lin
   const fixture = routeFixture([
     step(/UPDLOCK,HOLDLOCK/, [order]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
     step(/stock>=@quantity/, [{ id: 3 }], (_values, state) => { state.stock3--; }),
-    step(/INSERT INTO dbo\.DeliveryReceipts/, [{ id: 10 }]), audit(),
+    step(/INSERT INTO dbo\.DeliveryReceipts/, [{ id: 10 }], (_values, _state, query) => assert.match(query, /createdAt/)),
+    step(/UPDATE dbo\.DeliveryReceipts SET number=@number/, [], values => assert.equal(values.number, 'DR-00000010')), audit(),
     step(/FROM dbo\.DeliveryReceipts/, [{ id: 10, orderId: 7, number: 'DR-MOCK' }]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
   ], { stock3: 5 });
   const response = await fixture.invoke('post', '/delivery-receipts', { orderId: 7, deliveryDate: '2026-11-13', address: 'Office', receivedBy: 'Customer' });
@@ -185,7 +188,7 @@ test('Product creation writes each named child table with its own literal SQL an
   const input = {
     sku: 'P7', description: 'Product', unit: 'PCS', currency: 'USD', price: 0.1153, isActive: false,
     processes: [{ name: 'Cut' }], offices: [{ name: 'TLP COMPANY' }],
-    customerApprovals: [{ customerId: 2, approvalDate: '2026-11-13', eolDate: null, approvalRemarks: 'Approved', eolRemarks: '' }],
+    customerApprovals: [{ customerId: 2, approvalDate: '2026-11-13', eolDate: null, approvalRemarks: 'Approved', eolRemarks: null }],
     inventorySetup: 'quarterly', inventorySchedules: [{ scheduleDate: 'not-a-date', month: 'ignored stale row' }],
     linkedSupplies: [{ suppliesId: 4, quantity: 0.000001, unit: 'KG' }],
   };
@@ -196,7 +199,7 @@ test('Product creation writes each named child table with its own literal SQL an
   const fixture = routeFixture([
     step(/ConfigUnits/, [{ id: 1 }]), step(/ConfigCurrencies/, [{ id: 1 }]),
     step(/FROM dbo.Customers/, [{ id: 2 }]), step(/FROM dbo.Supplies/, [{ unit: 'KG', isActive: true }]),
-    step(/INSERT INTO dbo.Products/, [{ id: 7 }], values => { assert.equal(values.price, '0.1153'); assert.equal(values.stock, 0); assert.equal(values.isActive, true); assert.equal(values.inventorySetup, 'quarterly'); }),
+    step(/INSERT INTO dbo.Products/, [{ id: 7 }], (values, _state, query) => { assert.equal(values.price, '0.1153'); assert.equal(values.stock, 0); assert.equal(values.isActive, true); assert.equal(values.inventorySetup, 'quarterly'); assert.equal(values.revision, null); assert.equal(values.moq, null); assert.equal(values.vatMode, null); assert.match(query, /createdAt,updatedAt/); }),
     step(/DELETE FROM dbo.ProductProcesses/), step(/INSERT INTO dbo.ProductProcesses/, [], values => assert.equal(values.name, 'Cut')),
     step(/DELETE FROM dbo.ProductOffices/), step(/INSERT INTO dbo.ProductOffices/, [], values => assert.equal(values.name, 'TLP COMPANY')),
     step(/DELETE FROM dbo.ProductCustomerApprovals/), step(/INSERT INTO dbo.ProductCustomerApprovals/, [], values => { assert.equal(values.customerId, 2); assert.equal(values.approvalDate, '2026-11-13'); }),
@@ -220,4 +223,44 @@ test('Product creation writes each named child table with its own literal SQL an
     assert.equal(Object.hasOwn(record, 'inventorySchedules'), false);
     reader.done();
   }
+});
+
+
+test('former Customer and Product CHECK invariants reject invalid direct writes before SQL', async () => {
+  for (const change of [{ decimalInPrice: -1 }, { decimalInTotalPrice: 7 }, { salesAddressType: 'unknown' }, { discountType: 'unknown' }, { discount: -1 }, { discount: 1000000001 }]) {
+    const fixture = routeFixture([]);
+    await assert.rejects(() => fixture.invoke('post', '/customers', { ...customer, ...change }), error => error.status === 400);
+    assert.equal(fixture.state.commits, 0);
+    fixture.done();
+  }
+  for (const change of [{ price: -1 }, { divisor: -1 }, { vatMode: 'unknown' }, { linkedSupplies: [{ suppliesId: 4, quantity: 0, unit: 'kg' }] }, { customerApprovals: [{ customerId: 2, approvalDate: '2026-11-13', eolDate: '2026-11-12' }] }]) {
+    const fixture = routeFixture([]);
+    await assert.rejects(() => fixture.invoke('post', '/products', { sku: 'P7', unit: 'PCS', currency: 'USD', ...change }), error => error.status === 400);
+    assert.equal(fixture.state.commits, 0);
+    fixture.done();
+  }
+});
+
+test('invoice and shipping inserts explicitly initialize values and assign untruncated identity numbers before commit', async () => {
+  const identity = 100000001;
+  const invoice = routeFixture([
+    step(/UPDLOCK,HOLDLOCK/, [order]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
+    step(/INSERT INTO dbo\.SalesInvoices/, [{ id: identity }], (values, _state, query) => { assert.match(query, /paidAmount,createdAt,updatedAt/); assert.match(query, /,0,SYSUTCDATETIME\(\),SYSUTCDATETIME\(\)\)/); assert.equal(values.notes, null); }),
+    step(/UPDATE dbo\.SalesInvoices SET number=@number/, [], values => assert.equal(values.number, 'SI-100000001')),
+    audit(), step(/FROM dbo\.SalesInvoices/, [{ id: identity, orderId: 7, number: 'SI-100000001', paidAmount: 0 }]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
+  ]);
+  const savedInvoice = await invoice.invoke('post', '/sales-invoices', { orderId: 7, invoiceDate: '2026-11-13', dueDate: '2026-11-13', notes: '' });
+  assert.equal(savedInvoice.body.record.number, 'SI-100000001');
+  assert.equal(invoice.state.commits, 1);
+  invoice.done();
+  const shipping = routeFixture([
+    step(/UPDLOCK,HOLDLOCK/, [{ id: 9, orderId: 7, invoiceDate: '2026-11-13' }]), step(/FROM dbo\.ShippingInvoices WHERE invoiceId/, []),
+    step(/INSERT INTO dbo\.ShippingInvoices/, [{ id: identity }], (values, _state, query) => { assert.match(query, /createdAt/); assert.equal(values.carrier, null); assert.equal(values.trackingNumber, null); assert.equal(values.notes, null); }),
+    step(/UPDATE dbo\.ShippingInvoices SET number=@number/, [], values => assert.equal(values.number, 'SHI-100000001')),
+    audit(), step(/FROM dbo\.ShippingInvoices/, [{ id: identity, orderId: 7, number: 'SHI-100000001' }]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
+  ]);
+  const savedShipping = await shipping.invoke('post', '/shipping-invoices', { invoiceId: 9, shippingDate: '2026-11-13', carrier: '', trackingNumber: '', notes: '' });
+  assert.equal(savedShipping.body.record.number, 'SHI-100000001');
+  assert.equal(shipping.state.commits, 1);
+  shipping.done();
 });

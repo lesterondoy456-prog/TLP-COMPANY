@@ -50,7 +50,7 @@ router.post('/suppliers', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     const vat = await request(scope).input('code', sql.NVarChar(sql.MAX), value.vatCode).query('SELECT id FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
     if (!vat.recordset.length) {
@@ -84,12 +84,14 @@ router.post('/suppliers', async (req, res) => {
       }
       write.input(key, sql.Bit, value[key]);
     }
-    const inserted = await write.query(`INSERT INTO dbo.Suppliers([name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive]) OUTPUT INSERTED.id VALUES(@name,@shortName,@businessStyle,@address,@remarks,@tin,@contactPerson,@email,@countryOfOrigin,@country,@cpnumber,@faxNo,@paymentTerm,@vatCode,@taxCode,@decimalInPrice,@decimalInTotalPrice,@vatInclusive,@isActive)`);
+    const inserted = await write.query(`INSERT INTO dbo.Suppliers([name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive],createdAt,updatedAt) OUTPUT INSERTED.id VALUES(@name,@shortName,@businessStyle,@address,@remarks,@tin,@contactPerson,@email,@countryOfOrigin,@country,@cpnumber,@faxNo,@paymentTerm,@vatCode,@taxCode,@decimalInPrice,@decimalInTotalPrice,@vatInclusive,@isActive,SYSUTCDATETIME(),SYSUTCDATETIME())`);
     const savedId = inserted.recordset[0].id;
+    await request(scope).input('id', sql.Int, savedId).input('code', sql.NVarChar(sql.MAX), 'SUP-' + String(savedId).padStart(8, '0').slice(-8))
+      .query('UPDATE dbo.Suppliers SET code=@code WHERE id=@id');
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'suppliers')
       .input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(savedId))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const saved = await request(scope).input('id', sql.Int, savedId).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
     return saved.recordset[0];
   });
@@ -131,7 +133,7 @@ router.put('/suppliers/:id', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     if (value.vatCode !== current.vatCode) {
       const vat = await request(scope).input('code', sql.NVarChar(sql.MAX), value.vatCode).query('SELECT id FROM dbo.ConfigVatCodes WHERE code=@code AND isActive=1');
@@ -172,7 +174,7 @@ router.put('/suppliers/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'suppliers')
       .input('action', sql.NVarChar(sql.MAX), 'update').input('recordId', sql.NVarChar(sql.MAX), String(savedId))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const saved = await request(scope).input('id', sql.Int, savedId).query(`SELECT id,code,[name],[shortName],[businessStyle],[address],[remarks],[tin],[contactPerson],[email],[countryOfOrigin],[country],[cpnumber],[faxNo],[paymentTerm],[vatCode],[taxCode],[decimalInPrice],[decimalInTotalPrice],[vatInclusive],[isActive] FROM dbo.Suppliers WHERE id=@id`);
     return saved.recordset[0];
   });
@@ -197,7 +199,7 @@ router.delete('/suppliers/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'suppliers')
       .input('action', sql.NVarChar(sql.MAX), 'deactivate').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
   });
   res.json({ success: true });
 });
@@ -264,7 +266,7 @@ router.post('/supplies', async (req, res) => {
       error.status = 400;
       throw error;
     }
-    const value = { productId: null, inventorySetup: '', offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: 0, thickness: 0, netWeight: 0, ...input };
+    const value = { productId: null, inventorySetup: null, offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: null, thickness: null, netWeight: null, ...input };
     for (const key of ['maker', 'name', 'description', 'remarks', 'color', 'unit', 'weightUnit', 'category']) {
       const entered = value[key] ?? '';
       if (typeof entered !== 'string' || entered.includes('\0')) {
@@ -272,10 +274,11 @@ router.post('/supplies', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     for (const [key, places, positive, maximum] of ['minimumStock', 'thickness', 'netWeight'].map(key => [key, 6, false, 1000000000])) {
       const entered = value[key];
+      if (entered == null || (typeof entered === 'string' && !entered.trim())) { value[key] = null; continue; }
       if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
         const error = new Error(`${key} must be a valid decimal number.`);
         error.status = 400;
@@ -306,6 +309,11 @@ router.post('/supplies', async (req, res) => {
     value.productId = value.productId == null ? null : Number(value.productId);
     if (value.productId !== null && (!Number.isSafeInteger(value.productId) || value.productId <= 0 || value.productId > 2147483647)) {
       const error = new Error('Enter a valid product id.');
+      error.status = 400;
+      throw error;
+    }
+    if (![null, '', 'monthly', 'quarterly'].includes(value.inventorySetup)) {
+      const error = new Error('Choose Monthly, Quarterly, or no inventory schedule.');
       error.status = 400;
       throw error;
     }
@@ -385,7 +393,7 @@ router.post('/supplies', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     if (typeof value.isActive !== 'boolean') {
       const error = new Error('isActive must be a boolean.');
@@ -393,8 +401,10 @@ router.post('/supplies', async (req, res) => {
       throw error;
     }
     write.input('productId', sql.Int, value.productId).input('inventorySetup', sql.NVarChar(sql.MAX), value.inventorySetup).input('isActive', sql.Bit, value.isActive);
-    const inserted = await write.query(`INSERT INTO dbo.Supplies([maker],[name],[description],[remarks],[color],[unit],[weightUnit],[category],[minimumStock],[thickness],[netWeight],[productId],[inventorySetup],[isActive]) OUTPUT INSERTED.id VALUES(@maker,@name,@description,@remarks,@color,@unit,@weightUnit,@category,@minimumStock,@thickness,@netWeight,@productId,@inventorySetup,@isActive)`);
+    const inserted = await write.query(`INSERT INTO dbo.Supplies([maker],[name],[description],[remarks],[color],[unit],[weightUnit],[category],[minimumStock],[thickness],[netWeight],[productId],[inventorySetup],[isActive],createdAt,updatedAt) OUTPUT INSERTED.id VALUES(@maker,@name,@description,@remarks,@color,@unit,@weightUnit,@category,@minimumStock,@thickness,@netWeight,@productId,@inventorySetup,@isActive,SYSUTCDATETIME(),SYSUTCDATETIME())`);
     const savedId = inserted.recordset[0].id;
+    await request(scope).input('id', sql.Int, savedId).input('code', sql.NVarChar(sql.MAX), 'S-' + String(savedId).padStart(8, '0').slice(-8))
+      .query('UPDATE dbo.Supplies SET code=@code WHERE id=@id');
     await request(scope).input('id', sql.Int, savedId).query('DELETE FROM dbo.SupplyOffices WHERE suppliesId=@id');
     for (const [position, row] of value.offices.entries()) {
       for (const key of ['name']) {
@@ -404,7 +414,7 @@ router.post('/supplies', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        row[key] = entered.trim();
+        row[key] = entered.trim() || null;
       }
       await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.SupplyOffices(suppliesId,position,name) VALUES(@id,@position,@name)');
     }
@@ -417,7 +427,7 @@ router.post('/supplies', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        row[key] = entered.trim();
+        row[key] = entered.trim() || null;
       }
       await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(sql.MAX), row.scheduleDate || null).input('month', sql.NVarChar(sql.MAX), row.month).query('INSERT INTO dbo.SupplyInventorySchedules(suppliesId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
     }
@@ -430,12 +440,13 @@ router.post('/supplies', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        row[key] = entered.trim();
+        row[key] = entered.trim() || null;
       }
-      row.moq = row.moq ?? 0;
-      row.price = row.price ?? 0;
+      row.moq = row.moq ?? null;
+      row.price = row.price ?? null;
       for (const [key, places, positive, maximum] of [['moq', 6, false, 1000000000], ['price', 6, false, 1000000000]]) {
-        const entered = row[key];
+      const entered = row[key];
+      if (entered == null || (typeof entered === 'string' && !entered.trim())) { row[key] = null; continue; }
         if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
           const error = new Error(`${key} must be a valid decimal number.`);
           error.status = 400;
@@ -471,7 +482,7 @@ router.post('/supplies', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'supplies')
       .input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(savedId))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, savedId).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
         FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
         SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
@@ -534,7 +545,7 @@ router.put('/supplies/:id', async (req, res) => {
       error.status = 400;
       throw error;
     }
-    const value = { productId: null, inventorySetup: '', offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: 0, thickness: 0, netWeight: 0, ...current, ...input };
+    const value = { productId: null, inventorySetup: null, offices: [], inventorySchedules: [], suppliers: [], isActive: true, minimumStock: null, thickness: null, netWeight: null, ...current, ...input };
     for (const key of ['maker', 'name', 'description', 'remarks', 'color', 'unit', 'weightUnit', 'category']) {
       const entered = value[key] ?? '';
       if (typeof entered !== 'string' || entered.includes('\0')) {
@@ -542,10 +553,11 @@ router.put('/supplies/:id', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     for (const [key, places, positive, maximum] of ['minimumStock', 'thickness', 'netWeight'].map(key => [key, 6, false, 1000000000])) {
       const entered = value[key];
+      if (entered == null || (typeof entered === 'string' && !entered.trim())) { value[key] = null; continue; }
       if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
         const error = new Error(`${key} must be a valid decimal number.`);
         error.status = 400;
@@ -580,7 +592,12 @@ router.put('/supplies/:id', async (req, res) => {
       throw error;
     }
     if (value.unit !== current.unit) {
-      const unit = await request(scope).input('unit', sql.NVarChar(sql.MAX), value.unit).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@unit AND isActive=1 AND forSupplies=1');
+      if (![null, '', 'monthly', 'quarterly'].includes(value.inventorySetup)) {
+      const error = new Error('Choose Monthly, Quarterly, or no inventory schedule.');
+      error.status = 400;
+      throw error;
+    }
+    const unit = await request(scope).input('unit', sql.NVarChar(sql.MAX), value.unit).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@unit AND isActive=1 AND forSupplies=1');
       if (!unit.recordset.length) {
         const error = new Error('Select an active Unit marked For Supplies.');
         error.status = 400;
@@ -663,7 +680,7 @@ router.put('/supplies/:id', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     if (typeof value.isActive !== 'boolean') {
       const error = new Error('isActive must be a boolean.');
@@ -683,7 +700,7 @@ router.put('/supplies/:id', async (req, res) => {
             error.status = 400;
             throw error;
           }
-          row[key] = entered.trim();
+          row[key] = entered.trim() || null;
         }
         await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.SupplyOffices(suppliesId,position,name) VALUES(@id,@position,@name)');
       }
@@ -698,7 +715,7 @@ router.put('/supplies/:id', async (req, res) => {
             error.status = 400;
             throw error;
           }
-          row[key] = entered.trim();
+          row[key] = entered.trim() || null;
         }
         await request(scope).input('id', sql.Int, savedId).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(sql.MAX), row.scheduleDate || null).input('month', sql.NVarChar(sql.MAX), row.month).query('INSERT INTO dbo.SupplyInventorySchedules(suppliesId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
       }
@@ -713,12 +730,13 @@ router.put('/supplies/:id', async (req, res) => {
             error.status = 400;
             throw error;
           }
-          row[key] = entered.trim();
+          row[key] = entered.trim() || null;
         }
-        row.moq = row.moq ?? 0;
-        row.price = row.price ?? 0;
+        row.moq = row.moq ?? null;
+        row.price = row.price ?? null;
         for (const [key, places, positive, maximum] of [['moq', 6, false, 1000000000], ['price', 6, false, 1000000000]]) {
-          const entered = row[key];
+      const entered = row[key];
+      if (entered == null || (typeof entered === 'string' && !entered.trim())) { row[key] = null; continue; }
           if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
             const error = new Error(`${key} must be a valid decimal number.`);
             error.status = 400;
@@ -755,7 +773,7 @@ router.put('/supplies/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'supplies')
       .input('action', sql.NVarChar(sql.MAX), 'update').input('recordId', sql.NVarChar(sql.MAX), String(savedId))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, savedId).query(`SELECT s.id,s.code,s.[maker],s.[name],s.[description],s.[remarks],s.[color],s.[unit],s.[weightUnit],s.[category],CONVERT(varchar(60),s.[minimumStock]) AS [minimumStock],CONVERT(varchar(60),s.[thickness]) AS [thickness],CONVERT(varchar(60),s.[netWeight]) AS [netWeight],s.[productId],s.[inventorySetup],s.[isActive],CONVERT(varchar(60),COALESCE((SELECT SUM(i.quantity) FROM dbo.SupplyInventory i WHERE i.suppliesId=s.id),0)) AS stock
         FROM dbo.Supplies s  WHERE s.id=@id ORDER BY s.name,s.id;
         SELECT suppliesId,name FROM dbo.SupplyOffices WHERE suppliesId=@id ORDER BY suppliesId,position;
@@ -795,7 +813,7 @@ router.delete('/supplies/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'supplies')
       .input('action', sql.NVarChar(sql.MAX), 'deactivate').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
   });
   res.json({ success: true });
 });
@@ -1075,7 +1093,7 @@ router.post('/purchase-requests', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
       const error = new Error('Send item rows as objects.');
@@ -1083,7 +1101,7 @@ router.post('/purchase-requests', async (req, res) => {
       throw error;
     }
     value.items = value.items.map(row => {
-      const line = { ...row, suppliesId: Number(row.suppliesId), neededDate: row.neededDate || value.neededDate };
+      const line = { ...row, suppliesId: Number(row.suppliesId), neededDate: row.neededDate || null };
       if (!Number.isSafeInteger(line.suppliesId) || line.suppliesId <= 0 || line.suppliesId > 2147483647) {
         const error = new Error('Enter a valid supplies id.');
         error.status = 400;
@@ -1096,10 +1114,11 @@ router.post('/purchase-requests', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        line[key] = entered.trim();
+        line[key] = entered.trim() || null;
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
         const entered = line[key];
+        if (key === 'discountRate' && (entered == null || (typeof entered === 'string' && !entered.trim()))) { line[key] = null; continue; }
         if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
           const error = new Error(`${key} must be a valid decimal number.`);
           error.status = 400;
@@ -1172,12 +1191,12 @@ router.post('/purchase-requests', async (req, res) => {
     req.input('remarks', sql.NVarChar(sql.MAX), value.remarks);
     let saved;
     const result = await req.input('branch', sql.NVarChar(sql.MAX), process.env.COMPANY_NAME || 'TLP COMPANY').input('preparedById', sql.Int, user.id).input('preparedBy', sql.NVarChar(sql.MAX), user.name)
-      .query(`INSERT INTO dbo.PurchaseRequests(number,prDate,neededDate,requestedBy,requestedDept,checkedBy,approvedBy,approvedBy2,remarks,branch,preparedById,preparedBy) OUTPUT INSERTED.id
-        VALUES(@number,@prDate,@neededDate,@requestedBy,@requestedDept,@checkedBy,@approvedBy,@approvedBy2,@remarks,@branch,@preparedById,@preparedBy)`);
+      .query(`INSERT INTO dbo.PurchaseRequests(number,prDate,neededDate,requestedBy,requestedDept,checkedBy,approvedBy,approvedBy2,remarks,branch,preparedById,preparedBy,status,createdAt,updatedAt) OUTPUT INSERTED.id
+        VALUES(@number,@prDate,@neededDate,@requestedBy,@requestedDept,@checkedBy,@approvedBy,@approvedBy2,@remarks,@branch,@preparedById,@preparedBy,'draft',SYSUTCDATETIME(),SYSUTCDATETIME())`);
     saved = result.recordset[0].id;
     for (const [position, item] of snapshots.entries()) {
       await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, item.suppliesId)
-        .input('suppliesCode', sql.NVarChar(sql.MAX), item.suppliesCode).input('suppliesName', sql.NVarChar(sql.MAX), item.suppliesName).input('description', sql.NVarChar(sql.MAX), item.description)
+        .input('suppliesCode', sql.NVarChar(sql.MAX), item.suppliesCode).input('suppliesName', sql.NVarChar(sql.MAX), item.suppliesName).input('description', sql.NVarChar(sql.MAX), item.description?.trim() || null)
         .input('quantity', sql.VarChar(sql.MAX), item.quantity).input('unit', sql.NVarChar(sql.MAX), item.unit).input('neededDate', sql.VarChar(sql.MAX), item.neededDate).input('remarks', sql.NVarChar(sql.MAX), item.remarks)
         .query(`INSERT INTO dbo.PurchaseRequestItems(requestId,position,suppliesId,suppliesCode,suppliesName,description,quantity,unit,neededDate,remarks)
           VALUES(@id,@position,@suppliesId,@suppliesCode,@suppliesName,@description,@quantity,@unit,@neededDate,@remarks)`);
@@ -1185,7 +1204,7 @@ router.post('/purchase-requests', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-requests')
       .input('action', sql.NVarChar(sql.MAX), 'create-draft').input('recordId', sql.NVarChar(sql.MAX), String(saved))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
         r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
         FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
@@ -1262,7 +1281,7 @@ router.put('/purchase-requests/:id', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     if (!Array.isArray(value.items) || value.items.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
       const error = new Error('Send item rows as objects.');
@@ -1270,7 +1289,7 @@ router.put('/purchase-requests/:id', async (req, res) => {
       throw error;
     }
     value.items = value.items.map(row => {
-      const line = { ...row, suppliesId: Number(row.suppliesId), neededDate: row.neededDate || value.neededDate };
+      const line = { ...row, suppliesId: Number(row.suppliesId), neededDate: row.neededDate || null };
       if (!Number.isSafeInteger(line.suppliesId) || line.suppliesId <= 0 || line.suppliesId > 2147483647) {
         const error = new Error('Enter a valid supplies id.');
         error.status = 400;
@@ -1283,10 +1302,11 @@ router.put('/purchase-requests/:id', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        line[key] = entered.trim();
+        line[key] = entered.trim() || null;
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
         const entered = line[key];
+        if (key === 'discountRate' && (entered == null || (typeof entered === 'string' && !entered.trim()))) { line[key] = null; continue; }
         if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
           const error = new Error(`${key} must be a valid decimal number.`);
           error.status = 400;
@@ -1362,7 +1382,7 @@ router.put('/purchase-requests/:id', async (req, res) => {
     await request(scope).input('id', sql.Int, id).query('DELETE FROM dbo.PurchaseRequestItems WHERE requestId=@id');
     for (const [position, item] of snapshots.entries()) {
       await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, item.suppliesId)
-        .input('suppliesCode', sql.NVarChar(sql.MAX), item.suppliesCode).input('suppliesName', sql.NVarChar(sql.MAX), item.suppliesName).input('description', sql.NVarChar(sql.MAX), item.description)
+        .input('suppliesCode', sql.NVarChar(sql.MAX), item.suppliesCode).input('suppliesName', sql.NVarChar(sql.MAX), item.suppliesName).input('description', sql.NVarChar(sql.MAX), item.description?.trim() || null)
         .input('quantity', sql.VarChar(sql.MAX), item.quantity).input('unit', sql.NVarChar(sql.MAX), item.unit).input('neededDate', sql.VarChar(sql.MAX), item.neededDate).input('remarks', sql.NVarChar(sql.MAX), item.remarks)
         .query(`INSERT INTO dbo.PurchaseRequestItems(requestId,position,suppliesId,suppliesCode,suppliesName,description,quantity,unit,neededDate,remarks)
           VALUES(@id,@position,@suppliesId,@suppliesCode,@suppliesName,@description,@quantity,@unit,@neededDate,@remarks)`);
@@ -1370,7 +1390,7 @@ router.put('/purchase-requests/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-requests')
       .input('action', sql.NVarChar(sql.MAX), 'update-draft').input('recordId', sql.NVarChar(sql.MAX), String(saved))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
         r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
         FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
@@ -1423,7 +1443,7 @@ router.post('/purchase-orders', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     value.rate = value.rate ?? 1;
     for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
@@ -1479,7 +1499,7 @@ router.post('/purchase-orders', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      const line = { ...row, requestItemId, currency: value.currency, discountRate: row.discountRate ?? 0 };
+      const line = { ...row, requestItemId, currency: value.currency, discountRate: row.discountRate == null || row.discountRate === '' ? null : row.discountRate };
       for (const key of ['remarks', 'unit']) {
         const entered = line[key] ?? '';
         if (typeof entered !== 'string' || entered.includes('\0')) {
@@ -1487,10 +1507,11 @@ router.post('/purchase-orders', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        line[key] = entered.trim();
+        line[key] = entered.trim() || null;
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000], ['unitPrice', 6, false, 1000000000], ['discountRate', 6, false, 100]]) {
         const entered = line[key];
+        if (key === 'discountRate' && (entered == null || (typeof entered === 'string' && !entered.trim()))) { line[key] = null; continue; }
         if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
           const error = new Error(`${key} must be a valid decimal number.`);
           error.status = 400;
@@ -1709,7 +1730,7 @@ router.post('/purchase-orders', async (req, res) => {
       const vatAmount = vatInclusive ? (afterDiscount * taxRateUnits + (percentages + taxRateUnits) / 2n) / (percentages + taxRateUnits) : (afterDiscount * taxRateUnits + percentages / 2n) / percentages;
       const netAmount = vatInclusive ? afterDiscount - vatAmount : afterDiscount;
       const values = { grossAmount, discountAmount, netAmount, vatAmount, amount: netAmount + vatAmount };
-      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
+      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: item.discountRate == null ? null : `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
       for (const [key, amount] of Object.entries(values)) {
         totals[key] += amount;
         if (totals[key] > 1000000000000n * totalFactor) {
@@ -1730,7 +1751,7 @@ router.post('/purchase-orders', async (req, res) => {
     req.input('vatAmount', sql.VarChar(sql.MAX), totals.vatAmount);
     req.input('amount', sql.VarChar(sql.MAX), totals.amount);
     req.input('supplierId', sql.Int, supplier.id).input('supplierName', sql.NVarChar(sql.MAX), supplier.name)
-      .input('supplierAddress', sql.NVarChar(sql.MAX), supplier.address).input('supplierContactPerson', sql.NVarChar(sql.MAX), supplier.contactPerson)
+      .input('supplierAddress', sql.NVarChar(sql.MAX), supplier.address).input('supplierContactPerson', sql.NVarChar(sql.MAX), supplier.contactPerson?.trim() || null)
       .input('poDate', sql.VarChar(sql.MAX), value.poDate).input('deliveryDate', sql.VarChar(sql.MAX), value.deliveryDate).input('currency', sql.NVarChar(sql.MAX), value.currency)
       .input('rate', sql.VarChar(sql.MAX), value.rate).input('paymentTerm', sql.NVarChar(sql.MAX), value.paymentTerm).input('shipment', sql.NVarChar(sql.MAX), value.shipment)
       .input('suppliesCategory', sql.NVarChar(sql.MAX), value.suppliesCategory).input('vatCode', sql.NVarChar(sql.MAX), value.vatCode).input('vatRate', sql.VarChar(sql.MAX), String(settings.vatRate))
@@ -1738,8 +1759,10 @@ router.post('/purchase-orders', async (req, res) => {
       .input('deliveryAddress', sql.NVarChar(sql.MAX), value.deliveryAddress).input('remarks', sql.NVarChar(sql.MAX), value.remarks);
     let saved;
     const result = await req.input('branch', sql.NVarChar(sql.MAX), process.env.COMPANY_NAME || 'TLP COMPANY').input('preparedById', sql.Int, user.id).input('preparedBy', sql.NVarChar(sql.MAX), user.name)
-      .query(`INSERT INTO dbo.PurchaseOrders(supplierId,supplierName,supplierAddress,supplierContactPerson,poDate,deliveryDate,currency,rate,paymentTerm,shipment,suppliesCategory,vatCode,vatRate,vatInclusive,decimalInPrice,decimalInTotalPrice,deliveryAddress,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount,branch,preparedById,preparedBy) OUTPUT INSERTED.id VALUES(@supplierId,@supplierName,@supplierAddress,@supplierContactPerson,@poDate,@deliveryDate,@currency,@rate,@paymentTerm,@shipment,@suppliesCategory,@vatCode,@vatRate,@vatInclusive,@decimalInPrice,@decimalInTotalPrice,@deliveryAddress,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@branch,@preparedById,@preparedBy)`);
+      .query(`INSERT INTO dbo.PurchaseOrders(supplierId,supplierName,supplierAddress,supplierContactPerson,poDate,deliveryDate,currency,rate,paymentTerm,shipment,suppliesCategory,vatCode,vatRate,vatInclusive,decimalInPrice,decimalInTotalPrice,deliveryAddress,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount,branch,preparedById,preparedBy,status,createdAt,updatedAt) OUTPUT INSERTED.id VALUES(@supplierId,@supplierName,@supplierAddress,@supplierContactPerson,@poDate,@deliveryDate,@currency,@rate,@paymentTerm,@shipment,@suppliesCategory,@vatCode,@vatRate,@vatInclusive,@decimalInPrice,@decimalInTotalPrice,@deliveryAddress,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@branch,@preparedById,@preparedBy,'draft',SYSUTCDATETIME(),SYSUTCDATETIME())`);
     saved = result.recordset[0].id;
+    await request(scope).input('id', sql.Int, saved).input('number', sql.NVarChar(sql.MAX), 'PO-' + String(saved).padStart(8, '0').slice(-8))
+      .query('UPDATE dbo.PurchaseOrders SET number=@number WHERE id=@id');
     for (const [position, item] of totals.items.entries()) {
       const lineWrite = request(scope);
       lineWrite.input('grossAmount', sql.VarChar(sql.MAX), item.grossAmount);
@@ -1749,7 +1772,7 @@ router.post('/purchase-orders', async (req, res) => {
     lineWrite.input('amount', sql.VarChar(sql.MAX), item.amount);
       await lineWrite.input('id', sql.Int, saved).input('position', sql.Int, position).input('requestItemId', sql.Int, item.requestItemId)
         .input('suppliesId', sql.Int, item.suppliesId).input('suppliesCode', sql.NVarChar(sql.MAX), item.suppliesCode).input('suppliesName', sql.NVarChar(sql.MAX), item.suppliesName)
-        .input('description', sql.NVarChar(sql.MAX), item.description).input('unit', sql.NVarChar(sql.MAX), item.unit).input('quantity', sql.VarChar(sql.MAX), item.quantity)
+        .input('description', sql.NVarChar(sql.MAX), item.description?.trim() || null).input('unit', sql.NVarChar(sql.MAX), item.unit).input('quantity', sql.VarChar(sql.MAX), item.quantity)
         .input('unitPrice', sql.VarChar(sql.MAX), item.unitPrice).input('currency', sql.NVarChar(sql.MAX), item.currency).input('discountRate', sql.VarChar(sql.MAX), item.discountRate)
         .input('vatRate', sql.VarChar(sql.MAX), item.vatRate).input('remarks', sql.NVarChar(sql.MAX), item.remarks)
         .query(`INSERT INTO dbo.PurchaseOrderItems(orderId,position,requestItemId,suppliesId,suppliesCode,suppliesName,description,unit,quantity,unitPrice,currency,discountRate,vatRate,grossAmount,discountAmount,netAmount,vatAmount,amount,remarks)
@@ -1758,7 +1781,7 @@ router.post('/purchase-orders', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-orders')
       .input('action', sql.NVarChar(sql.MAX), 'create-draft').input('recordId', sql.NVarChar(sql.MAX), String(saved))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
         CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
         o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -1843,7 +1866,7 @@ router.put('/purchase-orders/:id', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     value.rate = value.rate ?? 1;
     for (const [key, places, positive, maximum] of [['rate', 5, true, 1000000000]]) {
@@ -1899,7 +1922,7 @@ router.put('/purchase-orders/:id', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      const line = { ...row, requestItemId, currency: value.currency, discountRate: row.discountRate ?? 0 };
+      const line = { ...row, requestItemId, currency: value.currency, discountRate: row.discountRate == null || row.discountRate === '' ? null : row.discountRate };
       for (const key of ['remarks', 'unit']) {
         const entered = line[key] ?? '';
         if (typeof entered !== 'string' || entered.includes('\0')) {
@@ -1907,10 +1930,11 @@ router.put('/purchase-orders/:id', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        line[key] = entered.trim();
+        line[key] = entered.trim() || null;
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000], ['unitPrice', 6, false, 1000000000], ['discountRate', 6, false, 100]]) {
         const entered = line[key];
+        if (key === 'discountRate' && (entered == null || (typeof entered === 'string' && !entered.trim()))) { line[key] = null; continue; }
         if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
           const error = new Error(`${key} must be a valid decimal number.`);
           error.status = 400;
@@ -2129,7 +2153,7 @@ router.put('/purchase-orders/:id', async (req, res) => {
       const vatAmount = vatInclusive ? (afterDiscount * taxRateUnits + (percentages + taxRateUnits) / 2n) / (percentages + taxRateUnits) : (afterDiscount * taxRateUnits + percentages / 2n) / percentages;
       const netAmount = vatInclusive ? afterDiscount - vatAmount : afterDiscount;
       const values = { grossAmount, discountAmount, netAmount, vatAmount, amount: netAmount + vatAmount };
-      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
+      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: item.discountRate == null ? null : `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
       for (const [key, amount] of Object.entries(values)) {
         totals[key] += amount;
         if (totals[key] > 1000000000000n * totalFactor) {
@@ -2150,7 +2174,7 @@ router.put('/purchase-orders/:id', async (req, res) => {
     req.input('vatAmount', sql.VarChar(sql.MAX), totals.vatAmount);
     req.input('amount', sql.VarChar(sql.MAX), totals.amount);
     req.input('supplierId', sql.Int, supplier.id).input('supplierName', sql.NVarChar(sql.MAX), supplier.name)
-      .input('supplierAddress', sql.NVarChar(sql.MAX), supplier.address).input('supplierContactPerson', sql.NVarChar(sql.MAX), supplier.contactPerson)
+      .input('supplierAddress', sql.NVarChar(sql.MAX), supplier.address).input('supplierContactPerson', sql.NVarChar(sql.MAX), supplier.contactPerson?.trim() || null)
       .input('poDate', sql.VarChar(sql.MAX), value.poDate).input('deliveryDate', sql.VarChar(sql.MAX), value.deliveryDate).input('currency', sql.NVarChar(sql.MAX), value.currency)
       .input('rate', sql.VarChar(sql.MAX), value.rate).input('paymentTerm', sql.NVarChar(sql.MAX), value.paymentTerm).input('shipment', sql.NVarChar(sql.MAX), value.shipment)
       .input('suppliesCategory', sql.NVarChar(sql.MAX), value.suppliesCategory).input('vatCode', sql.NVarChar(sql.MAX), value.vatCode).input('vatRate', sql.VarChar(sql.MAX), String(settings.vatRate))
@@ -2168,7 +2192,7 @@ router.put('/purchase-orders/:id', async (req, res) => {
     lineWrite.input('amount', sql.VarChar(sql.MAX), item.amount);
       await lineWrite.input('id', sql.Int, saved).input('position', sql.Int, position).input('requestItemId', sql.Int, item.requestItemId)
         .input('suppliesId', sql.Int, item.suppliesId).input('suppliesCode', sql.NVarChar(sql.MAX), item.suppliesCode).input('suppliesName', sql.NVarChar(sql.MAX), item.suppliesName)
-        .input('description', sql.NVarChar(sql.MAX), item.description).input('unit', sql.NVarChar(sql.MAX), item.unit).input('quantity', sql.VarChar(sql.MAX), item.quantity)
+        .input('description', sql.NVarChar(sql.MAX), item.description?.trim() || null).input('unit', sql.NVarChar(sql.MAX), item.unit).input('quantity', sql.VarChar(sql.MAX), item.quantity)
         .input('unitPrice', sql.VarChar(sql.MAX), item.unitPrice).input('currency', sql.NVarChar(sql.MAX), item.currency).input('discountRate', sql.VarChar(sql.MAX), item.discountRate)
         .input('vatRate', sql.VarChar(sql.MAX), item.vatRate).input('remarks', sql.NVarChar(sql.MAX), item.remarks)
         .query(`INSERT INTO dbo.PurchaseOrderItems(orderId,position,requestItemId,suppliesId,suppliesCode,suppliesName,description,unit,quantity,unitPrice,currency,discountRate,vatRate,grossAmount,discountAmount,netAmount,vatAmount,amount,remarks)
@@ -2177,7 +2201,7 @@ router.put('/purchase-orders/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-orders')
       .input('action', sql.NVarChar(sql.MAX), 'update-draft').input('recordId', sql.NVarChar(sql.MAX), String(saved))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
         CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
         o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -2231,7 +2255,7 @@ router.post('/receivings', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     value.invoiceDate = value.invoiceDate || null;
     if (value.rate !== undefined) {
@@ -2291,6 +2315,23 @@ router.post('/receivings', async (req, res) => {
       }
       const allocations = (row.allocations || []).map(allocation => {
         const entry = { ...allocation, expiryDate: allocation.expiryDate || null, mfgDate: allocation.mfgDate || null };
+        for (const key of ['expiryDate', 'mfgDate']) {
+          if (entry[key] !== null) {
+            const date = typeof entry[key] === 'string' ? new Date(entry[key] + 'T00:00:00Z') : null;
+            if (typeof entry[key] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(entry[key]) || entry[key] < '0001-01-01'
+              || !Number.isFinite(date?.getTime()) || date.toISOString().slice(0, 10) !== entry[key]) {
+              const error = new Error('Enter a valid allocation date.');
+              error.status = 400;
+              throw error;
+            }
+          }
+        }
+        if (entry.expiryDate && entry.mfgDate && entry.expiryDate < entry.mfgDate) {
+          const error = new Error('Allocation expiry date cannot be earlier than the manufacturing date.');
+          error.status = 400;
+          throw error;
+        }
+
         for (const key of ['warehouseId', 'locationId']) {
           entry[key] = entry[key] == null ? null : Number(entry[key]);
           if (entry[key] !== null && (!Number.isSafeInteger(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) {
@@ -2306,7 +2347,7 @@ router.post('/receivings', async (req, res) => {
             error.status = 400;
             throw error;
           }
-          entry[key] = entered.trim();
+          entry[key] = entered.trim() || null;
         }
         for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
           const entered = entry[key];
@@ -2352,10 +2393,11 @@ router.post('/receivings', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        line[key] = entered.trim();
+        line[key] = entered.trim() || null;
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
         const entered = line[key];
+        if (key === 'discountRate' && (entered == null || (typeof entered === 'string' && !entered.trim()))) { line[key] = null; continue; }
         if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
           const error = new Error(`${key} must be a valid decimal number.`);
           error.status = 400;
@@ -2570,7 +2612,7 @@ router.post('/receivings', async (req, res) => {
       const vatAmount = vatInclusive ? (afterDiscount * taxRateUnits + (percentages + taxRateUnits) / 2n) / (percentages + taxRateUnits) : (afterDiscount * taxRateUnits + percentages / 2n) / percentages;
       const netAmount = vatInclusive ? afterDiscount - vatAmount : afterDiscount;
       const values = { grossAmount, discountAmount, netAmount, vatAmount, amount: netAmount + vatAmount };
-      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
+      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: item.discountRate == null ? null : `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
       for (const [key, amount] of Object.entries(values)) {
         totals[key] += amount;
         if (totals[key] > 1000000000000n * totalFactor) {
@@ -2595,8 +2637,10 @@ router.post('/receivings', async (req, res) => {
       .input('invoiceDate', sql.VarChar(sql.MAX), value.invoiceDate).input('rate', sql.VarChar(sql.MAX), value.rate || order.rate).input('remarks', sql.NVarChar(sql.MAX), value.remarks);
     let saved;
     const result = await req.input('receivedById', sql.Int, user.id).input('receivedBy', sql.NVarChar(sql.MAX), user.name)
-      .query(`INSERT INTO dbo.SuppliesReceipts(purchaseOrderId,srrDate,drNumber,pezaReference,invoiceNumber,invoiceDate,rate,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount,receivedById,receivedBy) OUTPUT INSERTED.id VALUES(@purchaseOrderId,@srrDate,@drNumber,@pezaReference,@invoiceNumber,@invoiceDate,@rate,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@receivedById,@receivedBy)`);
+      .query(`INSERT INTO dbo.SuppliesReceipts(purchaseOrderId,srrDate,drNumber,pezaReference,invoiceNumber,invoiceDate,rate,remarks,grossAmount,discountAmount,netAmount,vatAmount,amount,receivedById,receivedBy,status,createdAt,updatedAt) OUTPUT INSERTED.id VALUES(@purchaseOrderId,@srrDate,@drNumber,@pezaReference,@invoiceNumber,@invoiceDate,@rate,@remarks,@grossAmount,@discountAmount,@netAmount,@vatAmount,@amount,@receivedById,@receivedBy,'draft',SYSUTCDATETIME(),SYSUTCDATETIME())`);
     saved = result.recordset[0].id;
+    await request(scope).input('id', sql.Int, saved).input('number', sql.NVarChar(sql.MAX), 'SRR-' + String(saved).padStart(8, '0').slice(-8))
+      .query('UPDATE dbo.SuppliesReceipts SET number=@number WHERE id=@id');
     for (const [position, item] of totals.items.entries()) {
       const lineWrite = request(scope);
       lineWrite.input('grossAmount', sql.VarChar(sql.MAX), item.grossAmount);
@@ -2620,7 +2664,7 @@ router.post('/receivings', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'receivings')
       .input('action', sql.NVarChar(sql.MAX), 'create-draft').input('recordId', sql.NVarChar(sql.MAX), String(saved))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
         CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
         o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -2733,7 +2777,7 @@ router.put('/receivings/:id', async (req, res) => {
         error.status = 400;
         throw error;
       }
-      value[key] = entered.trim();
+      value[key] = entered.trim() || null;
     }
     value.invoiceDate = value.invoiceDate || null;
     if (value.rate !== undefined) {
@@ -2793,6 +2837,23 @@ router.put('/receivings/:id', async (req, res) => {
       }
       const allocations = (row.allocations || []).map(allocation => {
         const entry = { ...allocation, expiryDate: allocation.expiryDate || null, mfgDate: allocation.mfgDate || null };
+        for (const key of ['expiryDate', 'mfgDate']) {
+          if (entry[key] !== null) {
+            const date = typeof entry[key] === 'string' ? new Date(entry[key] + 'T00:00:00Z') : null;
+            if (typeof entry[key] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(entry[key]) || entry[key] < '0001-01-01'
+              || !Number.isFinite(date?.getTime()) || date.toISOString().slice(0, 10) !== entry[key]) {
+              const error = new Error('Enter a valid allocation date.');
+              error.status = 400;
+              throw error;
+            }
+          }
+        }
+        if (entry.expiryDate && entry.mfgDate && entry.expiryDate < entry.mfgDate) {
+          const error = new Error('Allocation expiry date cannot be earlier than the manufacturing date.');
+          error.status = 400;
+          throw error;
+        }
+
         for (const key of ['warehouseId', 'locationId']) {
           entry[key] = entry[key] == null ? null : Number(entry[key]);
           if (entry[key] !== null && (!Number.isSafeInteger(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) {
@@ -2808,7 +2869,7 @@ router.put('/receivings/:id', async (req, res) => {
             error.status = 400;
             throw error;
           }
-          entry[key] = entered.trim();
+          entry[key] = entered.trim() || null;
         }
         for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
           const entered = entry[key];
@@ -2854,10 +2915,11 @@ router.put('/receivings/:id', async (req, res) => {
           error.status = 400;
           throw error;
         }
-        line[key] = entered.trim();
+        line[key] = entered.trim() || null;
       }
       for (const [key, places, positive, maximum] of [['quantity', 6, true, 1000000000]]) {
         const entered = line[key];
+        if (key === 'discountRate' && (entered == null || (typeof entered === 'string' && !entered.trim()))) { line[key] = null; continue; }
         if (!['string', 'number'].includes(typeof entered) || (typeof entered === 'number' && !Number.isFinite(entered))) {
           const error = new Error(`${key} must be a valid decimal number.`);
           error.status = 400;
@@ -3072,7 +3134,7 @@ router.put('/receivings/:id', async (req, res) => {
       const vatAmount = vatInclusive ? (afterDiscount * taxRateUnits + (percentages + taxRateUnits) / 2n) / (percentages + taxRateUnits) : (afterDiscount * taxRateUnits + percentages / 2n) / percentages;
       const netAmount = vatInclusive ? afterDiscount - vatAmount : afterDiscount;
       const values = { grossAmount, discountAmount, netAmount, vatAmount, amount: netAmount + vatAmount };
-      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
+      const calculated = { ...item, quantity: `${quantity / 1000000n}.${String(quantity % 1000000n).padStart(6, '0')}`, unitPrice: `${price / 1000000n}.${String(price % 1000000n).padStart(6, '0')}`, discountRate: item.discountRate == null ? null : `${discount / 1000000n}.${String(discount % 1000000n).padStart(6, '0')}`, vatRate: `${taxRateUnits / 1000000n}.${String(taxRateUnits % 1000000n).padStart(6, '0')}` };
       for (const [key, amount] of Object.entries(values)) {
         totals[key] += amount;
         if (totals[key] > 1000000000000n * totalFactor) {
@@ -3121,7 +3183,7 @@ router.put('/receivings/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'receivings')
       .input('action', sql.NVarChar(sql.MAX), 'update-draft').input('recordId', sql.NVarChar(sql.MAX), String(saved))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedRecordData = await request(scope).input('id', sql.Int, saved).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
         CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
         o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -3199,7 +3261,7 @@ router.post('/purchase-requests/:id/post', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-requests')
       .input('action', sql.NVarChar(sql.MAX), 'post').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
         r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
         FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
@@ -3263,7 +3325,7 @@ router.post('/purchase-requests/:id/cancel', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-requests')
       .input('action', sql.NVarChar(sql.MAX), 'cancel').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.branch,CONVERT(varchar(10),r.prDate,23) AS prDate,CONVERT(varchar(10),r.neededDate,23) AS neededDate,
         r.requestedBy,r.requestedDept,r.checkedBy,r.approvedBy,r.approvedBy2,r.remarks,r.preparedById,r.preparedBy,r.status,r.postedAt
         FROM dbo.PurchaseRequests r  WHERE r.id=@id ORDER BY r.id DESC;
@@ -3393,7 +3455,7 @@ router.post('/purchase-orders/:id/post', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-orders')
       .input('action', sql.NVarChar(sql.MAX), 'post').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
         CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
         o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -3465,7 +3527,7 @@ router.post('/purchase-orders/:id/cancel', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'purchase-orders')
       .input('action', sql.NVarChar(sql.MAX), 'cancel').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.branch,o.supplierId,o.supplierName,o.supplierAddress,o.supplierContactPerson,
         CONVERT(varchar(10),o.poDate,23) AS poDate,CONVERT(varchar(10),o.deliveryDate,23) AS deliveryDate,o.currency,CONVERT(varchar(60),o.rate) AS rate,
         o.paymentTerm,o.shipment,o.suppliesCategory,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -3696,31 +3758,31 @@ router.post('/receivings/:id/post', async (req, res) => {
     // All source balances and destinations passed; every stock effect shares this transaction.
     for (const movement of movements) {
       const existing = await request(scope).input('suppliesId', sql.Int, movement.suppliesId).input('warehouseId', sql.Int, movement.warehouseId)
-          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(sql.MAX), movement.imLot || '').input('qcStatus', sql.NVarChar(sql.MAX), movement.qcStatus || '')
+          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(sql.MAX), movement.imLot ?? null).input('qcStatus', sql.NVarChar(sql.MAX), movement.qcStatus ?? null)
           .input('expiryDate', sql.VarChar(sql.MAX), movement.expiryDate || null).input('mfgDate', sql.VarChar(sql.MAX), movement.mfgDate || null).input('quantity', sql.VarChar(sql.MAX), movement.quantity).query(`SELECT id FROM dbo.SupplyInventory WITH (UPDLOCK,HOLDLOCK) WHERE suppliesId=@suppliesId AND warehouseId=@warehouseId AND locationId=@locationId
-          AND imLot=@imLot AND qcStatus=@qcStatus AND (expiryDate=@expiryDate OR (expiryDate IS NULL AND @expiryDate IS NULL)) AND (mfgDate=@mfgDate OR (mfgDate IS NULL AND @mfgDate IS NULL))`);
+          AND (imLot=@imLot OR (imLot IS NULL AND @imLot IS NULL)) AND (qcStatus=@qcStatus OR (qcStatus IS NULL AND @qcStatus IS NULL)) AND (expiryDate=@expiryDate OR (expiryDate IS NULL AND @expiryDate IS NULL)) AND (mfgDate=@mfgDate OR (mfgDate IS NULL AND @mfgDate IS NULL))`);
         let inventoryId = existing.recordset[0]?.id;
         if (inventoryId) {
           const result = await request(scope).input('suppliesId', sql.Int, movement.suppliesId).input('warehouseId', sql.Int, movement.warehouseId)
-          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(sql.MAX), movement.imLot || '').input('qcStatus', sql.NVarChar(sql.MAX), movement.qcStatus || '')
+          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(sql.MAX), movement.imLot ?? null).input('qcStatus', sql.NVarChar(sql.MAX), movement.qcStatus ?? null)
           .input('expiryDate', sql.VarChar(sql.MAX), movement.expiryDate || null).input('mfgDate', sql.VarChar(sql.MAX), movement.mfgDate || null).input('quantity', sql.VarChar(sql.MAX), movement.quantity).input('id', sql.Int, inventoryId).query(`UPDATE dbo.SupplyInventory SET quantity=quantity+CONVERT(decimal(18,6),@quantity),updatedAt=SYSUTCDATETIME()
-            OUTPUT INSERTED.id WHERE id=@id AND quantity<=CONVERT(decimal(18,6),'999999999999.999999')-CONVERT(decimal(18,6),@quantity)`);
+            OUTPUT INSERTED.id WHERE id=@id AND quantity>=0 AND quantity<=CONVERT(decimal(18,6),'999999999999.999999')-CONVERT(decimal(18,6),@quantity)`);
           if (!result.recordset.length) {
-            const error = new Error('This inventory balance exceeds the supported stock quantity.');
+            const error = new Error('This inventory balance is outside the supported stock quantity.');
             error.status = 409;
             throw error;
           }
         } else {
           const result = await request(scope).input('suppliesId', sql.Int, movement.suppliesId).input('warehouseId', sql.Int, movement.warehouseId)
-          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(sql.MAX), movement.imLot || '').input('qcStatus', sql.NVarChar(sql.MAX), movement.qcStatus || '')
-          .input('expiryDate', sql.VarChar(sql.MAX), movement.expiryDate || null).input('mfgDate', sql.VarChar(sql.MAX), movement.mfgDate || null).input('quantity', sql.VarChar(sql.MAX), movement.quantity).query(`INSERT INTO dbo.SupplyInventory(suppliesId,warehouseId,locationId,imLot,qcStatus,expiryDate,mfgDate,quantity) OUTPUT INSERTED.id
-            VALUES(@suppliesId,@warehouseId,@locationId,@imLot,@qcStatus,@expiryDate,@mfgDate,@quantity)`);
+          .input('locationId', sql.Int, movement.locationId).input('imLot', sql.NVarChar(sql.MAX), movement.imLot ?? null).input('qcStatus', sql.NVarChar(sql.MAX), movement.qcStatus ?? null)
+          .input('expiryDate', sql.VarChar(sql.MAX), movement.expiryDate || null).input('mfgDate', sql.VarChar(sql.MAX), movement.mfgDate || null).input('quantity', sql.VarChar(sql.MAX), movement.quantity).query(`INSERT INTO dbo.SupplyInventory(suppliesId,warehouseId,locationId,imLot,qcStatus,expiryDate,mfgDate,quantity,updatedAt) OUTPUT INSERTED.id
+            VALUES(@suppliesId,@warehouseId,@locationId,@imLot,@qcStatus,@expiryDate,@mfgDate,@quantity,SYSUTCDATETIME())`);
           inventoryId = result.recordset[0].id;
         }
         await request(scope).input('receiptId', sql.Int, movement.receiptId).input('receiptItemId', sql.Int, movement.receiptItemId).input('allocationId', sql.Int, movement.allocationId)
           .input('inventoryId', sql.Int, inventoryId).input('quantity', sql.VarChar(sql.MAX), movement.quantity).input('user', sql.Int, user.id)
-          .query(`INSERT INTO dbo.SupplyStockMovements(receiptId,receiptItemId,allocationId,inventoryId,quantity,createdById)
-            VALUES(@receiptId,@receiptItemId,@allocationId,@inventoryId,@quantity,@user)`);
+          .query(`INSERT INTO dbo.SupplyStockMovements(receiptId,receiptItemId,allocationId,inventoryId,quantity,createdById,createdAt)
+            VALUES(@receiptId,@receiptItemId,@allocationId,@inventoryId,@quantity,@user,SYSUTCDATETIME())`);
     }
     await request(scope).input('id', sql.Int, id).input('user', sql.Int, user.id).query("UPDATE dbo.SuppliesReceipts SET status='posted',postedById=@user,postedAt=SYSUTCDATETIME(),updatedAt=SYSUTCDATETIME() WHERE id=@id");
     await request(scope).input('id', sql.Int, order.id).query(`UPDATE o SET status=CASE WHEN EXISTS(SELECT 1 FROM dbo.PurchaseOrderItems d WHERE d.orderId=o.id
@@ -3729,7 +3791,7 @@ router.post('/receivings/:id/post', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'receivings')
       .input('action', sql.NVarChar(sql.MAX), 'post').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
         CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
         o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,
@@ -3822,7 +3884,7 @@ router.post('/receivings/:id/cancel', async (req, res) => {
     await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), 'receivings')
       .input('action', sql.NVarChar(sql.MAX), 'cancel').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     const savedData = await request(scope).input('id', sql.Int, id).query(`SELECT r.id,r.number,r.purchaseOrderId,o.number AS purchaseOrderNumber,o.branch,o.supplierId,o.supplierName,o.supplierAddress,
         CONVERT(varchar(10),r.srrDate,23) AS srrDate,r.drNumber,r.pezaReference,r.invoiceNumber,CONVERT(varchar(10),r.invoiceDate,23) AS invoiceDate,
         o.currency,CONVERT(varchar(60),r.rate) AS rate,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.decimalInPrice,o.decimalInTotalPrice,

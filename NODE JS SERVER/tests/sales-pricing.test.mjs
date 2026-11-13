@@ -19,10 +19,11 @@ function orderFixture(currencies = ['USD'], current = {}) {
         async query(query) {
           if (/FROM dbo\.Customers/.test(query)) return { recordset: [{ id: 2, name: 'Customer', address: 'Office', isActive: true }] };
           if (/FROM dbo\.Products/.test(query)) return { recordset: [{ id: values.id, name: 'Product ' + values.id, sku: 'P' + values.id, unit: 'PCS', currency: currencies[values.id - 1], isActive: true }] };
+          if (/INSERT INTO dbo\.SalesOrders/.test(query)) { assert.match(query, /createdAt,updatedAt/); assert.match(query, /SYSUTCDATETIME\(\)/); }
           if (/INSERT INTO dbo\.SalesOrders|UPDATE dbo\.SalesOrders/.test(query)) {
             state.header = { ...state.header, ...values };
             state.writes++;
-            return { recordset: [{ id: 7 }] };
+            return { recordset: [{ id: state.header.id }] };
           }
           if (/DELETE FROM dbo\.SalesOrderItems/.test(query)) { state.items = []; state.writes++; return { recordset: [] }; }
           if (/INSERT INTO dbo\.SalesOrderItems/.test(query)) { state.items.push({ ...values }); state.writes++; return { recordset: [] }; }
@@ -118,4 +119,12 @@ test('linked order updates stop under the source-row lock before changing saved 
     assert.equal(fixture.state.writes, 0);
     assert.equal(fixture.state.rollbacks, 1);
   }
+});
+
+
+test('sales order numbers are assigned in backend JavaScript without truncating identities above eight digits', async () => {
+  const fixture = orderFixture(['USD'], { id: 100000001 });
+  const result = await fixture.save([{ quantity: 1, unitPrice: 1 }]);
+  assert.equal(result.body.record.number, 'SO-100000001');
+  assert.equal(fixture.state.commits, 1);
 });

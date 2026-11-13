@@ -54,8 +54,10 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   for (const tab of Object.values(tabs)) await expect(tab).toBeVisible();
   for (const label of ['Code *', 'Rev', 'Description', 'UOP *', 'UOP2', 'Qty per UOP2', 'MOQ', 'SPQ', 'Unit Cost', 'Selling Price', 'Currency *', 'Model', 'Category', 'Plan Type', 'Color', 'Divisor', 'Thickness', 'Weight', 'Product Header', 'Remarks', 'Tag Color']) await expect(field(label)).toBeVisible();
   await expect(field('Product Id')).toHaveCount(0);
-  await expect(field('Rev')).toHaveValue('0');
-  await expect(panel('Basic Info').getByRole('radio', { name: 'Customer Setting', exact: true })).toBeChecked();
+  await expect(field('Rev')).toHaveValue('');
+  await expect(field('Selling Price')).toHaveValue('');
+  await expect(field('MOQ')).toHaveValue('');
+  await expect(panel('Basic Info').getByRole('radio', { name: 'Customer Setting', exact: true })).not.toBeChecked();
   await expect(dialog.getByLabel('Stock on hand *', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('searchbox', { name: 'Search sales modules', exact: true })).toHaveCount(0);
   async function invalidFromOtherTab(label, expectedWriteCount = 0) {
@@ -147,7 +149,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     model: 'Model X', category: 'Packaging', planType: 'Make to order', color: 'Blue', remarks: 'Mock product remarks', tagColor: '#33ccff',
     quantityPerSecondaryUnit: 12.000001, moq: 100, spq: 10, unitCost: 5.123456, price: 12.34, divisor: 2.5, thickness: 0.25, weight: 3.000001,
     vatMode: 'inclusive', productHeaderId: 20, processes: [{ name: 'Printing' }, { name: 'Cutting' }], offices: [{ name: 'TLP COMPANY' }, { name: 'Branch A' }],
-    customerApprovals: [{ customerId: 10, approvalDate: '2026-11-13', eolDate: '2026-12-31', approvalRemarks: 'Approved sample', eolRemarks: 'Review at year end' }, { customerId: 11, approvalDate: null, eolDate: null, approvalRemarks: '', eolRemarks: '' }],
+    customerApprovals: [{ customerId: 10, approvalDate: '2026-11-13', eolDate: '2026-12-31', approvalRemarks: 'Approved sample', eolRemarks: 'Review at year end' }, { customerId: 11, approvalDate: null, eolDate: null, approvalRemarks: null, eolRemarks: null }],
     inventorySetup: 'monthly',
     linkedSupplies: [{ suppliesId: 30, quantity: 1.234567, unit: 'kg' }], isActive: true,
   };
@@ -194,5 +196,23 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await expect(activeProduct).toBeVisible();
   await expect(activeProduct).not.toBeChecked();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'New product', exact: false }).click();
+  await field('Code *').fill('NULLABLE-PRODUCT');
+  await field('UOP *').selectOption('pcs');
+  await field('Currency *').selectOption('PHP');
+  await save.click();
+  await expect(dialog).toHaveCount(0);
+  const emptyOptional = writes.at(-1).body;
+  for (const key of ['revision', 'description', 'secondaryUnit', 'model', 'category', 'planType', 'color', 'remarks', 'tagColor', 'quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'price', 'divisor', 'thickness', 'weight', 'vatMode', 'inventorySetup']) assert.equal(emptyOptional[key], null, key + ' must stay NULL when no value is entered.');
+  const nullableRow = page.getByRole('row').filter({ hasText: 'NULLABLE-PRODUCT' });
+  await expect(nullableRow.locator('td').nth(2)).toHaveText('\u2014');
+  await nullableRow.getByRole('button', { name: 'Edit', exact: true }).click();
+  await field('Selling Price').fill('0');
+  await field('MOQ').fill('0');
+  await save.click();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(writes.at(-1).body.price, 0);
+  assert.equal(writes.at(-1).body.moq, 0);
+  assert.equal(writes.at(-1).body.revision, null);
   assertSafe();
 });

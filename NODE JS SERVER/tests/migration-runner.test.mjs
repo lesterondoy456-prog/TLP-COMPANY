@@ -33,18 +33,28 @@ function fakePools({ failBatch = 0, databaseExists = true, failCreate = false } 
       },
     };
   };
-  return { createPool, events, batches, sql: { MAX: -1, NVarChar: length => ({ length }) } };
+  return { createPool, events, batches, sql: {
+    MAX: -1, NVarChar: length => ({ length }),
+    Transaction: class {
+      constructor(pool) { this.pool = pool; }
+      async begin() { events.push(['begin']); }
+      request() { return this.pool.request(); }
+      async commit() { events.push(['commit']); }
+      async rollback() { events.push(['rollback']); }
+    },
+  } };
 }
 
-test('migration runner applies the five SQL files in order without querying or changing account records', async () => {
+test('migration runner applies SQL files atomically without querying or changing account records', async () => {
   const fake = fakePools();
   await runMigrations({ database: 'MockMigrationDatabase', ...fake });
-  assert.deepEqual([...MIGRATION_FILES], ['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'text-max.sql']);
+  assert.deepEqual([...MIGRATION_FILES], ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'text-max.sql']);
   const expected = await Promise.all(MIGRATION_FILES.map(filename => readFile(new URL('../migration/' + filename, import.meta.url), 'utf8')));
   assert.deepEqual(fake.batches, expected);
   assert.deepEqual(fake.events.filter(event => event[0] === 'query').map(event => event[1]), ['master']);
   assert.ok(fake.events.some(event => event[0] === 'close' && event[1] === 'master'));
   assert.equal(fake.events.some(event => event[0] === 'close' && event[1] === 'MockMigrationDatabase'), false);
+  assert.deepEqual(fake.events.filter(event => ['begin', 'commit', 'rollback'].includes(event[0])), [['begin'], ['commit']]);
 });
 
 test('an absent database is created with an escaped identifier but no administrator is provisioned', async () => {
@@ -66,6 +76,7 @@ test('creation and migration failures close their fake pools and invalid names r
   const migration = fakePools({ failBatch: 2 });
   await assert.rejects(runMigrations({ database: 'MockMigrationDatabase', ...migration }), /Mock migration failure/);
   assert.equal(migration.batches.length, 2);
+  assert.deepEqual(migration.events.filter(event => ['begin', 'commit', 'rollback'].includes(event[0])), [['begin'], ['rollback']]);
   assert.ok(migration.events.some(event => event[0] === 'close' && event[1] === 'MockMigrationDatabase'));
   const invalid = fakePools();
   await assert.rejects(runMigrations({ database: 'Mock;DROP', ...invalid }), /Invalid DB_NAME/);
@@ -77,4 +88,13 @@ test('retired bootstrap configuration is never read and schema scripts contain n
   const retiredEnvironment = new Proxy({}, { get() { throw new Error('Migration must not read administrator configuration.'); } });
   await runMigrations({ database: 'MockMigrationDatabase', ...fake, env: retiredEnvironment });
   for (const schema of fake.batches) assert.doesNotMatch(schema, /\b(?:INSERT\s+(?:INTO\s+)?|UPDATE\s+|DELETE\s+(?:FROM\s+)?|MERGE\s+(?:INTO\s+)?)dbo\.(?:Sales|Purchasing|Warehouse|Configuration)UserLogin\b/i);
+});
+
+test('schema migrations never create database defaults, check rules or computed formulas', async () => {
+  for (const filename of MIGRATION_FILES) {
+    const source = await readFile(new URL('../migration/' + filename, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /\bDEFAULT\s+(?:N?'|[0-9(]|SYSUTCDATETIME)/i, filename);
+    assert.doesNotMatch(source, /\bCHECK\s*\(/i, filename);
+    assert.doesNotMatch(source, /\bPERSISTED\b/i, filename);
+  }
 });

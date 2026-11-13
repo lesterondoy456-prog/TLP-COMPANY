@@ -19,7 +19,7 @@ export default function CreateOrderForm({
   const { customers, products } = choices;
 
   const [form, setForm] = useState({ customerId: record?.customerId || '', orderDate: dateInput(record?.orderDate) || today(), currency: String(record?.currency || '').trim().toUpperCase(), notes: record?.notes || '', status: record?.status || 'draft' });
-  const [items, setItems] = useState(record?.items?.map(item => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice })) || [{ productId: '', quantity: 1, unitPrice: 0 }]);
+  const [items, setItems] = useState(record?.items?.map(item => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice })) || [{ productId: '', quantity: 1, unitPrice: '' }]);
   const [currencyOptions, setCurrencyOptions] = useState([]);
   const [loadingCurrencies, setLoadingCurrencies] = useState(true);
   const [currencyError, setCurrencyError] = useState('');
@@ -56,7 +56,7 @@ export default function CreateOrderForm({
   });
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
   function update(index, key, value) {
-    setItems(old => old.map((item, i) => i !== index ? item : { ...item, [key]: value, ...(key === 'productId' ? { unitPrice: products.find(p => String(p.id) === String(value))?.price || 0 } : {}) }));
+    setItems(old => old.map((item, i) => i !== index ? item : { ...item, [key]: value, ...(key === 'productId' ? { unitPrice: products.find(p => String(p.id) === String(value))?.price ?? '' } : {}) }));
   }
   const total = salesTotal(items);
   const currencies = [...new Set(items.map(item => products.find(product => String(product.id) === String(item.productId))).filter(Boolean).map(product => String(product.currency || '').trim().toUpperCase()))];
@@ -68,7 +68,7 @@ export default function CreateOrderForm({
     if (items.some(item => String(item.quantity ?? '').trim() === '' || String(item.unitPrice ?? '').trim() === '')) { setValidation('Enter a quantity and unit price for every order item.'); return; }
     if (!items.length || items.some(item => !item.productId || Number(item.quantity) <= 0 || Number(item.unitPrice) < 0)) { setValidation('Add at least one product with a positive quantity and valid price.'); return; }
     if (new Set(items.map(item => String(item.productId))).size !== items.length) { setValidation('Use one line per product. Combine quantities for repeated products.'); return; }
-    const body = { ...form, currency, customerId: Number(form.customerId), items: items.map(item => ({ productId: Number(item.productId), quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) })) };
+    const body = { ...form, notes: String(form.notes ?? '').trim() || null, currency, customerId: Number(form.customerId), items: items.map(item => ({ productId: Number(item.productId), quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) })) };
     save(() => api(record ? '/api/sales/sales-orders/' + record.id : '/api/sales/sales-orders', { method: record ? 'PUT' : 'POST', body }));
   }
   return <Modal wide title={record ? 'Edit ' + record.number : 'New sales order'} subtitle="Choose a customer, add products, and confirm when ready." onClose={onClose} busy={busy}>
@@ -89,7 +89,7 @@ export default function CreateOrderForm({
           <button type="button" className="icon-button danger-text" aria-label={'Remove product ' + (i + 1)} disabled={items.length === 1} onClick={() => setItems(old => old.filter((_, index) => index !== i))}><Icon name="x" size={17} /></button>
         </div>)}
       </div>
-      <div className="order-bottom"><button type="button" className="button secondary small" onClick={() => setItems(old => [...old, { productId: '', quantity: 1, unitPrice: 0 }])}>+ Add product</button><div><span>Order total</span><strong>{currency ? money(total, currency) : '—'}</strong></div></div>
+      <div className="order-bottom"><button type="button" className="button secondary small" onClick={() => setItems(old => [...old, { productId: '', quantity: 1, unitPrice: '' }])}>+ Add product</button><div><span>Order total</span><strong>{currency ? money(total, currency) : '—'}</strong></div></div>
       <div className="form-grid"><Field label="Status *"><select value={form.status} onChange={e => set('status', e.target.value)}><option value="draft">Draft</option><option value="confirmed">Confirmed</option></select></Field><div className="field-hint">Only confirmed orders can be invoiced or delivered. Stock is deducted when a delivery receipt is created.</div><Field label="Notes" wide><textarea rows={2} maxLength={2000} value={form.notes} onChange={e => set('notes', e.target.value)} /></Field></div>
       {(!customers.some(c => c.isActive) || !products.some(p => p.isActive)) && <div className="notice">Create an active customer and product in their master lists before saving an order.</div>}
     </fieldset></div><FormFooter onClose={onClose} busy={busy} label="Save sales order" /></form>

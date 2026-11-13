@@ -28,7 +28,7 @@ test('product links preserve six-place material quantities without creating fini
 
 test('product customer approvals validate identity and date order while retaining nullable dates', () => {
   const result = validateProduct({ ...product(), customerApprovals: [{ customerId: 20, approvalDate: '', eolDate: null, approvalRemarks: ' Test ' }] });
-  assert.deepEqual(result.customerApprovals, [{ customerId: 20, approvalDate: null, eolDate: null, approvalRemarks: 'Test', eolRemarks: '' }]);
+  assert.deepEqual(result.customerApprovals, [{ customerId: 20, approvalDate: null, eolDate: null, approvalRemarks: 'Test', eolRemarks: null }]);
   invalid({ ...product(), customerApprovals: [{ customerId: 20, approvalDate: '2026-11-13', eolDate: '2026-11-12' }] });
   invalid({ ...product(), customerApprovals: [{ customerId: 20, approvalDate: '2026-02-30' }] });
   invalid({ ...product(), customerApprovals: [{ customerId: 20 }, { customerId: 20 }] });
@@ -48,4 +48,26 @@ test('partial product edits preserve child collections and stock, while explicit
   assert.deepEqual(cleared.linkedSupplies, []);
   assert.deepEqual(cleared.processes, existing.processes);
   invalid({ ...product(), processes: [{ name: 'Printing' }, { name: ' printing ' }] });
+});
+
+
+test('blank optional Sales fields remain null while explicit zero and false values are preserved', () => {
+  const minimal = validateProduct({ sku: 'P-NULL', unit: 'pcs', currency: 'PHP', price: null, revision: '', vatMode: null, moq: null });
+  assert.equal(minimal.revision, null);
+  assert.equal(minimal.price, null);
+  assert.equal(minimal.moq, null);
+  assert.equal(minimal.vatMode, null);
+  assert.equal(minimal.stock, 0);
+  const zero = validateProduct({ sku: 'P-ZERO', unit: 'pcs', currency: 'PHP', price: 0, moq: 0 });
+  assert.equal(zero.price, 0);
+  assert.equal(zero.moq, 0);
+  const requiredCustomer = { name: 'Customer', shortName: 'C', businessStyle: 'Trade', address: 'Office', salesName: 'Customer', drName: 'Customer', vatCode: 'VS' };
+  const customer = validateCustomer({ ...requiredCustomer, discount: null, includePoInInvoice: null, vatInclusive: null });
+  assert.equal(customer.discount, null);
+  assert.equal(customer.contactPerson, null);
+  assert.equal(customer.includePoInInvoice, null);
+  const explicit = validateCustomer({ ...requiredCustomer, discount: 0, includePoInInvoice: false, vatInclusive: false });
+  assert.equal(explicit.discount, 0);
+  assert.equal(explicit.includePoInInvoice, false);
+  assert.equal(explicit.vatInclusive, false);
 });

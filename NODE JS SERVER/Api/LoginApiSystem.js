@@ -307,11 +307,11 @@ router.post('/:system/users', async (req, res) => {
     }
     const role = input.role;
     const isActive = true;
-    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(sql.MAX), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
+    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), typeof input.cpnumber === 'string' ? input.cpnumber.trim() || null : null).input('email', sql.NVarChar(sql.MAX), typeof input.email === 'string' ? input.email.trim() || null : null).input('photo', sql.NVarChar(sql.MAX), typeof input.photo === 'string' ? input.photo.trim() || null : null).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
     query.input('passwordHash', sql.VarChar(sql.MAX), passwordHash);
-    const inserted = await query.query(`INSERT INTO dbo.${definition.table}(name,username,cpnumber,email,photo,role,isActive,passwordHash) OUTPUT INSERTED.id VALUES(@name,@username,@cpnumber,@email,@photo,@role,@isActive,@passwordHash)`);
+    const inserted = await query.query(`INSERT INTO dbo.${definition.table}(name,username,cpnumber,email,photo,role,isActive,passwordHash,createdAt,updatedAt) OUTPUT INSERTED.id VALUES(@name,@username,@cpnumber,@email,@photo,@role,@isActive,@passwordHash,SYSUTCDATETIME(),SYSUTCDATETIME())`);
     const id = inserted.recordset[0].id;
-    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','create',@recordId)");
+    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,'users','create',@recordId,SYSUTCDATETIME())");
     return id;
   });
   const result = await request().input('id', sql.Int, savedId).query(`SELECT id, name, username, cpnumber, email, photo, role, isActive FROM dbo.${definition.table} WHERE id=@id`);
@@ -402,10 +402,10 @@ router.put('/:system/users/:id', async (req, res) => {
         throw error;
       }
     }
-    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(sql.MAX), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
+    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), typeof input.cpnumber === 'string' ? input.cpnumber.trim() || null : null).input('email', sql.NVarChar(sql.MAX), typeof input.email === 'string' ? input.email.trim() || null : null).input('photo', sql.NVarChar(sql.MAX), typeof input.photo === 'string' ? input.photo.trim() || null : null).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
     if (passwordHash) query.input('passwordHash', sql.VarChar(sql.MAX), passwordHash);
     await query.input('id', sql.Int, id).query(`UPDATE dbo.${definition.table} SET name=@name,username=@username,cpnumber=@cpnumber,email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME()${passwordHash ? ',passwordHash=@passwordHash' : ''} WHERE id=@id`);
-    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','update',@recordId)");
+    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,'users','update',@recordId,SYSUTCDATETIME())");
     return id;
   });
   const result = await request().input('id', sql.Int, savedId).query(`SELECT id, name, username, cpnumber, email, photo, role, isActive FROM dbo.${definition.table} WHERE id=@id`);
@@ -450,9 +450,9 @@ router.put('/:system/auth/profile', async (req, res) => {
     }
     const role = storedActor.role;
     const isActive = storedActor.isActive;
-    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(sql.MAX), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
+    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), typeof input.cpnumber === 'string' ? input.cpnumber.trim() || null : null).input('email', sql.NVarChar(sql.MAX), typeof input.email === 'string' ? input.email.trim() || null : null).input('photo', sql.NVarChar(sql.MAX), typeof input.photo === 'string' ? input.photo.trim() || null : null).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
     await query.input('id', sql.Int, id).query(`UPDATE dbo.${definition.table} SET name=@name,username=@username,cpnumber=@cpnumber,email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
-    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','profile',@recordId)");
+    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,'users','profile',@recordId,SYSUTCDATETIME())");
     return id;
   });
   const result = await request().input('id', sql.Int, savedId).query(`SELECT id, name, username, cpnumber, email, photo, role, isActive FROM dbo.${definition.table} WHERE id=@id`);

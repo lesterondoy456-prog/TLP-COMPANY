@@ -34,12 +34,12 @@ function initialValues(record) {
     decimalInPrice: record?.decimalInPrice ?? 2,
     decimalInTotalPrice: record?.decimalInTotalPrice ?? 2,
     paymentTerm: record?.paymentTerm ?? '',
-    salesAddressType: record?.salesAddressType === 'delivery' ? 'delivery' : 'office',
-    drAddressType: record?.drAddressType === 'delivery' ? 'delivery' : 'office',
-    discount: record?.discount ?? 0,
-    discountType: record?.discountType === 'amount' ? 'amount' : 'percent',
-    includePoInInvoice: record?.includePoInInvoice === true,
-    vatInclusive: record?.vatInclusive === true,
+    salesAddressType: record?.salesAddressType ?? '',
+    drAddressType: record?.drAddressType ?? '',
+    discount: record?.discount ?? '',
+    discountType: record?.discountType ?? '',
+    includePoInInvoice: record?.includePoInInvoice ?? null,
+    vatInclusive: record?.vatInclusive ?? null,
     isActive: record?.isActive !== false,
   };
 }
@@ -163,14 +163,14 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
       const invalidTab = TEXT_FIELDS[first]?.tab || (first === 'salesInChargeId' || first.startsWith('deliveryAddresses.') ? 'basic' : 'sales');
       setTab(invalidTab); setFocusTarget(first); setError('Please correct the highlighted fields before saving.'); return;
     }
-    const body = Object.fromEntries(Object.keys(TEXT_FIELDS).map(key => [key, String(form[key]).trim()]));
+    const body = Object.fromEntries(Object.keys(TEXT_FIELDS).map(key => [key, String(form[key] ?? '').trim() || null]));
     body.deliveryAddresses = form.deliveryAddresses.map(address => address.trim()).filter(Boolean);
     body.decimalInPrice = Number(form.decimalInPrice);
     body.decimalInTotalPrice = Number(form.decimalInTotalPrice);
-    body.salesAddressType = form.salesAddressType;
-    body.drAddressType = form.drAddressType;
-    body.discount = form.discount === '' ? 0 : Number(form.discount);
-    body.discountType = form.discountType;
+    body.salesAddressType = form.salesAddressType || null;
+    body.drAddressType = form.drAddressType || null;
+    body.discount = String(form.discount ?? '').trim() === '' ? null : Number(form.discount);
+    body.discountType = form.discountType || null;
     body.includePoInInvoice = form.includePoInInvoice;
     body.vatInclusive = form.vatInclusive;
     body.isActive = record ? form.isActive : true;
@@ -221,8 +221,8 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
                 {textField('paymentTerm', 'Payment Term', { wide: true, list: formId + '-payment-terms' })}<datalist id={formId + '-payment-terms'}>{paymentOptions.map(term => <option key={term} value={term} />)}</datalist>
                 {addressRadios('salesAddressType', 'Sales Address')}
                 <label className="field" htmlFor={fieldId('discount')}><span>Discount</span><input {...controlProps('discount', 'Discount')} type="number" min={0} max={form.discountType === 'percent' ? 100 : 1e9} step="0.000001" value={form.discount} onChange={event => set('discount', event.target.value)} />{fieldError('discount')}</label>
-                <label className="field" htmlFor={fieldId('discountType')}><span>Discount Type</span><select id={fieldId('discountType')} value={form.discountType} onChange={event => set('discountType', event.target.value)}><option value="percent">Percent</option><option value="amount">Amount</option></select></label>
-                <label className="checkbox customer-span-2"><input type="checkbox" checked={form.includePoInInvoice} onChange={event => set('includePoInInvoice', event.target.checked)} />Include P.O. in Invoice</label>
+                <label className="field" htmlFor={fieldId('discountType')}><span>Discount Type</span><select id={fieldId('discountType')} value={form.discountType} onChange={event => set('discountType', event.target.value)}><option value="">None</option><option value="percent">Percent</option><option value="amount">Amount</option></select></label>
+                <label className="checkbox customer-span-2"><input type="checkbox" checked={form.includePoInInvoice === true} onChange={event => set('includePoInInvoice', event.target.checked)} />Include P.O. in Invoice</label>
               </div></section>
               <section className="customer-section" aria-labelledby={formId + '-dr-heading'}><h3 id={formId + '-dr-heading'}>Delivery Receipt</h3><div className="customer-fields">
                 {textField('drName', 'Name *', { wide: true, accessibleLabel: 'DR Name' })}
@@ -230,7 +230,7 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
               </div></section>
               <section className="customer-section" aria-labelledby={formId + '-tax-heading'}><h3 id={formId + '-tax-heading'}>TAX</h3><div className="customer-fields">
                 {textField('vatCode', 'VAT Code *', { wide: true, list: formId + '-vat-codes' })}<datalist id={formId + '-vat-codes'}>{vatOptions.map(code => <option key={code} value={code} label={vatLabel(code)} />)}</datalist>
-                <fieldset className="customer-radio-group customer-span-2" aria-label="VAT calculation"><legend className="sr-only">VAT calculation</legend><label className="customer-radio"><input type="radio" name="vatInclusive" checked={form.vatInclusive} onChange={() => set('vatInclusive', true)} />Inclusive</label><label className="customer-radio"><input type="radio" name="vatInclusive" checked={!form.vatInclusive} onChange={() => set('vatInclusive', false)} />Exclusive</label></fieldset>
+                <fieldset className="customer-radio-group customer-span-2" aria-label="VAT calculation"><legend className="sr-only">VAT calculation</legend><label className="customer-radio"><input type="radio" name="vatInclusive" checked={form.vatInclusive === true} onChange={() => set('vatInclusive', true)} />Inclusive</label><label className="customer-radio"><input type="radio" name="vatInclusive" checked={form.vatInclusive === false} onChange={() => set('vatInclusive', false)} />Exclusive</label></fieldset>
                 {textField('taxCode', 'Tax Code', { wide: true, list: formId + '-tax-codes' })}<datalist id={formId + '-tax-codes'}>{taxOptions.map(code => <option key={code} value={code} label={CAS_TAX_CODES.find(option => option.code === code)?.label || code} />)}</datalist>
               </div></section>
             </div>

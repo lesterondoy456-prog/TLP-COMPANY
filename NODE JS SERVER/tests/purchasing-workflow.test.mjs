@@ -66,6 +66,15 @@ test('purchasing routes pass long Unicode text to MAX parameters without truncat
     assert.equal(saved.remarks, remarks);
     assert.equal(saved.amount, '0.12');
   }
+  const blank = await priceOnRoute([line(1, 1, null)], {}, { remarks: null });
+  assert.equal(blank.remarks, null);
+  assert.equal(blank.items[0].discountRate, null);
+  assert.equal(blank.amount, '1.00', 'An absent optional discount uses zero only for calculation.');
+  const zero = await priceOnRoute([line(1, 1, 0)]);
+  assert.equal(zero.items[0].discountRate, '0.000000', 'An explicit zero discount must remain a supplied number.');
+  for (const update of [false, true]) {
+    await assert.rejects(priceOnRoute([{ ...line(1, 1), allocations: [{ quantity: 1, expiryDate: '2026-11-13', mfgDate: '2026-11-14' }] }], {}, { receiving: true, update }), error => error.status === 400);
+  }
 });
 
 test('drafts do not change stock; posting commits allocations, receipt, source quantities, and audit together', async () => {

@@ -31,14 +31,14 @@ const specs = {
         "integer": false,
         "step": 1e-06,
         "precision": 6,
-        "default": 0
+        "default": null
       },
       {
         "key": "accountCode",
         "label": "Account Code",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       }
     ]
   },
@@ -154,7 +154,7 @@ const specs = {
         "integer": true,
         "step": 1,
         "precision": 0,
-        "default": 0
+        "default": null
       },
       {
         "key": "month",
@@ -165,7 +165,7 @@ const specs = {
         "integer": true,
         "step": 1,
         "precision": 0,
-        "default": 0
+        "default": null
       },
       {
         "key": "dateOfMonth",
@@ -176,7 +176,7 @@ const specs = {
         "integer": true,
         "step": 1,
         "precision": 0,
-        "default": 0
+        "default": null
       },
       {
         "key": "dayOfMonth",
@@ -187,7 +187,7 @@ const specs = {
         "integer": true,
         "step": 1,
         "precision": 0,
-        "default": 0
+        "default": null
       },
       {
         "key": "dueDateEom",
@@ -248,7 +248,7 @@ const specs = {
         "integer": true,
         "step": 1,
         "precision": 0,
-        "default": 0
+        "default": null
       }
     ]
   },
@@ -275,14 +275,14 @@ const specs = {
         "label": "Check Name",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "symbol",
         "label": "Symbol",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "isDefault",
@@ -315,56 +315,56 @@ const specs = {
         "label": "Account No.",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "accountName",
         "label": "Account Name",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "swiftCode",
         "label": "Swift Code",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "branchName",
         "label": "Branch Name",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "address",
         "label": "Address",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "accountType",
         "label": "Account Type",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "currency",
         "label": "Curr",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       },
       {
         "key": "account",
         "label": "Account",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       }
     ]
   },
@@ -418,7 +418,7 @@ const specs = {
         "integer": false,
         "step": 1e-06,
         "precision": 6,
-        "default": 0
+        "default": null
       },
       {
         "key": "prodVatInd",
@@ -431,7 +431,7 @@ const specs = {
         "label": "Account Code",
         "type": "text",
         "required": false,
-        "default": ""
+        "default": null
       }
     ]
   }
@@ -617,7 +617,12 @@ router.post('/masters/:kind', async (req, res) => {
 
     const values = {};
     for (const field of [...spec.fields, { key: 'isActive', type: 'boolean', default: true }]) {
-      const raw = input[field.key] !== undefined ? input[field.key] : current?.[field.key] ?? field.default;
+      const raw = input[field.key] !== undefined ? input[field.key] : current?.[field.key] !== undefined ? current[field.key]
+        : field.type === 'boolean' || field.required ? field.default : null;
+      if (!field.required && field.type !== 'boolean' && (raw == null || (typeof raw === 'string' && !raw.trim()))) {
+        values[field.key] = null;
+        continue;
+      }
       if (field.type === 'boolean') {
         if (typeof raw !== 'boolean') {
           const error = new Error('Invalid stored checkbox value.');
@@ -633,10 +638,23 @@ router.post('/masters/:kind', async (req, res) => {
             error.status = 400;
             throw error;
           }
+        if ((field.key === 'rate' && (number < 0 || number > 100))
+          || (kind === 'payment-terms' && ['days', 'month'].includes(field.key) && number < 0)
+          || (kind === 'payment-terms' && ['dateOfMonth', 'dayOfMonth'].includes(field.key) && (number < 0 || number > 31))
+          || (kind === 'units' && field.key === 'decimal' && (number < 0 || number > 6))) {
+          const error = new Error('Numeric value is outside the allowed configuration range.');
+          error.status = 400;
+          throw error;
+        }
         values[field.key] = number;
       } else {
         if (typeof raw !== 'string' || raw.includes('\0')) {
           const error = new Error('Text must be a string without null characters.');
+          error.status = 400;
+          throw error;
+        }
+        if (field.options && !field.options.includes(raw.trim())) {
+          const error = new Error('Choose an allowed configuration value.');
           error.status = 400;
           throw error;
         }
@@ -653,18 +671,18 @@ router.post('/masters/:kind', async (req, res) => {
 
     let result;
     switch (kind) {
-      case 'atc': result = await query.query(`INSERT INTO dbo.ConfigAtc ([code], [description], [rate], [accountCode], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@code, @description, @rate, @accountCode, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'countries': result = await query.query(`INSERT INTO dbo.ConfigCountries ([name], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'customer-categories': result = await query.query(`INSERT INTO dbo.ConfigCustomerCategories ([name], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'product-categories': result = await query.query(`INSERT INTO dbo.ConfigProductCategories ([name], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'supplies-categories': result = await query.query(`INSERT INTO dbo.ConfigSuppliesCategories ([name], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'warehouses': result = await query.query(`INSERT INTO dbo.ConfigWarehouses ([code], [description], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@code, @description, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'locations': result = await query.query(`INSERT INTO dbo.ConfigLocations ([code], [description], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@code, @description, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'payment-terms': result = await query.query(`INSERT INTO dbo.ConfigPaymentTerms ([description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@description, @days, @month, @dateOfMonth, @dayOfMonth, @dueDateEom, @forCustomer, @forSupplier, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'units': result = await query.query(`INSERT INTO dbo.ConfigUnits ([description], [shortName], [forProduct], [forSupplies], [decimal], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@description, @shortName, @forProduct, @forSupplies, @decimal, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'currencies': result = await query.query(`INSERT INTO dbo.ConfigCurrencies ([name], [shortName], [checkName], [symbol], [isDefault], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@name, @shortName, @checkName, @symbol, @isDefault, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'banks': result = await query.query(`INSERT INTO dbo.ConfigBanks ([name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@name, @shortName, @accountNo, @accountName, @swiftCode, @branchName, @address, @accountType, @currency, @account, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
-      case 'vat-codes': result = await query.query(`INSERT INTO dbo.ConfigVatCodes ([code], [description], [type], [class], [rate], [prodVatInd], [accountCode], isActive, deletedDate) OUTPUT INSERTED.id VALUES (@code, @description, @type, @class, @rate, @prodVatInd, @accountCode, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END)`); break;
+      case 'atc': result = await query.query(`INSERT INTO dbo.ConfigAtc ([code], [description], [rate], [accountCode], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code, @description, @rate, @accountCode, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'countries': result = await query.query(`INSERT INTO dbo.ConfigCountries ([name], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'customer-categories': result = await query.query(`INSERT INTO dbo.ConfigCustomerCategories ([name], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'product-categories': result = await query.query(`INSERT INTO dbo.ConfigProductCategories ([name], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'supplies-categories': result = await query.query(`INSERT INTO dbo.ConfigSuppliesCategories ([name], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'warehouses': result = await query.query(`INSERT INTO dbo.ConfigWarehouses ([code], [description], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code, @description, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'locations': result = await query.query(`INSERT INTO dbo.ConfigLocations ([code], [description], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code, @description, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'payment-terms': result = await query.query(`INSERT INTO dbo.ConfigPaymentTerms ([description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@description, @days, @month, @dateOfMonth, @dayOfMonth, @dueDateEom, @forCustomer, @forSupplier, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'units': result = await query.query(`INSERT INTO dbo.ConfigUnits ([description], [shortName], [forProduct], [forSupplies], [decimal], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@description, @shortName, @forProduct, @forSupplies, @decimal, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'currencies': result = await query.query(`INSERT INTO dbo.ConfigCurrencies ([name], [shortName], [checkName], [symbol], [isDefault], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name, @shortName, @checkName, @symbol, @isDefault, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'banks': result = await query.query(`INSERT INTO dbo.ConfigBanks ([name], [shortName], [accountNo], [accountName], [swiftCode], [branchName], [address], [accountType], [currency], [account], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name, @shortName, @accountNo, @accountName, @swiftCode, @branchName, @address, @accountType, @currency, @account, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'vat-codes': result = await query.query(`INSERT INTO dbo.ConfigVatCodes ([code], [description], [type], [class], [rate], [prodVatInd], [accountCode], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code, @description, @type, @class, @rate, @prodVatInd, @accountCode, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
       default: {
         const error = new Error('Configuration query was not found.');
         error.status = 404;
@@ -676,7 +694,7 @@ router.post('/masters/:kind', async (req, res) => {
     await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(sql.MAX), auditUser.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), kind)
       .input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(savedId))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     let selectedResult;
     switch (kind) {
       case 'atc': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [description], [rate], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigAtc WHERE id=@id`); break;
@@ -773,7 +791,12 @@ router.put('/masters/:kind/:id', async (req, res) => {
 
     const values = {};
     for (const field of [...spec.fields, { key: 'isActive', type: 'boolean', default: true }]) {
-      const raw = input[field.key] !== undefined ? input[field.key] : current?.[field.key] ?? field.default;
+      const raw = input[field.key] !== undefined ? input[field.key] : current?.[field.key] !== undefined ? current[field.key]
+        : field.type === 'boolean' || field.required ? field.default : null;
+      if (!field.required && field.type !== 'boolean' && (raw == null || (typeof raw === 'string' && !raw.trim()))) {
+        values[field.key] = null;
+        continue;
+      }
       if (field.type === 'boolean') {
         if (typeof raw !== 'boolean') {
           const error = new Error('Invalid stored checkbox value.');
@@ -789,10 +812,23 @@ router.put('/masters/:kind/:id', async (req, res) => {
             error.status = 400;
             throw error;
           }
+        if ((field.key === 'rate' && (number < 0 || number > 100))
+          || (kind === 'payment-terms' && ['days', 'month'].includes(field.key) && number < 0)
+          || (kind === 'payment-terms' && ['dateOfMonth', 'dayOfMonth'].includes(field.key) && (number < 0 || number > 31))
+          || (kind === 'units' && field.key === 'decimal' && (number < 0 || number > 6))) {
+          const error = new Error('Numeric value is outside the allowed configuration range.');
+          error.status = 400;
+          throw error;
+        }
         values[field.key] = number;
       } else {
         if (typeof raw !== 'string' || raw.includes('\0')) {
           const error = new Error('Text must be a string without null characters.');
+          error.status = 400;
+          throw error;
+        }
+        if (field.options && !field.options.includes(raw.trim())) {
+          const error = new Error('Choose an allowed configuration value.');
           error.status = 400;
           throw error;
         }
@@ -832,7 +868,7 @@ router.put('/masters/:kind/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(sql.MAX), auditUser.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), kind)
       .input('action', sql.NVarChar(sql.MAX), 'update').input('recordId', sql.NVarChar(sql.MAX), String(savedId))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     let selectedResult;
     switch (kind) {
       case 'atc': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [description], [rate], [accountCode], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigAtc WHERE id=@id`); break;
@@ -941,7 +977,7 @@ router.delete('/masters/:kind/:id', async (req, res) => {
     await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(sql.MAX), auditUser.name)
       .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), kind)
       .input('action', sql.NVarChar(sql.MAX), 'deactivate').input('recordId', sql.NVarChar(sql.MAX), String(id))
-      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+      .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
 
     let selectedResult;
     switch (kind) {

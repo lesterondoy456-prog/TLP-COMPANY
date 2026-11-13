@@ -22,7 +22,7 @@ export default function Profile({ user, onClose, onSaved }) {
     if (Object.keys(invalid).length) { setError(Object.values(invalid)[0]); return; }
     setBusy(true);
     setError('');
-    const body = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
+    const body = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, ['name', 'username'].includes(key) ? value.trim() : value.trim() || null]));
     try {
       const result = await api('/api/purchasing/auth/profile', { method: 'PUT', body });
       onSaved(result.user);

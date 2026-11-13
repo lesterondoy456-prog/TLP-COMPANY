@@ -6,32 +6,16 @@ BEGIN
     id INT IDENTITY PRIMARY KEY,
     name NVARCHAR(150) NOT NULL,
     username NVARCHAR(80) NOT NULL,
-    cpnumber NVARCHAR(30) NOT NULL DEFAULT '',
-    email NVARCHAR(254) NOT NULL DEFAULT '',
-    photo NVARCHAR(MAX) NOT NULL DEFAULT '',
+    cpnumber NVARCHAR(30) NULL,
+    email NVARCHAR(254) NULL,
+    photo NVARCHAR(MAX) NULL,
     role NVARCHAR(20) NOT NULL,
     passwordHash VARCHAR(300) NOT NULL,
-    isActive BIT NOT NULL DEFAULT 1,
-    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    CONSTRAINT UQ_SalesUserLogin_Username UNIQUE (username),
-    CONSTRAINT CK_SalesUserLogin_Role CHECK (role IN ('admin', 'saleshead', 'sales'))
+    isActive BIT NOT NULL,
+    createdAt DATETIME2 NOT NULL,
+    updatedAt DATETIME2 NOT NULL,
+    CONSTRAINT UQ_SalesUserLogin_Username UNIQUE (username)
   );
-END;
-
-IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.SalesUserLogin') AND name=N'CK_SalesUserLogin_Role' AND definition LIKE N'%saleshead%')
-BEGIN
-  BEGIN TRY
-    BEGIN TRANSACTION;
-    IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.SalesUserLogin') AND name=N'CK_SalesUserLogin_Role')
-      ALTER TABLE dbo.SalesUserLogin DROP CONSTRAINT CK_SalesUserLogin_Role;
-    ALTER TABLE dbo.SalesUserLogin WITH CHECK ADD CONSTRAINT CK_SalesUserLogin_Role CHECK (role IN ('admin', 'saleshead', 'sales'));
-    COMMIT TRANSACTION;
-  END TRY
-  BEGIN CATCH
-    IF XACT_STATE()<>0 ROLLBACK TRANSACTION;
-    THROW;
-  END CATCH;
 END;
 
 IF OBJECT_ID(N'dbo.Customers', N'U') IS NULL
@@ -40,65 +24,93 @@ BEGIN
     id INT IDENTITY PRIMARY KEY,
     code NVARCHAR(40) NOT NULL UNIQUE,
     name NVARCHAR(180) NOT NULL,
-    contactPerson NVARCHAR(150) NOT NULL DEFAULT '',
-    cpnumber NVARCHAR(30) NOT NULL DEFAULT '',
-    email NVARCHAR(254) NOT NULL DEFAULT '',
-    address NVARCHAR(500) NOT NULL DEFAULT '',
-    isActive BIT NOT NULL DEFAULT 1,
-    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+    contactPerson NVARCHAR(150) NULL,
+    cpnumber NVARCHAR(30) NULL,
+    email NVARCHAR(254) NULL,
+    address NVARCHAR(500) NOT NULL,
+    isActive BIT NOT NULL,
+    createdAt DATETIME2 NOT NULL,
+    updatedAt DATETIME2 NOT NULL
   );
 END;
 
 -- Customer fields are additive so existing saved customer data is preserved.
 IF COL_LENGTH(N'dbo.Customers', N'shortName') IS NULL
-  ALTER TABLE dbo.Customers ADD shortName NVARCHAR(80) NOT NULL CONSTRAINT DF_Customers_ShortName DEFAULT N'';
+BEGIN
+  ALTER TABLE dbo.Customers ADD shortName NVARCHAR(80) NULL;
+  EXEC(N'UPDATE dbo.Customers SET shortName=N'''' WHERE shortName IS NULL;');
+  ALTER TABLE dbo.Customers ALTER COLUMN shortName NVARCHAR(80) NOT NULL;
+END;
 IF COL_LENGTH(N'dbo.Customers', N'businessStyle') IS NULL
-  ALTER TABLE dbo.Customers ADD businessStyle NVARCHAR(180) NOT NULL CONSTRAINT DF_Customers_BusinessStyle DEFAULT N'';
+BEGIN
+  ALTER TABLE dbo.Customers ADD businessStyle NVARCHAR(180) NULL;
+  EXEC(N'UPDATE dbo.Customers SET businessStyle=N'''' WHERE businessStyle IS NULL;');
+  ALTER TABLE dbo.Customers ALTER COLUMN businessStyle NVARCHAR(180) NOT NULL;
+END;
 IF COL_LENGTH(N'dbo.Customers', N'salesInCharge') IS NULL
-  ALTER TABLE dbo.Customers ADD salesInCharge NVARCHAR(150) NOT NULL CONSTRAINT DF_Customers_SalesInCharge DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD salesInCharge NVARCHAR(150) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'salesInChargeId') IS NULL
   ALTER TABLE dbo.Customers ADD salesInChargeId INT NULL;
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE parent_object_id=OBJECT_ID(N'dbo.Customers') AND name=N'FK_Customers_SalesInCharge')
   EXEC(N'ALTER TABLE dbo.Customers WITH CHECK ADD CONSTRAINT FK_Customers_SalesInCharge FOREIGN KEY (salesInChargeId) REFERENCES dbo.SalesUserLogin(id)');
 IF COL_LENGTH(N'dbo.Customers', N'tin') IS NULL
-  ALTER TABLE dbo.Customers ADD tin NVARCHAR(50) NOT NULL CONSTRAINT DF_Customers_Tin DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD tin NVARCHAR(50) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'faxNo') IS NULL
-  ALTER TABLE dbo.Customers ADD faxNo NVARCHAR(30) NOT NULL CONSTRAINT DF_Customers_FaxNo DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD faxNo NVARCHAR(30) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'countryOfOrigin') IS NULL
-  ALTER TABLE dbo.Customers ADD countryOfOrigin NVARCHAR(100) NOT NULL CONSTRAINT DF_Customers_CountryOfOrigin DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD countryOfOrigin NVARCHAR(100) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'country') IS NULL
-  ALTER TABLE dbo.Customers ADD country NVARCHAR(100) NOT NULL CONSTRAINT DF_Customers_Country DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD country NVARCHAR(100) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'category') IS NULL
-  ALTER TABLE dbo.Customers ADD category NVARCHAR(100) NOT NULL CONSTRAINT DF_Customers_Category DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD category NVARCHAR(100) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'remarks') IS NULL
-  ALTER TABLE dbo.Customers ADD remarks NVARCHAR(2000) NOT NULL CONSTRAINT DF_Customers_Remarks DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD remarks NVARCHAR(2000) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'salesName') IS NULL
-  ALTER TABLE dbo.Customers ADD salesName NVARCHAR(180) NOT NULL CONSTRAINT DF_Customers_SalesName DEFAULT N'';
+BEGIN
+  ALTER TABLE dbo.Customers ADD salesName NVARCHAR(180) NULL;
+  EXEC(N'UPDATE dbo.Customers SET salesName=N'''' WHERE salesName IS NULL;');
+  ALTER TABLE dbo.Customers ALTER COLUMN salesName NVARCHAR(180) NOT NULL;
+END;
 IF COL_LENGTH(N'dbo.Customers', N'drName') IS NULL
-  ALTER TABLE dbo.Customers ADD drName NVARCHAR(180) NOT NULL CONSTRAINT DF_Customers_DrName DEFAULT N'';
+BEGIN
+  ALTER TABLE dbo.Customers ADD drName NVARCHAR(180) NULL;
+  EXEC(N'UPDATE dbo.Customers SET drName=N'''' WHERE drName IS NULL;');
+  ALTER TABLE dbo.Customers ALTER COLUMN drName NVARCHAR(180) NOT NULL;
+END;
 IF COL_LENGTH(N'dbo.Customers', N'decimalInPrice') IS NULL
-  ALTER TABLE dbo.Customers ADD decimalInPrice INT NOT NULL CONSTRAINT DF_Customers_DecimalInPrice DEFAULT 2;
+BEGIN
+  ALTER TABLE dbo.Customers ADD decimalInPrice INT NULL;
+  EXEC(N'UPDATE dbo.Customers SET decimalInPrice=2 WHERE decimalInPrice IS NULL;');
+  ALTER TABLE dbo.Customers ALTER COLUMN decimalInPrice INT NOT NULL;
+END;
 IF COL_LENGTH(N'dbo.Customers', N'decimalInTotalPrice') IS NULL
-  ALTER TABLE dbo.Customers ADD decimalInTotalPrice INT NOT NULL CONSTRAINT DF_Customers_DecimalInTotalPrice DEFAULT 2;
+BEGIN
+  ALTER TABLE dbo.Customers ADD decimalInTotalPrice INT NULL;
+  EXEC(N'UPDATE dbo.Customers SET decimalInTotalPrice=2 WHERE decimalInTotalPrice IS NULL;');
+  ALTER TABLE dbo.Customers ALTER COLUMN decimalInTotalPrice INT NOT NULL;
+END;
 IF COL_LENGTH(N'dbo.Customers', N'paymentTerm') IS NULL
-  ALTER TABLE dbo.Customers ADD paymentTerm NVARCHAR(100) NOT NULL CONSTRAINT DF_Customers_PaymentTerm DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD paymentTerm NVARCHAR(100) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'salesAddressType') IS NULL
-  ALTER TABLE dbo.Customers ADD salesAddressType NVARCHAR(10) NOT NULL CONSTRAINT DF_Customers_SalesAddressType DEFAULT N'office';
+  ALTER TABLE dbo.Customers ADD salesAddressType NVARCHAR(10) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'drAddressType') IS NULL
-  ALTER TABLE dbo.Customers ADD drAddressType NVARCHAR(10) NOT NULL CONSTRAINT DF_Customers_DrAddressType DEFAULT N'office';
+  ALTER TABLE dbo.Customers ADD drAddressType NVARCHAR(10) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'discount') IS NULL
-  ALTER TABLE dbo.Customers ADD discount DECIMAL(18,6) NOT NULL CONSTRAINT DF_Customers_Discount DEFAULT 0;
+  ALTER TABLE dbo.Customers ADD discount DECIMAL(18,6) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'discountType') IS NULL
-  ALTER TABLE dbo.Customers ADD discountType NVARCHAR(10) NOT NULL CONSTRAINT DF_Customers_DiscountType DEFAULT N'percent';
+  ALTER TABLE dbo.Customers ADD discountType NVARCHAR(10) NULL;
 IF COL_LENGTH(N'dbo.Customers', N'includePoInInvoice') IS NULL
-  ALTER TABLE dbo.Customers ADD includePoInInvoice BIT NOT NULL CONSTRAINT DF_Customers_IncludePoInInvoice DEFAULT 0;
+  ALTER TABLE dbo.Customers ADD includePoInInvoice BIT NULL;
 IF COL_LENGTH(N'dbo.Customers', N'vatCode') IS NULL
-  ALTER TABLE dbo.Customers ADD vatCode NVARCHAR(80) NOT NULL CONSTRAINT DF_Customers_VatCode DEFAULT N'';
+BEGIN
+  ALTER TABLE dbo.Customers ADD vatCode NVARCHAR(80) NULL;
+  EXEC(N'UPDATE dbo.Customers SET vatCode=N'''' WHERE vatCode IS NULL;');
+  ALTER TABLE dbo.Customers ALTER COLUMN vatCode NVARCHAR(80) NOT NULL;
+END;
 IF COL_LENGTH(N'dbo.Customers', N'vatInclusive') IS NULL
-  ALTER TABLE dbo.Customers ADD vatInclusive BIT NOT NULL CONSTRAINT DF_Customers_VatInclusive DEFAULT 0;
+  ALTER TABLE dbo.Customers ADD vatInclusive BIT NULL;
 IF COL_LENGTH(N'dbo.Customers', N'taxCode') IS NULL
-  ALTER TABLE dbo.Customers ADD taxCode NVARCHAR(80) NOT NULL CONSTRAINT DF_Customers_TaxCode DEFAULT N'';
+  ALTER TABLE dbo.Customers ADD taxCode NVARCHAR(80) NULL;
 
 IF OBJECT_ID(N'dbo.CustomerDeliveryAddresses', N'U') IS NULL
 BEGIN
@@ -106,17 +118,9 @@ BEGIN
     customerId INT NOT NULL REFERENCES dbo.Customers(id) ON DELETE CASCADE,
     position INT NOT NULL,
     address NVARCHAR(500) NOT NULL,
-    CONSTRAINT PK_CustomerDeliveryAddresses PRIMARY KEY (customerId, position),
-    CONSTRAINT CK_CustomerDeliveryAddresses_Position CHECK (position >= 0 AND position < 50)
+    CONSTRAINT PK_CustomerDeliveryAddresses PRIMARY KEY (customerId, position)
   );
 END;
-
-IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_Customers_Decimals')
-  EXEC(N'ALTER TABLE dbo.Customers ADD CONSTRAINT CK_Customers_Decimals CHECK (decimalInPrice BETWEEN 0 AND 6 AND decimalInTotalPrice BETWEEN 0 AND 6)');
-IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_Customers_AddressTypes')
-  EXEC(N'ALTER TABLE dbo.Customers ADD CONSTRAINT CK_Customers_AddressTypes CHECK (salesAddressType IN (''office'',''delivery'') AND drAddressType IN (''office'',''delivery''))');
-IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_Customers_Discount')
-  EXEC(N'ALTER TABLE dbo.Customers ADD CONSTRAINT CK_Customers_Discount CHECK (discount BETWEEN 0 AND 1000000000 AND discountType IN (''percent'',''amount'') AND (discountType<>''percent'' OR discount<=100))');
 
 IF OBJECT_ID(N'dbo.Products', N'U') IS NULL
 BEGIN
@@ -124,15 +128,13 @@ BEGIN
     id INT IDENTITY PRIMARY KEY,
     sku NVARCHAR(40) NOT NULL UNIQUE,
     name NVARCHAR(180) NOT NULL,
-    description NVARCHAR(1000) NOT NULL DEFAULT '',
-    unit NVARCHAR(30) NOT NULL DEFAULT 'pcs',
-    price DECIMAL(18,2) NOT NULL,
-    stock DECIMAL(18,3) NOT NULL DEFAULT 0,
-    isActive BIT NOT NULL DEFAULT 1,
-    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    CONSTRAINT CK_Products_Price CHECK (price >= 0),
-    CONSTRAINT CK_Products_Stock CHECK (stock >= 0)
+    description NVARCHAR(1000) NULL,
+    unit NVARCHAR(30) NOT NULL,
+    price DECIMAL(18,2) NULL,
+    stock DECIMAL(18,3) NOT NULL,
+    isActive BIT NOT NULL,
+    createdAt DATETIME2 NOT NULL,
+    updatedAt DATETIME2 NOT NULL
   );
 END;
 
@@ -140,19 +142,17 @@ IF OBJECT_ID(N'dbo.SalesOrders', N'U') IS NULL
 BEGIN
   CREATE TABLE dbo.SalesOrders (
     id INT IDENTITY PRIMARY KEY,
-    number AS ('SO-' + RIGHT('00000000' + CONVERT(VARCHAR(20), id), 8)) PERSISTED,
+    number VARCHAR(MAX) NULL,
     customerId INT NOT NULL REFERENCES dbo.Customers(id),
     customerName NVARCHAR(180) NOT NULL,
-    customerAddress NVARCHAR(500) NOT NULL DEFAULT '',
+    customerAddress NVARCHAR(500) NOT NULL,
     orderDate DATE NOT NULL,
-    notes NVARCHAR(2000) NOT NULL DEFAULT '',
+    notes NVARCHAR(2000) NULL,
     status NVARCHAR(20) NOT NULL,
     total DECIMAL(18,2) NOT NULL,
     createdBy INT NOT NULL REFERENCES dbo.SalesUserLogin(id),
-    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    CONSTRAINT CK_SalesOrders_Status CHECK (status IN ('draft', 'confirmed')),
-    CONSTRAINT CK_SalesOrders_Total CHECK (total >= 0)
+    createdAt DATETIME2 NOT NULL,
+    updatedAt DATETIME2 NOT NULL
   );
 END;
 
@@ -168,9 +168,7 @@ BEGIN
     quantity DECIMAL(18,3) NOT NULL,
     unitPrice DECIMAL(18,2) NOT NULL,
     lineTotal DECIMAL(18,2) NOT NULL,
-    CONSTRAINT UQ_SalesOrderItems_Product UNIQUE (orderId, productId),
-    CONSTRAINT CK_SalesOrderItems_Quantity CHECK (quantity > 0),
-    CONSTRAINT CK_SalesOrderItems_Price CHECK (unitPrice >= 0)
+    CONSTRAINT UQ_SalesOrderItems_Product UNIQUE (orderId, productId)
   );
 END;
 
@@ -178,18 +176,16 @@ IF OBJECT_ID(N'dbo.SalesInvoices', N'U') IS NULL
 BEGIN
   CREATE TABLE dbo.SalesInvoices (
     id INT IDENTITY PRIMARY KEY,
-    number AS ('SI-' + RIGHT('00000000' + CONVERT(VARCHAR(20), id), 8)) PERSISTED,
+    number VARCHAR(MAX) NULL,
     orderId INT NOT NULL UNIQUE REFERENCES dbo.SalesOrders(id),
     invoiceDate DATE NOT NULL,
     dueDate DATE NOT NULL,
-    notes NVARCHAR(2000) NOT NULL DEFAULT '',
+    notes NVARCHAR(2000) NULL,
     total DECIMAL(18,2) NOT NULL,
-    paidAmount DECIMAL(18,2) NOT NULL DEFAULT 0,
+    paidAmount DECIMAL(18,2) NOT NULL,
     createdBy INT NOT NULL REFERENCES dbo.SalesUserLogin(id),
-    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    updatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    CONSTRAINT CK_SalesInvoices_Payment CHECK (paidAmount >= 0 AND paidAmount <= total),
-    CONSTRAINT CK_SalesInvoices_Dates CHECK (dueDate >= invoiceDate)
+    createdAt DATETIME2 NOT NULL,
+    updatedAt DATETIME2 NOT NULL
   );
 END;
 
@@ -197,14 +193,14 @@ IF OBJECT_ID(N'dbo.DeliveryReceipts', N'U') IS NULL
 BEGIN
   CREATE TABLE dbo.DeliveryReceipts (
     id INT IDENTITY PRIMARY KEY,
-    number AS ('DR-' + RIGHT('00000000' + CONVERT(VARCHAR(20), id), 8)) PERSISTED,
+    number VARCHAR(MAX) NULL,
     orderId INT NOT NULL UNIQUE REFERENCES dbo.SalesOrders(id),
     deliveryDate DATE NOT NULL,
-    receivedBy NVARCHAR(150) NOT NULL DEFAULT '',
-    address NVARCHAR(500) NOT NULL DEFAULT '',
-    notes NVARCHAR(2000) NOT NULL DEFAULT '',
+    receivedBy NVARCHAR(150) NOT NULL,
+    address NVARCHAR(500) NOT NULL,
+    notes NVARCHAR(2000) NULL,
     createdBy INT NOT NULL REFERENCES dbo.SalesUserLogin(id),
-    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+    createdAt DATETIME2 NOT NULL
   );
 END;
 
@@ -212,14 +208,14 @@ IF OBJECT_ID(N'dbo.ShippingInvoices', N'U') IS NULL
 BEGIN
   CREATE TABLE dbo.ShippingInvoices (
     id INT IDENTITY PRIMARY KEY,
-    number AS ('SHI-' + RIGHT('00000000' + CONVERT(VARCHAR(20), id), 8)) PERSISTED,
+    number VARCHAR(MAX) NULL,
     invoiceId INT NOT NULL UNIQUE REFERENCES dbo.SalesInvoices(id),
     shippingDate DATE NOT NULL,
-    carrier NVARCHAR(150) NOT NULL DEFAULT '',
-    trackingNumber NVARCHAR(100) NOT NULL DEFAULT '',
-    notes NVARCHAR(2000) NOT NULL DEFAULT '',
+    carrier NVARCHAR(150) NULL,
+    trackingNumber NVARCHAR(100) NULL,
+    notes NVARCHAR(2000) NULL,
     createdBy INT NOT NULL REFERENCES dbo.SalesUserLogin(id),
-    createdAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+    createdAt DATETIME2 NOT NULL
   );
 END;
 

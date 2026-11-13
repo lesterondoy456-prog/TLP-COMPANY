@@ -44,7 +44,7 @@ function createPlan(user, role) {
   const table = tableFor(user.system), record = { ...actor(role, user.system, 99), name: 'Mock Target', username: 'mock_target' };
   return [
     { match: new RegExp(`FROM dbo\\.${table} WITH \\(UPDLOCK,HOLDLOCK\\) WHERE id=@id`), rows: [user], inspect: call => { assert.equal(call.inputs.id, user.id); assert.equal(call.inTransaction, true); } },
-    { match: new RegExp(`INSERT INTO dbo\\.${table}\\(`), rows: [{ id: 99 }], inspect: ({ inputs }) => { assert.equal(inputs.role, role); assert.equal(inputs.isActive, true); assert.match(inputs.passwordHash, /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/); } },
+    { match: new RegExp(`INSERT INTO dbo\\.${table}\\(`), rows: [{ id: 99 }], inspect: ({ inputs, statement }) => { assert.match(statement, /createdAt,updatedAt/); assert.match(statement, /SYSUTCDATETIME\(\)/); assert.equal(inputs.cpnumber, null); assert.equal(inputs.photo, null); assert.equal(inputs.role, role); assert.equal(inputs.isActive, true); assert.match(inputs.passwordHash, /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/); } },
     { match: /INSERT INTO dbo\.AuditTrail/, inspect: ({ inputs, inTransaction }) => { assert.equal(inputs.system, user.system); assert.equal(inputs.userId, user.id); assert.equal(inTransaction, true); } },
     { match: new RegExp(`FROM dbo\\.${table} WHERE id=@id`), rows: [record], inspect: ({ inputs }) => assert.equal(inputs.id, 99) },
   ];
