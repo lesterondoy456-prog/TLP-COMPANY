@@ -3,7 +3,7 @@ import { invokeRoute, loadRouterWithDatabase } from './load-api.mjs';
 
 // This adapter models only SQL reads/writes. Pricing runs in the production
 // router callback; no calculation from the API is exposed or copied here.
-export async function priceOnRoute(items, settings = {}, { receiving = false, update = false } = {}) {
+export async function priceOnRoute(items, settings = {}, { receiving = false, update = false, remarks = '' } = {}) {
   const config = { vatRate: 0, vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, ...settings };
   const sourceOrder = { id: 10, status: 'posted', currency: 'PHP', rate: '1.00000', ...config, items: items.map((item, index) => ({
     ...item, id: index + 100, requestItemId: index + 1, requestId: 20,
@@ -25,7 +25,11 @@ export async function priceOnRoute(items, settings = {}, { receiving = false, up
       assert.equal(scope, active, 'Every save/query must use its transaction scope.');
       const params = {};
       return {
-        input(name, _type, value) { params[name] = value; return this; },
+        input(name, type, value) {
+          if (['NVarChar', 'VarChar'].includes(type?.type)) assert.equal(type.args[0], -1, 'Text parameter bindings must use SQL MAX without truncation.');
+          params[name] = value;
+          return this;
+        },
         async query(statement) {
           assert.equal(scope, active);
           const state = scope.state;
@@ -69,11 +73,11 @@ export async function priceOnRoute(items, settings = {}, { receiving = false, up
   };
   const base = receiving ? '/receivings' : '/purchase-orders';
   const body = receiving ? {
-    purchaseOrderId: 10, srrDate: '2026-11-13', invoiceNumber: 'MOCK-SI', invoiceDate: null, rate: '1',
+    purchaseOrderId: 10, srrDate: '2026-11-13', invoiceNumber: 'MOCK-SI', invoiceDate: null, rate: '1', remarks,
     items: items.map((item, index) => ({ orderItemId: index + 100, quantity: item.quantity, unit: 'pcs', allocations: [] })),
   } : {
     supplierId: 2, poDate: '2026-11-13', deliveryDate: '2026-11-14', currency: 'PHP', rate: 1,
-    paymentTerm: 'Mock cash', shipment: 'N/A', vatCode: 'MOCK',
+    paymentTerm: 'Mock cash', shipment: 'N/A', vatCode: 'MOCK', remarks,
     items: items.map((item, index) => ({ ...item, requestItemId: index + 1, currency: 'PHP', unit: 'pcs' })),
   };
   const router = loadRouterWithDatabase('purchasing', database);

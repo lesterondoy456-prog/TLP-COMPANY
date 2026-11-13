@@ -1,6 +1,84 @@
+export const CONFIGURATION_FIELD_LENGTHS = {
+  "atc": {
+    "code": 40,
+    "description": 500,
+    "accountCode": 100
+  },
+  "countries": {
+    "name": 100
+  },
+  "customer-categories": {
+    "name": 100
+  },
+  "product-categories": {
+    "name": 100
+  },
+  "supplies-categories": {
+    "name": 100
+  },
+  "warehouses": {
+    "code": 40,
+    "description": 500
+  },
+  "locations": {
+    "code": 40,
+    "description": 500
+  },
+  "payment-terms": {
+    "description": 100
+  },
+  "units": {
+    "description": 150,
+    "shortName": 30
+  },
+  "currencies": {
+    "name": 150,
+    "shortName": 30,
+    "checkName": 150,
+    "symbol": 20
+  },
+  "banks": {
+    "name": 200,
+    "shortName": 80,
+    "accountNo": 100,
+    "accountName": 150,
+    "swiftCode": 50,
+    "branchName": 150,
+    "address": 500,
+    "accountType": 80,
+    "currency": 30,
+    "account": 100
+  },
+  "vat-codes": {
+    "code": 40,
+    "description": 500,
+    "type": 80,
+    "class": 80,
+    "accountCode": 100
+  },
+  "audit-trail": {
+    "createdAt": 150,
+    "system": 150,
+    "userName": 150,
+    "module": 150,
+    "action": 150,
+    "recordId": 150
+  }
+};
+
+export function withConfigurationValidation(metadata) {
+  if (!metadata) return metadata;
+  const lengths = CONFIGURATION_FIELD_LENGTHS[metadata.kind] || {};
+  return { ...metadata, fields: metadata.fields.map(field => {
+    const { maxLength: backendLength, ...definition } = field;
+    return { ...definition, ...(lengths[field.key] === undefined ? {} : { maxLength: lengths[field.key] }) };
+  }) };
+}
+
 const invalid = (field, message) => { throw Object.assign(new Error(message), { field }); };
 
 export function validateConfiguration(metadata, input, current) {
+  metadata = withConfigurationValidation(metadata);
   if (!metadata || metadata.readOnly) invalid('', 'This configuration module is read-only.');
   if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('', 'Check the configuration fields before saving.');
   const result = {};

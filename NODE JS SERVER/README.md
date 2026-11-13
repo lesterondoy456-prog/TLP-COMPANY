@@ -1,6 +1,6 @@
 # TLP Company Systems
 
-Four independent React projects connect to one Node.js backend and the SQL Server database **TLP Company**. Every frontend has its own package, entry point, build output, development server, port, and Docker container. Each system authenticates against its own user table and has its own session cookie and API namespace.
+Four independent React projects connect to one Node.js backend and the SQL Server database **TLPCompany**. Every frontend has its own package, entry point, build output, development server, port, and Docker container. Each system authenticates against its own user table and has its own session cookie and API namespace.
 
 ## Folders
 
@@ -45,7 +45,7 @@ Set `FRONTEND_ORIGINS` in the backend's local `.env` to the comma-separated fron
 
 Sign in separately to each app with its local administrator account. Startup creates an administrator from the server's local `.env` only when that system has none. User accounts and salted password hashes are stored in `SalesUserLogin`, `PurchasingUserLogin`, `WarehouseUserLogin`, and `ConfigurationUserLogin`. Credentials remain in the local environment file.
 
-Docker uses the existing Windows SQL Server instance at `host.docker.internal:1433`, database `TLP Company`. Its dedicated SQL login is scoped to that database; credentials and session configuration come from the local `.env`, which is excluded from the Docker build context and Git. SQL Server must remain running. Business data remains in SQL Server when the app container is restarted or rebuilt.
+Docker uses the existing Windows SQL Server instance at `host.docker.internal:1433`, database `TLPCompany`. Its dedicated SQL login is scoped to that database; credentials and session configuration come from the local `.env`, which is excluded from the Docker build context and Git. SQL Server must remain running. Business data remains in SQL Server when the app container is restarted or rebuilt.
 
 ```powershell
 docker compose logs --tail 50
@@ -79,7 +79,7 @@ npm start
 
 ## Per-system APIs and migrations
 
-`Api/SalesApi.js`, `PurchasingApi.js`, `ConfigurationApi.js`, and `WarehouseApi.js` are CommonJS Express router modules. Each creates `express.Router()`, defines relative routes with `router.get`, `router.post`, `router.put`, and the other HTTP methods, then exports that router with `module.exports = router`. Each endpoint keeps its SQL, transformations, calculations and response directly inside its route handler and transaction callbacks. API files have no separate helper functions or helper classes; only static definitions and inline callbacks remain. The APIs share the SQL connection in `db.js`. Connection startup checks and `/api/health` stay in `server.js`. Form validation runs before fetch in each frontend's own `src/helper/validation.js`.
+`Api/SalesApi.js`, `PurchasingApi.js`, `ConfigurationApi.js`, and `WarehouseApi.js` are CommonJS Express router modules. Each creates `express.Router()`, defines relative routes with `router.get`, `router.post`, `router.put`, and the other HTTP methods, then exports that router with `module.exports = router`. Each endpoint keeps its SQL, transformations, calculations and response directly inside its route handler and transaction callbacks. API files have no separate helper functions or helper classes; only static definitions and inline callbacks remain. The APIs share the SQL connection in `db.js`. Connection startup checks and `/api/health` stay in `server.js`. Form validation runs before fetch in each frontend's own `src/helper/validation.js`. SQL text parameters use `sql.MAX`; text-field length checks stay in the frontend. `migration/text-max.sql` widens non-indexed `varchar`/`nvarchar` columns to `MAX`, keeps existing index-key lengths and numeric types/ranges, and stores customer/supplier TIN as `VARCHAR(MAX)` so leading zeros and hyphens are preserved. Generated document-number expressions keep their existing format.
 
 `server.js` loads each router with `require` and mounts it under its system namespace, for example:
 
@@ -100,7 +100,7 @@ A relative Sales route such as `/customers` is available at `/api/sales/customer
 
 `Api/LoginApiSystem.js` centralizes login, JWT authentication, profile and account management. Password checking and JWT creation are inline in the login endpoint; JWT verification is inline in its namespace middleware. Each namespace retains its own `/auth/login`, `/auth/session`, `/auth/logout`, `/auth/profile`, and `/users` endpoints. Signed HS256 JWT tokens contain the system, audience, user ID and expiry. They are stored in separate HttpOnly cookies scoped to the relevant system; the signing key is derived separately for each system. An account or session from one system does not authenticate another. Configuration masters use `/api/configuration/masters`; other business paths follow their owning system's prefix. Purchasing actor foreign keys reference PurchasingUserLogin. Shared audit records identify the actor's system as well as the account ID.
 
-All SQL files and database/schema checking live under `migration/`: `schema.sql`, `system-accounts.sql`, `configuration-schema.sql`, `erp-schema.sql`, and `run.js`. Backend startup applies these idempotent migrations before listening. Run `npm run migrate` to apply migrations without starting HTTP. The migration runner also creates an administrator from the local environment for each system that has no active administrator; it does not create business records. Backend startup uses the same migration runner. The backend contains the actual local `.env`; no `.env.example` is required.
+All SQL files and database/schema checking live under `migration/`: `schema.sql`, `system-accounts.sql`, `configuration-schema.sql`, `erp-schema.sql`, `text-max.sql`, and `run.js`. Backend startup applies these idempotent migrations before listening. Run `npm run migrate` to apply migrations without starting HTTP. The migration runner also creates an administrator from the local environment for each system that has no active administrator; it does not create business records. Backend startup uses the same migration runner. The backend contains the actual local `.env`; no `.env.example` is required.
 
 ## Administrator and configuration
 

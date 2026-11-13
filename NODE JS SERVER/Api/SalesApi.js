@@ -5,30 +5,8 @@ const {
   sql,
   transaction
 } = require('../db');
-const textLengths = {
-  code: 40,
-  name: 180,
-  contactPerson: 150,
-  cpnumber: 30,
-  email: 254,
-  address: 500,
-  shortName: 80,
-  businessStyle: 180,
-  salesInCharge: 150,
-  tin: 50,
-  faxNo: 30,
-  countryOfOrigin: 100,
-  country: 100,
-  category: 100,
-  remarks: 2000,
-  salesName: 180,
-  drName: 180,
-  paymentTerm: 100,
-  vatCode: 80,
-  taxCode: 80
-};
 const defaults = {
-  ...Object.fromEntries(Object.keys(textLengths).map(key => [key, ''])),
+  ...Object.fromEntries(["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"].map(key => [key, ''])),
   isActive: true,
   decimalInPrice: 2,
   decimalInTotalPrice: 2,
@@ -41,21 +19,6 @@ const defaults = {
   deliveryAddresses: [],
   salesInChargeId: null
 };
-const PRODUCT_TEXT_LENGTHS = Object.freeze({
-  sku: 40,
-  name: 180,
-  description: 1000,
-  unit: 30,
-  revision: 30,
-  secondaryUnit: 30,
-  currency: 30,
-  model: 150,
-  category: 100,
-  planType: 100,
-  color: 80,
-  remarks: 2000,
-  tagColor: 30
-});
 const PRODUCT_QUANTITIES = Object.freeze(['quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'divisor', 'thickness', 'weight']);
 router.use((boundRequest, res, next) => {
   if (res.locals.user?.system !== 'sales') throw Object.assign(new Error('Sign in to Sales to continue.'), {
@@ -64,7 +27,6 @@ router.use((boundRequest, res, next) => {
   next();
 });
 
-// Customer master and its lookup choices.
 router.get('/customers', async (boundRequest, res) => {
   const result = await request().query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId ORDER BY c.id DESC`);
   const addressRows = (await request().query('SELECT customerId,position,address FROM dbo.CustomerDeliveryAddresses ORDER BY customerId,position')).recordset;
@@ -151,7 +113,7 @@ router.post('/customers', async (req, res) => {
       ...defaults,
       ...(current || {})
     };
-    for (const key of Object.keys(textLengths)) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    for (const key of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
     for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === true;
     for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
@@ -205,7 +167,7 @@ router.post('/customers', async (req, res) => {
           id: null,
           name: ''
         };else {
-          const accountResult = await request(tx).input('name', sql.NVarChar(150), name).query("SELECT id,name FROM dbo.SalesUserLogin WHERE name=@name AND role='sales' AND isActive=1");
+          const accountResult = await request(tx).input('name', sql.NVarChar(sql.MAX), name).query("SELECT id,name FROM dbo.SalesUserLogin WHERE name=@name AND role='sales' AND isActive=1");
           if (accountResult.recordset.length !== 1) throw Object.assign(new Error('Select an active Sales account; names must resolve to one account.'), {
             status: 400
           });
@@ -231,16 +193,16 @@ router.post('/customers', async (req, res) => {
       const base = `C-${String(id).padStart(8, '0')}`;
       let code = base;
       let suffix = 0;
-      while ((await request(tx).input('code', sql.NVarChar(40), code).query('SELECT id FROM dbo.Customers WHERE code=@code')).recordset.length) {
+      while ((await request(tx).input('code', sql.NVarChar(sql.MAX), code).query('SELECT id FROM dbo.Customers WHERE code=@code')).recordset.length) {
         code = `${base}-${++suffix}`;
       }
       customer.code = code;
     }
     const boundRequest = request(tx);
-    for (const [fieldName, maximumLength] of Object.entries(textLengths)) boundRequest.input(fieldName, sql.NVarChar(maximumLength), customer[fieldName]);
+    for (const fieldName of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
     for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) boundRequest.input(fieldName, sql.Bit, customer[fieldName]);
     for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) boundRequest.input(fieldName, sql.Int, customer[fieldName]);
-    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) boundRequest.input(fieldName, sql.NVarChar(10), customer[fieldName]);
+    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
     boundRequest.input('discount', sql.Decimal(18, 6), customer.discount);
     boundRequest.input('salesInChargeId', sql.Int, customer.salesInChargeId);
     const req = boundRequest;
@@ -254,10 +216,10 @@ router.post('/customers', async (req, res) => {
     if (!current || Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
       await request(tx).input('id', sql.Int, saved).query('DELETE FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id');
       for (const [position, address] of customer.deliveryAddresses.entries()) {
-        await request(tx).input('id', sql.Int, saved).input('position', sql.Int, position).input('address', sql.NVarChar(500), address).query('INSERT INTO dbo.CustomerDeliveryAddresses(customerId,position,address) VALUES(@id,@position,@address)');
+        await request(tx).input('id', sql.Int, saved).input('position', sql.Int, position).input('address', sql.NVarChar(sql.MAX), address).query('INSERT INTO dbo.CustomerDeliveryAddresses(customerId,position,address) VALUES(@id,@position,@address)');
       }
     }
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'customers').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'customers').input('action', sql.NVarChar(sql.MAX), id ? 'update' : 'create').input('recordId', sql.NVarChar(sql.MAX), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return saved;
   });
   const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
@@ -304,7 +266,7 @@ router.put('/customers/:id', async (req, res) => {
       ...defaults,
       ...(current || {})
     };
-    for (const key of Object.keys(textLengths)) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    for (const key of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() : '';
     for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === true;
     for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
@@ -358,7 +320,7 @@ router.put('/customers/:id', async (req, res) => {
           id: null,
           name: ''
         };else {
-          const accountResult = await request(tx).input('name', sql.NVarChar(150), name).query("SELECT id,name FROM dbo.SalesUserLogin WHERE name=@name AND role='sales' AND isActive=1");
+          const accountResult = await request(tx).input('name', sql.NVarChar(sql.MAX), name).query("SELECT id,name FROM dbo.SalesUserLogin WHERE name=@name AND role='sales' AND isActive=1");
           if (accountResult.recordset.length !== 1) throw Object.assign(new Error('Select an active Sales account; names must resolve to one account.'), {
             status: 400
           });
@@ -384,16 +346,16 @@ router.put('/customers/:id', async (req, res) => {
       const base = `C-${String(id).padStart(8, '0')}`;
       let code = base;
       let suffix = 0;
-      while ((await request(tx).input('code', sql.NVarChar(40), code).query('SELECT id FROM dbo.Customers WHERE code=@code')).recordset.length) {
+      while ((await request(tx).input('code', sql.NVarChar(sql.MAX), code).query('SELECT id FROM dbo.Customers WHERE code=@code')).recordset.length) {
         code = `${base}-${++suffix}`;
       }
       customer.code = code;
     }
     const boundRequest = request(tx);
-    for (const [fieldName, maximumLength] of Object.entries(textLengths)) boundRequest.input(fieldName, sql.NVarChar(maximumLength), customer[fieldName]);
+    for (const fieldName of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
     for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) boundRequest.input(fieldName, sql.Bit, customer[fieldName]);
     for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) boundRequest.input(fieldName, sql.Int, customer[fieldName]);
-    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) boundRequest.input(fieldName, sql.NVarChar(10), customer[fieldName]);
+    for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
     boundRequest.input('discount', sql.Decimal(18, 6), customer.discount);
     boundRequest.input('salesInChargeId', sql.Int, customer.salesInChargeId);
     const req = boundRequest;
@@ -407,10 +369,10 @@ router.put('/customers/:id', async (req, res) => {
     if (!current || Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
       await request(tx).input('id', sql.Int, saved).query('DELETE FROM dbo.CustomerDeliveryAddresses WHERE customerId=@id');
       for (const [position, address] of customer.deliveryAddresses.entries()) {
-        await request(tx).input('id', sql.Int, saved).input('position', sql.Int, position).input('address', sql.NVarChar(500), address).query('INSERT INTO dbo.CustomerDeliveryAddresses(customerId,position,address) VALUES(@id,@position,@address)');
+        await request(tx).input('id', sql.Int, saved).input('position', sql.Int, position).input('address', sql.NVarChar(sql.MAX), address).query('INSERT INTO dbo.CustomerDeliveryAddresses(customerId,position,address) VALUES(@id,@position,@address)');
       }
     }
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'customers').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'customers').input('action', sql.NVarChar(sql.MAX), id ? 'update' : 'create').input('recordId', sql.NVarChar(sql.MAX), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return saved;
   });
   const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
@@ -439,7 +401,7 @@ router.delete('/customers/:id', async (req, res) => {
     if (!result.recordset.length) throw Object.assign(new Error('The record could not be found.'), {
       status: 404
     });
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), kind).input('action', sql.NVarChar(50), 'delete').input('recordId', sql.NVarChar(100), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), kind).input('action', sql.NVarChar(sql.MAX), 'delete').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
   });
   res.json({
     success: true
@@ -458,7 +420,7 @@ router.delete('/products/:id', async (req, res) => {
     if (!result.recordset.length) throw Object.assign(new Error('The record could not be found.'), {
       status: 404
     });
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), kind).input('action', sql.NVarChar(50), 'delete').input('recordId', sql.NVarChar(100), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), kind).input('action', sql.NVarChar(sql.MAX), 'delete').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
   });
   res.json({
     success: true
@@ -645,7 +607,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       current = currentRows[0];
     }
     const product = {
-      ...Object.fromEntries(Object.keys(PRODUCT_TEXT_LENGTHS).map(key => [key, ''])),
+      ...Object.fromEntries(["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"].map(key => [key, ''])),
       ...Object.fromEntries(PRODUCT_QUANTITIES.map(key => [key, 0])),
       revision: '0',
       vatMode: 'customer',
@@ -661,8 +623,8 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       inventorySchedules: [],
       ...(current || {})
     };
-    for (const key of Object.keys(PRODUCT_TEXT_LENGTHS)) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
-    if (!(Object.hasOwn(input, 'name') && input['name'] !== undefined) && (!current || Object.hasOwn(input, 'description') && input['description'] !== undefined)) product.name = (product.description || product.sku).slice(0, PRODUCT_TEXT_LENGTHS.name);
+    for (const key of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    if (!(Object.hasOwn(input, 'name') && input['name'] !== undefined) && (!current || Object.hasOwn(input, 'description') && input['description'] !== undefined)) product.name = product.description || product.sku;
     if (!product.name) product.name = product.sku;
     for (const key of [...PRODUCT_QUANTITIES, 'price', 'stock']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
@@ -753,19 +715,19 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     }
     for (const field of ['unit', 'secondaryUnit']) {
       if (!product[field] || product[field] === current?.[field]) continue;
-      const result = await request(scope).input('name', sql.NVarChar(30), product[field]).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@name AND isActive=1 AND forProduct=1');
+      const result = await request(scope).input('name', sql.NVarChar(sql.MAX), product[field]).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@name AND isActive=1 AND forProduct=1');
       if (!result.recordset.length) throw Object.assign(new Error('Product UOP and UOP2 must use active Configuration units marked For Product.'), {
         status: 400
       });
     }
     if (product.currency && product.currency !== current?.currency) {
-      const result = await request(scope).input('code', sql.NVarChar(30), product.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
+      const result = await request(scope).input('code', sql.NVarChar(sql.MAX), product.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
       if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Currency.'), {
         status: 400
       });
     }
     if (product.category && product.category !== current?.category) {
-      const result = await request(scope).input('name', sql.NVarChar(100), product.category).query('SELECT id FROM dbo.ConfigProductCategories WHERE name=@name AND isActive=1');
+      const result = await request(scope).input('name', sql.NVarChar(sql.MAX), product.category).query('SELECT id FROM dbo.ConfigProductCategories WHERE name=@name AND isActive=1');
       if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Product Category.'), {
         status: 400
       });
@@ -818,9 +780,9 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       row.unit = supplies.unit;
     }
     const boundRequest = request(scope);
-    for (const [fieldName, maximumLength] of Object.entries(PRODUCT_TEXT_LENGTHS)) boundRequest.input(fieldName, sql.NVarChar(maximumLength), product[fieldName]);
+    for (const fieldName of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), product[fieldName]);
     for (const fieldName of PRODUCT_QUANTITIES) boundRequest.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
-    boundRequest.input('price', sql.VarChar(60), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(20), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(20), product.inventorySetup);
+    boundRequest.input('price', sql.VarChar(sql.MAX), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
     const req = boundRequest;
     let saved = id;
     if (id) {
@@ -832,34 +794,34 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     if (!current || Object.hasOwn(input, 'processes') && input.processes !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductProcesses WHERE productId=@id');
       for (const [position, row] of product.processes.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.ProductProcesses(productId,position,name) VALUES(@id,@position,@name)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.ProductProcesses(productId,position,name) VALUES(@id,@position,@name)');
       }
     }
     if (!current || Object.hasOwn(input, 'offices') && input.offices !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductOffices WHERE productId=@id');
       for (const [position, row] of product.offices.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.ProductOffices(productId,position,name) VALUES(@id,@position,@name)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.ProductOffices(productId,position,name) VALUES(@id,@position,@name)');
       }
     }
     if (!current || Object.hasOwn(input, 'customerApprovals') && input.customerApprovals !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductCustomerApprovals WHERE productId=@id');
       for (const [position, row] of product.customerApprovals.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('customerId', sql.Int, row.customerId).input('approvalDate', sql.VarChar(10), row.approvalDate).input('eolDate', sql.VarChar(10), row.eolDate).input('approvalRemarks', sql.NVarChar(2000), row.approvalRemarks).input('eolRemarks', sql.NVarChar(2000), row.eolRemarks).query('INSERT INTO dbo.ProductCustomerApprovals(productId,position,customerId,approvalDate,eolDate,approvalRemarks,eolRemarks) VALUES(@id,@position,@customerId,@approvalDate,@eolDate,@approvalRemarks,@eolRemarks)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('customerId', sql.Int, row.customerId).input('approvalDate', sql.VarChar(sql.MAX), row.approvalDate).input('eolDate', sql.VarChar(sql.MAX), row.eolDate).input('approvalRemarks', sql.NVarChar(sql.MAX), row.approvalRemarks).input('eolRemarks', sql.NVarChar(sql.MAX), row.eolRemarks).query('INSERT INTO dbo.ProductCustomerApprovals(productId,position,customerId,approvalDate,eolDate,approvalRemarks,eolRemarks) VALUES(@id,@position,@customerId,@approvalDate,@eolDate,@approvalRemarks,@eolRemarks)');
       }
     }
     if (!current || Object.hasOwn(input, 'inventorySchedules') && input.inventorySchedules !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductInventorySchedules WHERE productId=@id');
       for (const [position, row] of product.inventorySchedules.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(10), row.scheduleDate).input('month', sql.NVarChar(40), row.month).query('INSERT INTO dbo.ProductInventorySchedules(productId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(sql.MAX), row.scheduleDate).input('month', sql.NVarChar(sql.MAX), row.month).query('INSERT INTO dbo.ProductInventorySchedules(productId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
       }
     }
     if (!current || Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductSupplies WHERE productId=@id');
       for (const [position, row] of product.linkedSupplies.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, row.suppliesId).input('quantity', sql.Decimal(18, 6), row.quantity).input('unit', sql.NVarChar(30), row.unit).query('INSERT INTO dbo.ProductSupplies(productId,position,suppliesId,quantity,unit) VALUES(@id,@position,@suppliesId,@quantity,@unit)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, row.suppliesId).input('quantity', sql.Decimal(18, 6), row.quantity).input('unit', sql.NVarChar(sql.MAX), row.unit).query('INSERT INTO dbo.ProductSupplies(productId,position,suppliesId,quantity,unit) VALUES(@id,@position,@suppliesId,@quantity,@unit)');
       }
     }
-    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'products').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'products').input('action', sql.NVarChar(sql.MAX), id ? 'update' : 'create').input('recordId', sql.NVarChar(sql.MAX), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return saved;
   });
   const recordQuery = request();
@@ -973,7 +935,7 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       current = currentRows[0];
     }
     const product = {
-      ...Object.fromEntries(Object.keys(PRODUCT_TEXT_LENGTHS).map(key => [key, ''])),
+      ...Object.fromEntries(["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"].map(key => [key, ''])),
       ...Object.fromEntries(PRODUCT_QUANTITIES.map(key => [key, 0])),
       revision: '0',
       vatMode: 'customer',
@@ -989,8 +951,8 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       inventorySchedules: [],
       ...(current || {})
     };
-    for (const key of Object.keys(PRODUCT_TEXT_LENGTHS)) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
-    if (!(Object.hasOwn(input, 'name') && input['name'] !== undefined) && (!current || Object.hasOwn(input, 'description') && input['description'] !== undefined)) product.name = (product.description || product.sku).slice(0, PRODUCT_TEXT_LENGTHS.name);
+    for (const key of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) if (Object.hasOwn(input, key) && input[key] !== undefined) product[key] = typeof input[key] === 'string' ? input[key].trim() : '';
+    if (!(Object.hasOwn(input, 'name') && input['name'] !== undefined) && (!current || Object.hasOwn(input, 'description') && input['description'] !== undefined)) product.name = product.description || product.sku;
     if (!product.name) product.name = product.sku;
     for (const key of [...PRODUCT_QUANTITIES, 'price', 'stock']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = Number(input[key] ?? 0);
@@ -1081,19 +1043,19 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     }
     for (const field of ['unit', 'secondaryUnit']) {
       if (!product[field] || product[field] === current?.[field]) continue;
-      const result = await request(scope).input('name', sql.NVarChar(30), product[field]).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@name AND isActive=1 AND forProduct=1');
+      const result = await request(scope).input('name', sql.NVarChar(sql.MAX), product[field]).query('SELECT id FROM dbo.ConfigUnits WHERE shortName=@name AND isActive=1 AND forProduct=1');
       if (!result.recordset.length) throw Object.assign(new Error('Product UOP and UOP2 must use active Configuration units marked For Product.'), {
         status: 400
       });
     }
     if (product.currency && product.currency !== current?.currency) {
-      const result = await request(scope).input('code', sql.NVarChar(30), product.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
+      const result = await request(scope).input('code', sql.NVarChar(sql.MAX), product.currency).query('SELECT id FROM dbo.ConfigCurrencies WHERE shortName=@code AND isActive=1');
       if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Currency.'), {
         status: 400
       });
     }
     if (product.category && product.category !== current?.category) {
-      const result = await request(scope).input('name', sql.NVarChar(100), product.category).query('SELECT id FROM dbo.ConfigProductCategories WHERE name=@name AND isActive=1');
+      const result = await request(scope).input('name', sql.NVarChar(sql.MAX), product.category).query('SELECT id FROM dbo.ConfigProductCategories WHERE name=@name AND isActive=1');
       if (!result.recordset.length) throw Object.assign(new Error('Select an active configured Product Category.'), {
         status: 400
       });
@@ -1146,9 +1108,9 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
       row.unit = supplies.unit;
     }
     const boundRequest = request(scope);
-    for (const [fieldName, maximumLength] of Object.entries(PRODUCT_TEXT_LENGTHS)) boundRequest.input(fieldName, sql.NVarChar(maximumLength), product[fieldName]);
+    for (const fieldName of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "planType", "color", "remarks", "tagColor"]) boundRequest.input(fieldName, sql.NVarChar(sql.MAX), product[fieldName]);
     for (const fieldName of PRODUCT_QUANTITIES) boundRequest.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
-    boundRequest.input('price', sql.VarChar(60), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(20), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(20), product.inventorySetup);
+    boundRequest.input('price', sql.VarChar(sql.MAX), String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
     const req = boundRequest;
     let saved = id;
     if (id) {
@@ -1160,34 +1122,34 @@ SELECT productId,CONVERT(varchar(10),scheduleDate,23) AS scheduleDate,month FROM
     if (!current || Object.hasOwn(input, 'processes') && input.processes !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductProcesses WHERE productId=@id');
       for (const [position, row] of product.processes.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.ProductProcesses(productId,position,name) VALUES(@id,@position,@name)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.ProductProcesses(productId,position,name) VALUES(@id,@position,@name)');
       }
     }
     if (!current || Object.hasOwn(input, 'offices') && input.offices !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductOffices WHERE productId=@id');
       for (const [position, row] of product.offices.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(150), row.name).query('INSERT INTO dbo.ProductOffices(productId,position,name) VALUES(@id,@position,@name)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('name', sql.NVarChar(sql.MAX), row.name).query('INSERT INTO dbo.ProductOffices(productId,position,name) VALUES(@id,@position,@name)');
       }
     }
     if (!current || Object.hasOwn(input, 'customerApprovals') && input.customerApprovals !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductCustomerApprovals WHERE productId=@id');
       for (const [position, row] of product.customerApprovals.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('customerId', sql.Int, row.customerId).input('approvalDate', sql.VarChar(10), row.approvalDate).input('eolDate', sql.VarChar(10), row.eolDate).input('approvalRemarks', sql.NVarChar(2000), row.approvalRemarks).input('eolRemarks', sql.NVarChar(2000), row.eolRemarks).query('INSERT INTO dbo.ProductCustomerApprovals(productId,position,customerId,approvalDate,eolDate,approvalRemarks,eolRemarks) VALUES(@id,@position,@customerId,@approvalDate,@eolDate,@approvalRemarks,@eolRemarks)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('customerId', sql.Int, row.customerId).input('approvalDate', sql.VarChar(sql.MAX), row.approvalDate).input('eolDate', sql.VarChar(sql.MAX), row.eolDate).input('approvalRemarks', sql.NVarChar(sql.MAX), row.approvalRemarks).input('eolRemarks', sql.NVarChar(sql.MAX), row.eolRemarks).query('INSERT INTO dbo.ProductCustomerApprovals(productId,position,customerId,approvalDate,eolDate,approvalRemarks,eolRemarks) VALUES(@id,@position,@customerId,@approvalDate,@eolDate,@approvalRemarks,@eolRemarks)');
       }
     }
     if (!current || Object.hasOwn(input, 'inventorySchedules') && input.inventorySchedules !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductInventorySchedules WHERE productId=@id');
       for (const [position, row] of product.inventorySchedules.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(10), row.scheduleDate).input('month', sql.NVarChar(40), row.month).query('INSERT INTO dbo.ProductInventorySchedules(productId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('scheduleDate', sql.VarChar(sql.MAX), row.scheduleDate).input('month', sql.NVarChar(sql.MAX), row.month).query('INSERT INTO dbo.ProductInventorySchedules(productId,position,scheduleDate,month) VALUES(@id,@position,@scheduleDate,@month)');
       }
     }
     if (!current || Object.hasOwn(input, 'linkedSupplies') && input['linkedSupplies'] !== undefined) {
       await request(scope).input('id', sql.Int, saved).query('DELETE FROM dbo.ProductSupplies WHERE productId=@id');
       for (const [position, row] of product.linkedSupplies.entries()) {
-        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, row.suppliesId).input('quantity', sql.Decimal(18, 6), row.quantity).input('unit', sql.NVarChar(30), row.unit).query('INSERT INTO dbo.ProductSupplies(productId,position,suppliesId,quantity,unit) VALUES(@id,@position,@suppliesId,@quantity,@unit)');
+        await request(scope).input('id', sql.Int, saved).input('position', sql.Int, position).input('suppliesId', sql.Int, row.suppliesId).input('quantity', sql.Decimal(18, 6), row.quantity).input('unit', sql.NVarChar(sql.MAX), row.unit).query('INSERT INTO dbo.ProductSupplies(productId,position,suppliesId,quantity,unit) VALUES(@id,@position,@suppliesId,@quantity,@unit)');
       }
     }
-    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'products').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(scope).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'products').input('action', sql.NVarChar(sql.MAX), id ? 'update' : 'create').input('recordId', sql.NVarChar(sql.MAX), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return saved;
   });
   const recordQuery = request();
@@ -1405,7 +1367,7 @@ router.post('/sales-orders', async (req, res) => {
     if (input.currency !== undefined && (typeof input.currency === 'string' ? input.currency.trim() : '').toUpperCase() !== currency) throw Object.assign(new Error('Order currency must match the selected product prices.'), {
       status: 400
     });
-    const req = request(tx).input('customerId', sql.Int, order.customerId).input('customerName', sql.NVarChar(180), customer.name).input('customerAddress', sql.NVarChar(500), customer.address).input('orderDate', sql.VarChar(10), order.orderDate).input('notes', sql.NVarChar(2000), order.notes).input('status', sql.NVarChar(20), order.status).input('total', sql.Decimal(18, 2), order.total).input('currency', sql.NVarChar(30), currency);
+    const req = request(tx).input('customerId', sql.Int, order.customerId).input('customerName', sql.NVarChar(sql.MAX), customer.name).input('customerAddress', sql.NVarChar(sql.MAX), customer.address).input('orderDate', sql.VarChar(sql.MAX), order.orderDate).input('notes', sql.NVarChar(sql.MAX), order.notes).input('status', sql.NVarChar(sql.MAX), order.status).input('total', sql.Decimal(18, 2), order.total).input('currency', sql.NVarChar(sql.MAX), currency);
     let saved = id;
     if (id) {
       await req.input('id', sql.Int, id).query(`UPDATE dbo.SalesOrders SET customerId=@customerId,customerName=@customerName,customerAddress=@customerAddress,
@@ -1418,10 +1380,10 @@ router.post('/sales-orders', async (req, res) => {
       saved = result.recordset[0].id;
     }
     for (const item of snapshots) {
-      await request(tx).input('orderId', sql.Int, saved).input('productId', sql.Int, item.productId).input('productName', sql.NVarChar(180), item.productName).input('sku', sql.NVarChar(40), item.sku).input('unit', sql.NVarChar(30), item.unit).input('quantity', sql.Decimal(18, 3), item.quantity).input('unitPrice', sql.Decimal(18, 6), item.unitPrice).input('lineTotal', sql.Decimal(18, 2), item.lineTotal).query(`INSERT INTO dbo.SalesOrderItems (orderId,productId,productName,sku,unit,quantity,unitPrice,lineTotal)
+      await request(tx).input('orderId', sql.Int, saved).input('productId', sql.Int, item.productId).input('productName', sql.NVarChar(sql.MAX), item.productName).input('sku', sql.NVarChar(sql.MAX), item.sku).input('unit', sql.NVarChar(sql.MAX), item.unit).input('quantity', sql.Decimal(18, 3), item.quantity).input('unitPrice', sql.Decimal(18, 6), item.unitPrice).input('lineTotal', sql.Decimal(18, 2), item.lineTotal).query(`INSERT INTO dbo.SalesOrderItems (orderId,productId,productName,sku,unit,quantity,unitPrice,lineTotal)
           VALUES (@orderId,@productId,@productName,@sku,@unit,@quantity,@unitPrice,@lineTotal)`);
     }
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-orders').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-orders').input('action', sql.NVarChar(sql.MAX), id ? 'update' : 'create').input('recordId', sql.NVarChar(sql.MAX), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return saved;
   });
   const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
@@ -1578,7 +1540,7 @@ router.put('/sales-orders/:id', async (req, res) => {
     if (input.currency !== undefined && (typeof input.currency === 'string' ? input.currency.trim() : '').toUpperCase() !== currency) throw Object.assign(new Error('Order currency must match the selected product prices.'), {
       status: 400
     });
-    const req = request(tx).input('customerId', sql.Int, order.customerId).input('customerName', sql.NVarChar(180), customer.name).input('customerAddress', sql.NVarChar(500), customer.address).input('orderDate', sql.VarChar(10), order.orderDate).input('notes', sql.NVarChar(2000), order.notes).input('status', sql.NVarChar(20), order.status).input('total', sql.Decimal(18, 2), order.total).input('currency', sql.NVarChar(30), currency);
+    const req = request(tx).input('customerId', sql.Int, order.customerId).input('customerName', sql.NVarChar(sql.MAX), customer.name).input('customerAddress', sql.NVarChar(sql.MAX), customer.address).input('orderDate', sql.VarChar(sql.MAX), order.orderDate).input('notes', sql.NVarChar(sql.MAX), order.notes).input('status', sql.NVarChar(sql.MAX), order.status).input('total', sql.Decimal(18, 2), order.total).input('currency', sql.NVarChar(sql.MAX), currency);
     let saved = id;
     if (id) {
       await req.input('id', sql.Int, id).query(`UPDATE dbo.SalesOrders SET customerId=@customerId,customerName=@customerName,customerAddress=@customerAddress,
@@ -1591,10 +1553,10 @@ router.put('/sales-orders/:id', async (req, res) => {
       saved = result.recordset[0].id;
     }
     for (const item of snapshots) {
-      await request(tx).input('orderId', sql.Int, saved).input('productId', sql.Int, item.productId).input('productName', sql.NVarChar(180), item.productName).input('sku', sql.NVarChar(40), item.sku).input('unit', sql.NVarChar(30), item.unit).input('quantity', sql.Decimal(18, 3), item.quantity).input('unitPrice', sql.Decimal(18, 6), item.unitPrice).input('lineTotal', sql.Decimal(18, 2), item.lineTotal).query(`INSERT INTO dbo.SalesOrderItems (orderId,productId,productName,sku,unit,quantity,unitPrice,lineTotal)
+      await request(tx).input('orderId', sql.Int, saved).input('productId', sql.Int, item.productId).input('productName', sql.NVarChar(sql.MAX), item.productName).input('sku', sql.NVarChar(sql.MAX), item.sku).input('unit', sql.NVarChar(sql.MAX), item.unit).input('quantity', sql.Decimal(18, 3), item.quantity).input('unitPrice', sql.Decimal(18, 6), item.unitPrice).input('lineTotal', sql.Decimal(18, 2), item.lineTotal).query(`INSERT INTO dbo.SalesOrderItems (orderId,productId,productName,sku,unit,quantity,unitPrice,lineTotal)
           VALUES (@orderId,@productId,@productName,@sku,@unit,@quantity,@unitPrice,@lineTotal)`);
     }
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-orders').input('action', sql.NVarChar(50), id ? 'update' : 'create').input('recordId', sql.NVarChar(100), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-orders').input('action', sql.NVarChar(sql.MAX), id ? 'update' : 'create').input('recordId', sql.NVarChar(sql.MAX), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return saved;
   });
   const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT o.id, o.number, o.customerId, o.customerName, o.customerAddress,o.currency,
@@ -1637,7 +1599,7 @@ router.delete('/sales-orders/:id', async (req, res) => {
       status: 409
     });
     await request(tx).input('id', sql.Int, id).query('DELETE FROM dbo.SalesOrderItems WHERE orderId=@id; DELETE FROM dbo.SalesOrders WHERE id=@id;');
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-orders').input('action', sql.NVarChar(50), 'delete').input('recordId', sql.NVarChar(100), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-orders').input('action', sql.NVarChar(sql.MAX), 'delete').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
   });
   res.json({
     success: true
@@ -1775,9 +1737,9 @@ router.post('/sales-invoices', async (req, res) => {
     if (order.invoiced) throw Object.assign(new Error('This sales order already has an invoice.'), {
       status: 409
     });
-    const result = await request(tx).input('orderId', sql.Int, orderId).input('invoiceDate', sql.VarChar(10), invoiceDate).input('dueDate', sql.VarChar(10), dueDate).input('notes', sql.NVarChar(2000), notes).input('total', sql.Decimal(18, 2), order.total).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.SalesInvoices (orderId,invoiceDate,dueDate,notes,total,createdBy) OUTPUT INSERTED.id
+    const result = await request(tx).input('orderId', sql.Int, orderId).input('invoiceDate', sql.VarChar(sql.MAX), invoiceDate).input('dueDate', sql.VarChar(sql.MAX), dueDate).input('notes', sql.NVarChar(sql.MAX), notes).input('total', sql.Decimal(18, 2), order.total).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.SalesInvoices (orderId,invoiceDate,dueDate,notes,total,createdBy) OUTPUT INSERTED.id
         VALUES (@orderId,@invoiceDate,@dueDate,@notes,@total,@createdBy)`);
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-invoices').input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-invoices').input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return result.recordset[0].id;
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
@@ -1837,7 +1799,7 @@ router.patch('/sales-invoices/:id/payment', async (req, res) => {
         status: 400
       });
     }
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'sales-invoices').input('action', sql.NVarChar(50), 'payment').input('recordId', sql.NVarChar(100), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-invoices').input('action', sql.NVarChar(sql.MAX), 'payment').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
@@ -1897,9 +1859,9 @@ router.post('/delivery-receipts', async (req, res) => {
         status: 409
       });
     }
-    const result = await request(tx).input('orderId', sql.Int, orderId).input('deliveryDate', sql.VarChar(10), deliveryDate).input('receivedBy', sql.NVarChar(150), receivedBy).input('address', sql.NVarChar(500), address || order.customerAddress).input('notes', sql.NVarChar(2000), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.DeliveryReceipts (orderId,deliveryDate,receivedBy,address,notes,createdBy) OUTPUT INSERTED.id
+    const result = await request(tx).input('orderId', sql.Int, orderId).input('deliveryDate', sql.VarChar(sql.MAX), deliveryDate).input('receivedBy', sql.NVarChar(sql.MAX), receivedBy).input('address', sql.NVarChar(sql.MAX), address || order.customerAddress).input('notes', sql.NVarChar(sql.MAX), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.DeliveryReceipts (orderId,deliveryDate,receivedBy,address,notes,createdBy) OUTPUT INSERTED.id
         VALUES (@orderId,@deliveryDate,@receivedBy,@address,@notes,@createdBy)`);
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'delivery-receipts').input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'delivery-receipts').input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return result.recordset[0].id;
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.total,o.currency,
@@ -1947,9 +1909,9 @@ router.post('/shipping-invoices', async (req, res) => {
     if (existing.recordset.length) throw Object.assign(new Error('This sales invoice already has a shipping invoice.'), {
       status: 409
     });
-    const result = await request(tx).input('invoiceId', sql.Int, invoiceId).input('shippingDate', sql.VarChar(10), shippingDate).input('carrier', sql.NVarChar(150), carrier).input('trackingNumber', sql.NVarChar(100), trackingNumber).input('notes', sql.NVarChar(2000), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.ShippingInvoices (invoiceId,shippingDate,carrier,trackingNumber,notes,createdBy)
+    const result = await request(tx).input('invoiceId', sql.Int, invoiceId).input('shippingDate', sql.VarChar(sql.MAX), shippingDate).input('carrier', sql.NVarChar(sql.MAX), carrier).input('trackingNumber', sql.NVarChar(sql.MAX), trackingNumber).input('notes', sql.NVarChar(sql.MAX), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.ShippingInvoices (invoiceId,shippingDate,carrier,trackingNumber,notes,createdBy)
         OUTPUT INSERTED.id VALUES (@invoiceId,@shippingDate,@carrier,@trackingNumber,@notes,@createdBy)`);
-    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(150), user.name).input('system', sql.NVarChar(20), user.system).input('module', sql.NVarChar(100), 'shipping-invoices').input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'shipping-invoices').input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     return result.recordset[0].id;
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT s.id,s.number,s.invoiceId,i.number AS invoiceNumber,i.orderId,o.number AS orderNumber,

@@ -24,6 +24,11 @@ function assertRouteCallbacksOnly(source, filename) {
     if (['ArrowFunctionExpression', 'FunctionExpression'].includes(node.type)) {
       assert.ok(['CallExpression', 'OptionalCallExpression'].includes(parent?.type) && parent.arguments.includes(node), filename + ' permits inline callbacks only; no function variables, object helpers or IIFEs.');
     }
+    if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression' && node.callee.object.name === 'sql' && ['VarChar', 'NVarChar'].includes(node.callee.property.name)) {
+      const size = node.arguments[0];
+      assert.ok(size?.type === 'MemberExpression' && size.object.name === 'sql' && size.property.name === 'MAX', filename + ' SQL text bindings must use sql.MAX.');
+    }
+    if (filename !== 'LoginApiSystem' && node.type === 'VariableDeclarator' && node.id.type === 'Identifier') assert.doesNotMatch(node.id.name, /^(?:CUSTOMER_TEXT_LENGTHS|PRODUCT_TEXT_LENGTHS|SUPPLIER_TEXT|SUPPLIES_TEXT|textLengths|textLimits)$/i, 'Form text-length maps belong in frontend validation.');
     if (['ConfigurationApi', 'SalesApi', 'PurchasingApi'].includes(filename) && node.type === 'CallExpression' && node.callee.type === 'MemberExpression' && node.callee.property.name === 'query') {
       const sql = node.arguments[0];
       assert.ok(sql?.type === 'StringLiteral' || sql?.type === 'TemplateLiteral' && sql.expressions.length === 0, filename + ' endpoint queries must contain complete SQL literals directly.');
@@ -157,6 +162,8 @@ test('CommonJS Express entry mounts shared login before four business routers', 
     assert.equal([...api.matchAll(/module\.exports\s*=/g)].length, 1);
     assert.match(api, /module\.exports\s*=\s*router\s*;/);
     assert.doesNotMatch(api, /\bexport\b|register\w+Api|module\.exports\./);
+    if (filename === 'ConfigurationApi') assert.doesNotMatch(api, /\bmaxLength\b/, 'Configuration form length limits belong only in the frontend validation helper.');
+    if (!shared) assert.doesNotMatch(api, /\.length\s*>\s*field\.maxLength/, 'Backend text values must not retain frontend length caps.');
     for (const [, specifier] of api.matchAll(/\brequire\(['"]([^'"]+)['"]\)/g)) {
       assert.ok(specifier.startsWith('node:') || specifier === 'express' || specifier === '../db', `${filename} must not depend on another API or backend helper: ${specifier}`);
     }
@@ -169,7 +176,7 @@ test('CommonJS Express entry mounts shared login before four business routers', 
 test('all SQL files are located under migration and database startup delegates to its runner', async () => {
   const rootFiles = await readdir(backend);
   assert.deepEqual(rootFiles.filter(filename => filename.endsWith('.sql')), []);
-  for (const filename of ['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql']) await access(path.join(backend, 'migration', filename));
+  for (const filename of ['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'text-max.sql']) await access(path.join(backend, 'migration', filename));
   await assert.rejects(access(path.join(backend, 'database.js')), error => error.code === 'ENOENT');
   const database = await readFile(path.join(backend, 'db.js'), 'utf8');
   assert.match(database, /require\(['"]\.\/migration\/run(?:\.js)?['"]\)/);

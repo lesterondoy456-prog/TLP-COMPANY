@@ -267,7 +267,7 @@ IF COL_LENGTH(N'dbo.Products', N'unitCost') IS NULL
   ALTER TABLE dbo.Products ADD unitCost DECIMAL(18,6) NOT NULL CONSTRAINT DF_Products_UnitCost DEFAULT 0;
 IF COL_LENGTH(N'dbo.Products', N'currency') IS NULL
   ALTER TABLE dbo.Products ADD currency NVARCHAR(30) NOT NULL CONSTRAINT DF_Products_Currency DEFAULT N'';
-IF COL_LENGTH(N'dbo.Products', N'currency')<60
+IF COL_LENGTH(N'dbo.Products', N'currency') BETWEEN 0 AND 59
   ALTER TABLE dbo.Products ALTER COLUMN currency NVARCHAR(30) NOT NULL;
 IF COL_LENGTH(N'dbo.Products', N'model') IS NULL
   ALTER TABLE dbo.Products ADD model NVARCHAR(150) NOT NULL CONSTRAINT DF_Products_Model DEFAULT N'';

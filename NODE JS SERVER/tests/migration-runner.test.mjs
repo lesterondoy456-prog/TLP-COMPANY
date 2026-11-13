@@ -42,7 +42,7 @@ function fakePools({ failBatch = 0, databaseExists = true, existingAdmins = true
 test('migration runner reads the relocated SQL files in dependency order using only injected fake pools', async () => {
   const fake = fakePools();
   await runMigrations({ database: 'MockMigrationDatabase', ...fake });
-  assert.deepEqual([...MIGRATION_FILES], ['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql']);
+  assert.deepEqual([...MIGRATION_FILES], ['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'text-max.sql']);
   const expected = await Promise.all(MIGRATION_FILES.map(filename => readFile(new URL('../migration/' + filename, import.meta.url), 'utf8')));
   assert.deepEqual(fake.batches, expected);
   assert.ok(fake.events.some(event => event[0] === 'close' && event[1] === 'master'));

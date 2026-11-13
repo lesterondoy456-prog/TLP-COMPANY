@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateProduct } from '../../SalesSystem/src/helper/validation.js';
+import { validateCustomer, validateProduct } from '../../SalesSystem/src/helper/validation.js';
+import { validateSupplier } from '../../PurchasingSystem/src/helper/validation.js';
 
 const product = () => ({ sku: 'P-001', description: 'Finished Product', unit: 'pcs', currency: 'PHP', secondaryUnit: 'box', quantityPerSecondaryUnit: 12, linkedSupplies: [{ suppliesId: 10, quantity: 0.123456, unit: 'kg' }] });
 const invalid = input => assert.throws(() => validateProduct(input), error => error.name === 'FormValidationError');
+
+test('Customer and Supplier TIN values preserve leading zeros and hyphens as text', () => {
+  const tin = '001-234-567-000';
+  const customer = validateCustomer({ name: 'Mock Customer', shortName: 'Mock', businessStyle: 'Wholesale', address: 'Office', salesName: 'Customer', drName: 'Customer', vatCode: 'VS', tin });
+  assert.equal(customer.tin, tin);
+  assert.equal(typeof customer.tin, 'string');
+  const supplier = { name: 'Mock Supplier', shortName: 'Mock', businessStyle: 'Wholesale', address: 'Office', vatCode: 'VS', decimalInPrice: 2, decimalInTotalPrice: 2, tin };
+  assert.deepEqual(validateSupplier(supplier), {});
+  assert.equal(supplier.tin, tin);
+});
 
 test('product links preserve six-place material quantities without creating finished-product stock', () => {
   const result = validateProduct(product());

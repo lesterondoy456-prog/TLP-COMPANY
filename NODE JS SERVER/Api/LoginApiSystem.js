@@ -48,7 +48,7 @@ router.post('/:system/auth/login', async (req, res) => {
   const system = req.params.system;
   if (!Object.hasOwn(AUTH_SYSTEMS, system)) throw Object.assign(new Error('This system API was not found.'), { status: 404 });
   const definition = AUTH_SYSTEMS[system];
-  if (typeof input.username !== 'string' || typeof input.password !== 'string' || input.username.length > 80 || input.password.length > 128 || input.remember !== undefined && typeof input.remember !== 'boolean') throw Object.assign(new Error('Enter a valid username and password.'), { status: 400 });
+  if (typeof input.username !== 'string' || typeof input.password !== 'string' || input.password.length > 128 || input.remember !== undefined && typeof input.remember !== 'boolean') throw Object.assign(new Error('Enter a valid username and password.'), { status: 400 });
   const username = input.username.trim().toLowerCase();
   if (!username || !input.password) throw Object.assign(new Error('Enter your username and password.'), { status: 400 });
   const now = Date.now();
@@ -59,7 +59,7 @@ router.post('/:system/auth/login', async (req, res) => {
     expires: now + 15 * 60 * 1000
   };
   if (entry.count >= 8) throw Object.assign(new Error('Too many unsuccessful sign-in attempts. Please try again in 15 minutes.'), { status: 429 });
-  const result = await request().input('username', sql.NVarChar(80), username).query(`SELECT id, name, username, cpnumber, email, photo, role, isActive,passwordHash FROM dbo.${definition.table} WHERE username=@username`);
+  const result = await request().input('username', sql.NVarChar(sql.MAX), username).query(`SELECT id, name, username, cpnumber, email, photo, role, isActive,passwordHash FROM dbo.${definition.table} WHERE username=@username`);
   const row = result.recordset[0];
   const [kind, salt, encoded] = (row?.passwordHash || '').split('$');
   const storedHashValid = kind === 'scrypt' && /^[a-f0-9]{32}$/.test(salt || '') && /^[a-f0-9]{128}$/.test(encoded || '');
@@ -194,11 +194,11 @@ router.post('/:system/users', async (req, res) => {
     if ((!definition.roles.includes(input.role) || (storedActor.role !== 'admin' && input.role !== 'sales'))) throw Object.assign(new Error('This account cannot assign that role.'), { status: 403 });
     const role = input.role;
     const isActive = input.isActive ?? true;
-    const query = request(scope).input('name', sql.NVarChar(150), String(input.name ?? '').trim()).input('username', sql.NVarChar(80), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(30), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(254), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(20), role).input('isActive', sql.Bit, isActive);
-    query.input('passwordHash', sql.VarChar(300), passwordHash);
+    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(sql.MAX), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
+    query.input('passwordHash', sql.VarChar(sql.MAX), passwordHash);
     const inserted = await query.query(`INSERT INTO dbo.${definition.table}(name,username,cpnumber,email,photo,role,isActive,passwordHash) OUTPUT INSERTED.id VALUES(@name,@username,@cpnumber,@email,@photo,@role,@isActive,@passwordHash)`);
     const id = inserted.recordset[0].id;
-    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(150), storedActor.name).input('recordId', sql.NVarChar(100), String(id)).input('system', sql.NVarChar(20), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','create',@recordId)");
+    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','create',@recordId)");
     return id;
   });
   const result = await request().input('id', sql.Int, savedId).query(`SELECT id, name, username, cpnumber, email, photo, role, isActive FROM dbo.${definition.table} WHERE id=@id`);
@@ -245,10 +245,10 @@ router.put('/:system/users/:id', async (req, res) => {
       const admins = await request(scope).query(`SELECT COUNT(*) AS total FROM dbo.${definition.table} WITH (UPDLOCK,HOLDLOCK) WHERE role='admin' AND isActive=1`);
       if (admins.recordset[0].total <= 1) throw Object.assign(new Error('At least one active administrator is required in this system.'), { status: 409 });
     }
-    const query = request(scope).input('name', sql.NVarChar(150), String(input.name ?? '').trim()).input('username', sql.NVarChar(80), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(30), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(254), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(20), role).input('isActive', sql.Bit, isActive);
-    if (passwordHash) query.input('passwordHash', sql.VarChar(300), passwordHash);
+    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(sql.MAX), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
+    if (passwordHash) query.input('passwordHash', sql.VarChar(sql.MAX), passwordHash);
     await query.input('id', sql.Int, id).query(`UPDATE dbo.${definition.table} SET name=@name,username=@username,cpnumber=@cpnumber,email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME()${passwordHash ? ',passwordHash=@passwordHash' : ''} WHERE id=@id`);
-    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(150), storedActor.name).input('recordId', sql.NVarChar(100), String(id)).input('system', sql.NVarChar(20), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','update',@recordId)");
+    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','update',@recordId)");
     return id;
   });
   const result = await request().input('id', sql.Int, savedId).query(`SELECT id, name, username, cpnumber, email, photo, role, isActive FROM dbo.${definition.table} WHERE id=@id`);
@@ -277,9 +277,9 @@ router.put('/:system/auth/profile', async (req, res) => {
     if (!storedActor.isActive) throw Object.assign(new Error('Your account is inactive.'), { status: 401 });
     const role = storedActor.role;
     const isActive = storedActor.isActive;
-    const query = request(scope).input('name', sql.NVarChar(150), String(input.name ?? '').trim()).input('username', sql.NVarChar(80), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(30), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(254), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(20), role).input('isActive', sql.Bit, isActive);
+    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), String(input.cpnumber ?? '').trim()).input('email', sql.NVarChar(sql.MAX), String(input.email ?? '').trim()).input('photo', sql.NVarChar(sql.MAX), String(input.photo ?? '')).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
     await query.input('id', sql.Int, id).query(`UPDATE dbo.${definition.table} SET name=@name,username=@username,cpnumber=@cpnumber,email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
-    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(150), storedActor.name).input('recordId', sql.NVarChar(100), String(id)).input('system', sql.NVarChar(20), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','profile',@recordId)");
+    await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,'users','profile',@recordId)");
     return id;
   });
   const result = await request().input('id', sql.Int, savedId).query(`SELECT id, name, username, cpnumber, email, photo, role, isActive FROM dbo.${definition.table} WHERE id=@id`);

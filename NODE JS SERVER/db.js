@@ -51,7 +51,7 @@ function makePool(database) {
 
 async function initializeDatabase() {
   pool = await runMigrations({
-    database: process.env.DB_NAME || 'TLP Company',
+    database: process.env.DB_NAME || 'TLPCompany',
     createPool: makePool,
     sql,
     onPoolError: error => console.error('Database pool error:', error.code || error.message),

@@ -59,6 +59,15 @@ test('PO and receiving save routes agree with browser previews across precision 
   }
 });
 
+test('purchasing routes pass long Unicode text to MAX parameters without truncating it', async () => {
+  const remarks = '備考'.repeat(4000);
+  for (const receiving of [false, true]) for (const update of [false, true]) {
+    const saved = await priceOnRoute([line(1, '0.115300')], {}, { receiving, update, remarks });
+    assert.equal(saved.remarks, remarks);
+    assert.equal(saved.amount, '0.12');
+  }
+});
+
 test('drafts do not change stock; posting commits allocations, receipt, source quantities, and audit together', async () => {
   const memory = memoryReceivingRepository();
   const workflow = receivingRouteWorkflow(memory.repository);

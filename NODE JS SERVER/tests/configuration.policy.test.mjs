@@ -6,7 +6,7 @@ const metadataRouter = loadRouterWithDatabase('configuration', { request: forbid
 const readMetadata = async () => (await invokeRoute(metadataRouter, 'GET', '/masters', {})).body.modules;
 const formMetadata = await readMetadata();
 const configurationMetadata = () => structuredClone(formMetadata);
-import { validateConfiguration as validateForm } from '../../ConfigurationSystem/src/helper/validation.js';
+import { validateConfiguration as validateForm, withConfigurationValidation } from '../../ConfigurationSystem/src/helper/validation.js';
 const validateConfiguration = (kind, input, current) => {
   const metadata = configurationMetadata().find(module => module.kind === kind);
   if (!metadata) throw new Error('Unknown configuration form.');
@@ -20,7 +20,12 @@ test('configuration metadata includes the observed modules and a read-only own-a
   assert.deepEqual(modules.map(module => module.kind).sort(), ['atc', 'audit-trail', 'banks', 'countries', 'currencies', 'customer-categories', 'locations', 'payment-terms', 'product-categories', 'supplies-categories', 'units', 'vat-codes', 'warehouses']);
   assert.equal(modules.find(module => module.kind === 'audit-trail').readOnly, true);
   assert.ok(modules.filter(module => module.kind !== 'audit-trail').every(module => module.readOnly === false));
+  assert.ok(modules.every(module => module.fields.every(field => !Object.hasOwn(field, 'maxLength'))), 'Backend metadata must not own form text-length limits.');
   const vat = modules.find(module => module.kind === 'vat-codes');
+  const localVat = withConfigurationValidation(vat);
+  assert.equal(localVat.fields.find(field => field.key === 'code').maxLength, 40);
+  assert.equal(localVat.fields.find(field => field.key === 'description').maxLength, 500);
+  assert.equal(Object.hasOwn(vat.fields[0], 'maxLength'), false, 'Frontend decoration must not mutate the server response.');
   assert.deepEqual(vat.fields.find(field => field.key === 'type').options, ['Vat Output', 'Vat Input']);
   assert.deepEqual(vat.fields.find(field => field.key === 'class').options, ['Vatable', 'Vat-Exempt', 'Zero Rated']);
   vat.fields[0].key = 'changed-by-client';

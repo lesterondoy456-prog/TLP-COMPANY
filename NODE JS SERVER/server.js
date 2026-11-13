@@ -39,7 +39,7 @@ function createApp(env = process.env) {
       const result = await db().request().query('SELECT DB_NAME() AS name');
       res.json({ ok: true, service: 'TLP Company API', database: { status: 'connected', name: result.recordset[0].name } });
     } catch {
-      res.status(503).json({ ok: false, service: 'TLP Company API', database: { status: 'disconnected', name: env.DB_NAME || 'TLP Company' } });
+      res.status(503).json({ ok: false, service: 'TLP Company API', database: { status: 'disconnected', name: env.DB_NAME || 'TLPCompany' } });
     }
   });
   app.use('/api', require('./Api/LoginApiSystem'));
@@ -70,7 +70,7 @@ async function start() {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.');
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) throw new Error('Set SESSION_SECRET to at least 32 random characters in NODE JS SERVER/.env.');
   await initializeDatabase();
-  console.log(`SQL Server connected: ${process.env.DB_NAME || 'TLP Company'}`);
+  console.log(`SQL Server connected: ${process.env.DB_NAME || 'TLPCompany'}`);
   const server = createApp().listen(port, host, () => console.log(`TLP Company API: http://${host}:${port}`));
   server.requestTimeout = 30000;
   server.headersTimeout = 15000;

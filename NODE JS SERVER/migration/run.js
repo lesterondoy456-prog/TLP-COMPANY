@@ -6,7 +6,7 @@ const { promisify } = require('node:util');
 const scrypt = promisify(scryptCallback);
 const LOGIN_TABLES = Object.freeze(['SalesUserLogin', 'PurchasingUserLogin', 'WarehouseUserLogin', 'ConfigurationUserLogin']);
 
-const MIGRATION_FILES = Object.freeze(['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql']);
+const MIGRATION_FILES = Object.freeze(['schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'text-max.sql']);
 
 async function seedAdministrators(pool, sql, env) {
   for (const table of LOGIN_TABLES) {
@@ -19,9 +19,9 @@ async function seedAdministrators(pool, sql, env) {
     const salt = randomBytes(16).toString('hex');
     const hash = await scrypt(password, salt, 64);
     await pool.request()
-      .input('name', sql.NVarChar(150), (env.ADMIN_NAME || 'Administrator').slice(0, 150))
-      .input('username', sql.NVarChar(80), username).input('email', sql.NVarChar(254), env.ADMIN_EMAIL || '')
-      .input('passwordHash', sql.VarChar(300), `scrypt$${salt}$${hash.toString('hex')}`)
+      .input('name', sql.NVarChar(sql.MAX), env.ADMIN_NAME || 'Administrator')
+      .input('username', sql.NVarChar(sql.MAX), username).input('email', sql.NVarChar(sql.MAX), env.ADMIN_EMAIL || '')
+      .input('passwordHash', sql.VarChar(sql.MAX), `scrypt$${salt}$${hash.toString('hex')}`)
       .query(`INSERT INTO dbo.${table}(name,username,email,role,passwordHash) VALUES(@name,@username,@email,'admin',@passwordHash)`);
   }
 }
@@ -34,7 +34,7 @@ async function runMigrations({ database, createPool, sql, onPoolError, env = pro
   const master = createPool('master');
   try {
     await master.connect();
-    const result = await master.request().input('name', sql.NVarChar(128), database)
+    const result = await master.request().input('name', sql.NVarChar(sql.MAX), database)
       .query('SELECT database_id FROM sys.databases WHERE name = @name');
     if (!result.recordset.length) {
       await master.request().query(`CREATE DATABASE [${database.replaceAll(']', ']]')}]`);

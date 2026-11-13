@@ -12,7 +12,6 @@ const specs = {
         "key": "code",
         "label": "Code",
         "type": "text",
-        "maxLength": 40,
         "required": true,
         "default": ""
       },
@@ -20,7 +19,6 @@ const specs = {
         "key": "description",
         "label": "Description",
         "type": "text",
-        "maxLength": 500,
         "required": true,
         "default": ""
       },
@@ -39,7 +37,6 @@ const specs = {
         "key": "accountCode",
         "label": "Account Code",
         "type": "text",
-        "maxLength": 100,
         "required": false,
         "default": ""
       }
@@ -53,7 +50,6 @@ const specs = {
         "key": "name",
         "label": "Name",
         "type": "text",
-        "maxLength": 100,
         "required": true,
         "default": ""
       }
@@ -67,7 +63,6 @@ const specs = {
         "key": "name",
         "label": "Name",
         "type": "text",
-        "maxLength": 100,
         "required": true,
         "default": ""
       }
@@ -81,7 +76,6 @@ const specs = {
         "key": "name",
         "label": "Name",
         "type": "text",
-        "maxLength": 100,
         "required": true,
         "default": ""
       }
@@ -95,7 +89,6 @@ const specs = {
         "key": "name",
         "label": "Name",
         "type": "text",
-        "maxLength": 100,
         "required": true,
         "default": ""
       }
@@ -109,7 +102,6 @@ const specs = {
         "key": "code",
         "label": "Code",
         "type": "text",
-        "maxLength": 40,
         "required": true,
         "default": ""
       },
@@ -117,7 +109,6 @@ const specs = {
         "key": "description",
         "label": "Description",
         "type": "text",
-        "maxLength": 500,
         "required": true,
         "default": ""
       }
@@ -131,7 +122,6 @@ const specs = {
         "key": "code",
         "label": "Code",
         "type": "text",
-        "maxLength": 40,
         "required": true,
         "default": ""
       },
@@ -139,7 +129,6 @@ const specs = {
         "key": "description",
         "label": "Description",
         "type": "text",
-        "maxLength": 500,
         "required": true,
         "default": ""
       }
@@ -153,7 +142,6 @@ const specs = {
         "key": "description",
         "label": "Description",
         "type": "text",
-        "maxLength": 100,
         "required": true,
         "default": ""
       },
@@ -229,7 +217,6 @@ const specs = {
         "key": "description",
         "label": "Description",
         "type": "text",
-        "maxLength": 150,
         "required": true,
         "default": ""
       },
@@ -237,7 +224,6 @@ const specs = {
         "key": "shortName",
         "label": "Short Name",
         "type": "text",
-        "maxLength": 30,
         "required": true,
         "default": ""
       },
@@ -274,7 +260,6 @@ const specs = {
         "key": "name",
         "label": "Name",
         "type": "text",
-        "maxLength": 150,
         "required": true,
         "default": ""
       },
@@ -282,7 +267,6 @@ const specs = {
         "key": "shortName",
         "label": "Short Name",
         "type": "text",
-        "maxLength": 30,
         "required": true,
         "default": ""
       },
@@ -290,7 +274,6 @@ const specs = {
         "key": "checkName",
         "label": "Check Name",
         "type": "text",
-        "maxLength": 150,
         "required": false,
         "default": ""
       },
@@ -298,7 +281,6 @@ const specs = {
         "key": "symbol",
         "label": "Symbol",
         "type": "text",
-        "maxLength": 20,
         "required": false,
         "default": ""
       },
@@ -318,7 +300,6 @@ const specs = {
         "key": "name",
         "label": "Name",
         "type": "text",
-        "maxLength": 200,
         "required": true,
         "default": ""
       },
@@ -326,7 +307,6 @@ const specs = {
         "key": "shortName",
         "label": "Short Name",
         "type": "text",
-        "maxLength": 80,
         "required": true,
         "default": ""
       },
@@ -334,7 +314,6 @@ const specs = {
         "key": "accountNo",
         "label": "Account No.",
         "type": "text",
-        "maxLength": 100,
         "required": false,
         "default": ""
       },
@@ -342,7 +321,6 @@ const specs = {
         "key": "accountName",
         "label": "Account Name",
         "type": "text",
-        "maxLength": 150,
         "required": false,
         "default": ""
       },
@@ -350,7 +328,6 @@ const specs = {
         "key": "swiftCode",
         "label": "Swift Code",
         "type": "text",
-        "maxLength": 50,
         "required": false,
         "default": ""
       },
@@ -358,7 +335,6 @@ const specs = {
         "key": "branchName",
         "label": "Branch Name",
         "type": "text",
-        "maxLength": 150,
         "required": false,
         "default": ""
       },
@@ -366,7 +342,6 @@ const specs = {
         "key": "address",
         "label": "Address",
         "type": "text",
-        "maxLength": 500,
         "required": false,
         "default": ""
       },
@@ -374,7 +349,6 @@ const specs = {
         "key": "accountType",
         "label": "Account Type",
         "type": "text",
-        "maxLength": 80,
         "required": false,
         "default": ""
       },
@@ -382,7 +356,6 @@ const specs = {
         "key": "currency",
         "label": "Curr",
         "type": "text",
-        "maxLength": 30,
         "required": false,
         "default": ""
       },
@@ -390,7 +363,6 @@ const specs = {
         "key": "account",
         "label": "Account",
         "type": "text",
-        "maxLength": 100,
         "required": false,
         "default": ""
       }
@@ -404,7 +376,6 @@ const specs = {
         "key": "code",
         "label": "Code",
         "type": "text",
-        "maxLength": 40,
         "required": true,
         "default": ""
       },
@@ -412,7 +383,6 @@ const specs = {
         "key": "description",
         "label": "Description",
         "type": "text",
-        "maxLength": 500,
         "required": true,
         "default": ""
       },
@@ -424,7 +394,6 @@ const specs = {
           "Vat Output",
           "Vat Input"
         ],
-        "maxLength": 80,
         "required": true,
         "default": "Vat Output"
       },
@@ -437,7 +406,6 @@ const specs = {
           "Vat-Exempt",
           "Zero Rated"
         ],
-        "maxLength": 80,
         "required": true,
         "default": "Vatable"
       },
@@ -462,7 +430,6 @@ const specs = {
         "key": "accountCode",
         "label": "Account Code",
         "type": "text",
-        "maxLength": 100,
         "required": false,
         "default": ""
       }
@@ -479,7 +446,6 @@ const auditTrail = {
       "key": "createdAt",
       "label": "Date",
       "type": "text",
-      "maxLength": 150,
       "required": false,
       "default": ""
     },
@@ -487,7 +453,6 @@ const auditTrail = {
       "key": "system",
       "label": "System",
       "type": "text",
-      "maxLength": 150,
       "required": false,
       "default": ""
     },
@@ -495,7 +460,6 @@ const auditTrail = {
       "key": "userName",
       "label": "User",
       "type": "text",
-      "maxLength": 150,
       "required": false,
       "default": ""
     },
@@ -503,7 +467,6 @@ const auditTrail = {
       "key": "module",
       "label": "Module",
       "type": "text",
-      "maxLength": 150,
       "required": false,
       "default": ""
     },
@@ -511,7 +474,6 @@ const auditTrail = {
       "key": "action",
       "label": "Action",
       "type": "text",
-      "maxLength": 150,
       "required": false,
       "default": ""
     },
@@ -519,7 +481,6 @@ const auditTrail = {
       "key": "recordId",
       "label": "Record",
       "type": "text",
-      "maxLength": 150,
       "required": false,
       "default": ""
     }
@@ -610,7 +571,7 @@ router.post('/masters/:kind', async (req, res) => {
           || (!field.integer && (Math.abs(number) > 999999999999.999999 || Math.abs(number * 1e6 - Math.round(number * 1e6)) > 1e-5))) throw Object.assign(new Error('Numeric value exceeds the database precision.'), { status: 400 });
         values[field.key] = number;
       } else {
-        if (typeof raw !== 'string' || raw.length > field.maxLength || raw.includes('\0')) throw Object.assign(new Error('Text exceeds the database column size.'), { status: 400 });
+        if (typeof raw !== 'string' || raw.includes('\0')) throw Object.assign(new Error('Text must be a string without null characters.'), { status: 400 });
         values[field.key] = raw.trim();
       }
     }
@@ -619,7 +580,7 @@ router.post('/masters/:kind', async (req, res) => {
       await request(scope).input('id', sql.Int, current?.id || 0).query('UPDATE dbo.ConfigCurrencies WITH (UPDLOCK,HOLDLOCK) SET isDefault=0,updatedAt=SYSUTCDATETIME() WHERE isActive=1 AND isDefault=1 AND id<>@id');
     }
     const query = request(scope);
-    for (const field of spec.fields) query.input(field.key, field.type === 'boolean' ? sql.Bit : field.type === 'number' ? field.integer ? sql.Int : sql.Decimal(18, field.precision) : sql.NVarChar(field.maxLength), values[field.key]);
+    for (const field of spec.fields) query.input(field.key, field.type === 'boolean' ? sql.Bit : field.type === 'number' ? field.integer ? sql.Int : sql.Decimal(18, field.precision) : sql.NVarChar(sql.MAX), values[field.key]);
     query.input('isActive', sql.Bit, values.isActive);
 
     let result;
@@ -640,9 +601,9 @@ router.post('/masters/:kind', async (req, res) => {
     }
     const savedId = result.recordset[0].id;
 
-    await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(150), auditUser.name)
-      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), kind)
-      .input('action', sql.NVarChar(50), 'create').input('recordId', sql.NVarChar(100), String(savedId))
+    await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(sql.MAX), auditUser.name)
+      .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), kind)
+      .input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(savedId))
       .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     let selectedResult;
     switch (kind) {
@@ -710,7 +671,7 @@ router.put('/masters/:kind/:id', async (req, res) => {
           || (!field.integer && (Math.abs(number) > 999999999999.999999 || Math.abs(number * 1e6 - Math.round(number * 1e6)) > 1e-5))) throw Object.assign(new Error('Numeric value exceeds the database precision.'), { status: 400 });
         values[field.key] = number;
       } else {
-        if (typeof raw !== 'string' || raw.length > field.maxLength || raw.includes('\0')) throw Object.assign(new Error('Text exceeds the database column size.'), { status: 400 });
+        if (typeof raw !== 'string' || raw.includes('\0')) throw Object.assign(new Error('Text must be a string without null characters.'), { status: 400 });
         values[field.key] = raw.trim();
       }
     }
@@ -719,7 +680,7 @@ router.put('/masters/:kind/:id', async (req, res) => {
       await request(scope).input('id', sql.Int, current?.id || 0).query('UPDATE dbo.ConfigCurrencies WITH (UPDLOCK,HOLDLOCK) SET isDefault=0,updatedAt=SYSUTCDATETIME() WHERE isActive=1 AND isDefault=1 AND id<>@id');
     }
     const query = request(scope);
-    for (const field of spec.fields) query.input(field.key, field.type === 'boolean' ? sql.Bit : field.type === 'number' ? field.integer ? sql.Int : sql.Decimal(18, field.precision) : sql.NVarChar(field.maxLength), values[field.key]);
+    for (const field of spec.fields) query.input(field.key, field.type === 'boolean' ? sql.Bit : field.type === 'number' ? field.integer ? sql.Int : sql.Decimal(18, field.precision) : sql.NVarChar(sql.MAX), values[field.key]);
     query.input('isActive', sql.Bit, values.isActive);
 
     let result;
@@ -740,9 +701,9 @@ router.put('/masters/:kind/:id', async (req, res) => {
     }
     const savedId = result.recordset[0].id;
 
-    await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(150), auditUser.name)
-      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), kind)
-      .input('action', sql.NVarChar(50), 'update').input('recordId', sql.NVarChar(100), String(savedId))
+    await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(sql.MAX), auditUser.name)
+      .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), kind)
+      .input('action', sql.NVarChar(sql.MAX), 'update').input('recordId', sql.NVarChar(sql.MAX), String(savedId))
       .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
     let selectedResult;
     switch (kind) {
@@ -813,9 +774,9 @@ router.delete('/masters/:kind/:id', async (req, res) => {
       default: throw Object.assign(new Error('Configuration query was not found.'), { status: 404 });
     }
 
-    await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(150), auditUser.name)
-      .input('system', sql.NVarChar(20), SYSTEM).input('module', sql.NVarChar(100), kind)
-      .input('action', sql.NVarChar(50), 'deactivate').input('recordId', sql.NVarChar(100), String(id))
+    await request(scope).input('userId', sql.Int, auditUser.id).input('userName', sql.NVarChar(sql.MAX), auditUser.name)
+      .input('system', sql.NVarChar(sql.MAX), SYSTEM).input('module', sql.NVarChar(sql.MAX), kind)
+      .input('action', sql.NVarChar(sql.MAX), 'deactivate').input('recordId', sql.NVarChar(sql.MAX), String(id))
       .query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId) VALUES(@userId,@userName,@system,@module,@action,@recordId)');
 
     let selectedResult;

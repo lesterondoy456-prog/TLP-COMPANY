@@ -1,3 +1,4 @@
+import { withConfigurationValidation } from '../helper/validation.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { Icon } from '../components/Icons.jsx';
@@ -31,7 +32,7 @@ export default function AuditTrail() {
       if (id !== sequence.current) return;
       const module = definition.modules?.find(item => item.kind === kind);
       if (!module) throw new Error('Configuration fields could not be loaded. Please refresh.');
-      setMetadata(module); setRecords(result.records || []);
+      setMetadata(withConfigurationValidation(module)); setRecords(result.records || []);
     } catch (failure) { if (id === sequence.current) setError(failure.message); }
     finally { if (id === sequence.current) setLoading(false); }
   }, [kind]);

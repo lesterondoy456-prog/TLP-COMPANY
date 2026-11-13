@@ -16,7 +16,7 @@ services:
       DB_AUTH: sql
       DB_SERVER: host.docker.internal
       DB_PORT: "${DB_PORT:-1433}"
-      DB_NAME: "${DB_NAME:-TLP Company}"
+      DB_NAME: "${DB_NAME:-TLPCompany}"
       DB_USER: "${DB_USER:?Set DB_USER in .env}"
       DB_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
       DB_ENCRYPT: "true"
