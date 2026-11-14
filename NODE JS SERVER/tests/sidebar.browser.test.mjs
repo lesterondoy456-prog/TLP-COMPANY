@@ -328,3 +328,64 @@ for (const { project, system, first, next, count } of projects) {
     app.assertSafe();
   });
 }
+
+for (const { project, system, first } of projects) {
+  test(`${project} retains wide content padding and uses the full width freed by the sidebar`, { timeout: 60000 }, async t => {
+    const user = { id: 1, name: 'Geometry Administrator', username: 'mock_geometry', role: 'admin', system, isActive: true };
+    const modules = system === 'configuration' ? loadApi('configuration').configurationMetadata() : [];
+    const records = {
+      '/api/customers': [{ id: 1, name: 'Geometry Customer', address: 'Mock address, Laguna', isActive: true }],
+      '/api/purchase-requests': [{ id: 1, number: 'PR-GEOMETRY', prDate: '2026-11-15', neededDate: '2026-11-20', requestedBy: 'Mock Requester', status: 'draft', items: [{ id: 1, suppliesId: 30, suppliesName: 'Geometry Supplies', description: 'Mock supplies', unit: 'kg', quantity: '10.000000', balanceQuantity: '10.000000', neededDate: '2026-11-20' }] }],
+      '/api/inventory': [{ id: 1, suppliesId: 30, code: 'S-GEOMETRY', name: 'Geometry Supplies', description: 'Mock inventory', unit: 'kg', quantity: '10.000000', warehouseId: 1, warehouseCode: 'MAIN', locationId: 1, locationCode: 'A-01', imLot: 'LOT-MOCK', qcStatus: 'Passed' }],
+      '/api/configuration/atc': [{ id: 1, code: 'GEOMETRY', description: 'Mock configuration row', rate: 5, isActive: true }],
+    };
+    const app = await mockBrowser(t, async ({ method, pathname }) => {
+      assert.equal(method, 'GET', 'Wide-screen geometry checks must never write records.');
+      if (pathname === '/api/auth/session') return { json: { user } };
+      if (pathname === '/api/configuration') return { json: { modules } };
+      if (pathname === '/api/users') return { json: { records: [user] } };
+      return { json: { records: records[pathname] || [] } };
+    }, { project, viewport: { width: 1920, height: 1080 } });
+    const { page, origin } = app;
+    await page.goto(origin);
+    await expect(page.getByRole('heading', { level: 1, name: first, exact: true })).toBeVisible();
+    await expect(page.locator('.records-card .records-table tbody tr').first()).toBeVisible();
+    const measurements = [];
+    for (const width of [1920, 2560]) {
+      await page.setViewportSize({ width, height: 1080 });
+      const expand = page.getByRole('button', { name: 'Expand sidebar', exact: true });
+      if (await expand.count()) await expand.click();
+      await settled(page);
+      const states = [];
+      for (const state of ['expanded', 'collapsed']) {
+        if (state === 'collapsed') {
+          await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
+          await settled(page);
+        }
+        const geometry = await page.evaluate(() => {
+          const rect = selector => {
+            const bounds = document.querySelector(selector).getBoundingClientRect();
+            return { left: bounds.left, right: bounds.right, width: bounds.width };
+          };
+          return { viewport: innerWidth, documentWidth: document.documentElement.scrollWidth, sidebar: rect('.sidebar'), main: rect('.main-shell'), content: rect('.workspace-content'), heading: rect('.page-heading'), card: rect('.records-card'), tableViewport: rect('.records-card .table-scroll') };
+        });
+        for (const [label, edge] of [['heading', geometry.heading], ['table card', geometry.card]]) {
+          assert.ok(Math.abs(edge.left - geometry.main.left - 32) <= 1, `${project} ${width}px ${state}: ${label} retains its 32px left padding.`);
+          assert.ok(Math.abs(geometry.main.right - edge.right - 32) <= 1, `${project} ${width}px ${state}: ${label} retains its 32px right padding.`);
+        }
+        assert.ok(Math.abs(geometry.content.left - geometry.main.left) <= 1 && Math.abs(geometry.content.right - geometry.main.right) <= 1, 'The content container fills its main area instead of adding centered outer margins.');
+        assert.ok(Math.abs(geometry.main.right - width) <= 1);
+        assert.ok(Math.abs(geometry.main.left - geometry.sidebar.right - 14) <= 1, 'The sidebar-to-main gap stays constant.');
+        assert.ok(Math.abs(geometry.heading.left - geometry.card.left) <= 1 && Math.abs(geometry.heading.right - geometry.card.right) <= 1, 'The heading and table card share their visible edges.');
+        assert.ok(geometry.tableViewport.left >= geometry.card.left && geometry.tableViewport.left - geometry.card.left <= 2);
+        assert.ok(geometry.tableViewport.right <= geometry.card.right && geometry.card.right - geometry.tableViewport.right <= 2, 'Only the table contents scroll; its viewport still fills the card.');
+        assert.ok(geometry.documentWidth <= width, 'Wide tables must not create page-level horizontal overflow.');
+        states.push(geometry); measurements.push({ state, ...geometry });
+      }
+      for (const key of ['main', 'content', 'heading', 'card', 'tableViewport']) assert.ok(Math.abs(states[1][key].width - states[0][key].width - 170) <= 1, `${key} must gain the complete 170px released by collapsing the sidebar at ${width}px.`);
+      await app.screenshot(`${system}-sidebar-spacing-${width}-collapsed.png`);
+    }
+    await writeFile(fileURLToPath(new URL(`../.qa/screenshots/${system}-sidebar-spacing-geometry.json`, import.meta.url)), JSON.stringify({ project, measurements }, null, 2));
+    app.assertSafe();
+  });
+}
