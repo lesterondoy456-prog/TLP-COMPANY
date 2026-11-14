@@ -103,6 +103,7 @@ A relative Sales route such as `/customers` is available at `/api/sales/customer
 All SQL files and database/schema checking live under `migration/`: `table-values.sql`, `schema.sql`, `system-accounts.sql`, `configuration-schema.sql`, `erp-schema.sql`, `text-max.sql`, and `run.js`. Backend startup applies these idempotent migrations in one transaction before listening; a failed batch rolls back the schema update. Run `npm run migrate` to apply migrations without starting HTTP. Migrations only manage the database schema; they do not create administrator accounts or business records. A new installation needs its department accounts provisioned in the database before users can sign in. Backend startup uses the same migration runner. The backend contains the actual local `.env`; no `.env.example` is required.
 
 One company uses these systems. Product and Supplies forms have no Office selection, and their APIs do not save office links.
+Customers use their table row ID for links; there is no separate generated customer code. Customer discount values are shown and saved only when Percent or Amount is selected.
 
 ## Appearance
 

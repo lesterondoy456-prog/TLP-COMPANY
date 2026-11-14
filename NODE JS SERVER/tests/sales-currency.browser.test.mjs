@@ -5,7 +5,7 @@ import { mockBrowser } from './helpers/mock-browser.mjs';
 
 test('USD sales uses configured currency choices, preserves micro-prices, and displays USD invoices and payments', { timeout: 120_000 }, async t => {
   const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
-  const customer = { id: 20, code: 'C-MOCK', name: 'Mock USD Customer', isActive: true };
+  const customer = { id: 20, name: 'Mock USD Customer', isActive: true };
   const products = [
     { id: 10, sku: 'USD-MICRO', name: 'USD Micro Product', unit: 'pcs', price: '0.115300', currency: 'USD', stock: 0, isActive: true },
     { id: 11, sku: 'PHP-LOCAL', name: 'PHP Product', unit: 'pcs', price: '10.000000', currency: 'PHP', stock: 0, isActive: true },
@@ -43,6 +43,7 @@ test('USD sales uses configured currency choices, preserves micro-prices, and di
   await page.getByRole('button', { name: 'Sales Order', exact: true }).click();
   await page.getByRole('button', { name: 'New sales order', exact: false }).click();
   let dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('combobox', { name: 'Customer *', exact: true }).locator('option[value="20"]')).toHaveText('Mock USD Customer');
   await dialog.getByRole('combobox', { name: 'Customer *', exact: true }).selectOption('20');
   await dialog.getByLabel('Product 1', { exact: true }).selectOption('10');
   await dialog.getByLabel('Quantity 1', { exact: true }).fill('1800');
@@ -113,7 +114,7 @@ test('USD sales uses configured currency choices, preserves micro-prices, and di
 
 test('empty or removed Configuration currencies cannot create or update an order or inject historical choices', { timeout: 120_000 }, async t => {
   const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
-  const customer = { id: 20, code: 'C-MOCK', name: 'Mock Customer', isActive: true };
+  const customer = { id: 20, name: 'Mock Customer', isActive: true };
   const product = { id: 10, sku: 'USD-MICRO', name: 'USD Micro Product', unit: 'pcs', price: '0.115300', currency: 'USD', stock: 0, isActive: true };
   const order = { id: 1, number: 'SO-HISTORICAL', customerId: 20, customerName: customer.name, orderDate: '2026-11-13', currency: 'JPY', status: 'draft', total: '0.35', invoiced: false, delivered: false, items: [{ productId: 10, quantity: 3, unitPrice: '0.115300' }] };
   let configured = [];

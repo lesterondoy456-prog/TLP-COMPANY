@@ -6,7 +6,7 @@ const {
   transaction
 } = require('../db');
 const defaults = {
-  code: '', name: '', shortName: '', businessStyle: '', address: '', salesName: '', drName: '', vatCode: '',
+  name: '', shortName: '', businessStyle: '', address: '', salesName: '', drName: '', vatCode: '',
   contactPerson: null, cpnumber: null, email: null, salesInCharge: null, tin: null, faxNo: null,
   countryOfOrigin: null, country: null, category: null, remarks: null, paymentTerm: null, taxCode: null,
   isActive: true, decimalInPrice: 2, decimalInTotalPrice: 2,
@@ -24,7 +24,9 @@ router.use((req, res, next) => {
 });
 
 router.get('/customers', async (req, res) => {
-  const result = await request().query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId ORDER BY c.id DESC`);
+  const result = await request().query(`SELECT c.[id],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],CONVERT(varchar(10),(SELECT MAX(i.invoiceDate)
+    FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId
+    WHERE o.customerId=c.id),23) AS lastSalesDate FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId ORDER BY c.id DESC`);
   const addressRows = (await request().query('SELECT customerId,position,address FROM dbo.CustomerDeliveryAddresses ORDER BY customerId,position')).recordset;
   const grouped = new Map();
   for (const row of addressRows) {
@@ -46,7 +48,9 @@ router.get('/customers/:id', async (req, res) => {
     throw error;
   }
   const id = parsedId;
-  const recordResult = await request().input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT c.[id],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],CONVERT(varchar(10),(SELECT MAX(i.invoiceDate)
+    FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId
+    WHERE o.customerId=c.id),23) AS lastSalesDate FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
   if (!recordResult.recordset.length) {
     const error = new Error('The customer could not be found.');
     error.status = 404;
@@ -103,7 +107,7 @@ router.post('/customers', async (req, res) => {
   const savedId = await transaction(async tx => {
     let current;
     if (id) {
-      const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],c.salesInCharge AS _salesInChargeSnapshot FROM dbo.Customers c WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+      const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT c.[id],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],c.salesInCharge AS _salesInChargeSnapshot FROM dbo.Customers c WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
       if (!currentResult.recordset.length) {
         const error = new Error('The customer could not be found.');
         error.status = 404;
@@ -119,7 +123,7 @@ router.post('/customers', async (req, res) => {
       ...defaults,
       ...(current || {})
     };
-    for (const key of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() || null : null;
+    for (const key of ["name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() || null : null;
     for (const key of ['includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === null || input[key] === '' ? null : input[key] === true;
     for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = input[key] === null || String(input[key]).trim() === '' ? null : Number(input[key]);
@@ -131,6 +135,7 @@ router.post('/customers', async (req, res) => {
       customer[key] = numericFieldValue;
     }
     for (const key of ['salesAddressType', 'drAddressType', 'discountType']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() || null : null;
+    if (customer.discountType === null) customer.discount = null;
     if (Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
       if (!Array.isArray(input.deliveryAddresses) || input.deliveryAddresses.length > 50) {
         const error = new Error('The submitted collection exceeds the supported size.');
@@ -149,7 +154,6 @@ router.post('/customers', async (req, res) => {
       error.status = 400;
       throw error;
     }
-    if (current && !customer.code) customer.code = current.code;
     if (customer.discountType === 'percent' && customer.discount > 100) {
       const error = new Error('Percentage discount cannot exceed 100.');
       error.status = 400;
@@ -208,28 +212,8 @@ router.post('/customers', async (req, res) => {
     }
     customer.salesInChargeId = assignment.id;
     customer.salesInCharge = assignment.name;
-    if (!customer.code) {
-      // Hold the customer table while reading its next identity, so generated codes
-      // remain tied to Company Id even when multiple customers are saved together.
-      await request(tx).query('SELECT COUNT_BIG(*) AS total FROM dbo.Customers WITH (TABLOCKX,HOLDLOCK)');
-      const result = await request(tx).query(`SELECT COALESCE(CONVERT(bigint,last_value)+CONVERT(bigint,increment_value),CONVERT(bigint,seed_value)) AS nextId
-    FROM sys.identity_columns WHERE object_id=OBJECT_ID(N'dbo.Customers') AND name=N'id'`);
-      const id = Number(result.recordset[0]?.nextId);
-      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
-        const error = new Error('A customer identifier could not be allocated.');
-        error.status = 409;
-        throw error;
-      }
-      const base = `C-${String(id).padStart(8, '0')}`;
-      let code = base;
-      let suffix = 0;
-      while ((await request(tx).input('code', sql.NVarChar(sql.MAX), code).query('SELECT id FROM dbo.Customers WHERE code=@code')).recordset.length) {
-        code = `${base}-${++suffix}`;
-      }
-      customer.code = code;
-    }
     const req = request(tx);
-    for (const fieldName of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
+    for (const fieldName of ["name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
     for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) req.input(fieldName, sql.Bit, customer[fieldName]);
     for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) req.input(fieldName, sql.Int, customer[fieldName]);
     for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
@@ -237,9 +221,9 @@ router.post('/customers', async (req, res) => {
     req.input('salesInChargeId', sql.Int, customer.salesInChargeId);
     let saved = id;
     if (id) {
-      await req.input('id', sql.Int, id).query(`UPDATE dbo.Customers SET [code]=@code,[name]=@name,[contactPerson]=@contactPerson,[cpnumber]=@cpnumber,[email]=@email,[address]=@address,[shortName]=@shortName,[businessStyle]=@businessStyle,[salesInCharge]=@salesInCharge,[tin]=@tin,[faxNo]=@faxNo,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[category]=@category,[remarks]=@remarks,[salesName]=@salesName,[drName]=@drName,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[isActive]=@isActive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[salesAddressType]=@salesAddressType,[drAddressType]=@drAddressType,[discount]=@discount,[discountType]=@discountType,[includePoInInvoice]=@includePoInInvoice,[vatInclusive]=@vatInclusive,[salesInChargeId]=@salesInChargeId,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.Customers SET [name]=@name,[contactPerson]=@contactPerson,[cpnumber]=@cpnumber,[email]=@email,[address]=@address,[shortName]=@shortName,[businessStyle]=@businessStyle,[salesInCharge]=@salesInCharge,[tin]=@tin,[faxNo]=@faxNo,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[category]=@category,[remarks]=@remarks,[salesName]=@salesName,[drName]=@drName,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[isActive]=@isActive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[salesAddressType]=@salesAddressType,[drAddressType]=@drAddressType,[discount]=@discount,[discountType]=@discountType,[includePoInInvoice]=@includePoInInvoice,[vatInclusive]=@vatInclusive,[salesInChargeId]=@salesInChargeId,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
     } else {
-      const result = await req.query(`INSERT INTO dbo.Customers ([code],[name],[contactPerson],[cpnumber],[email],[address],[shortName],[businessStyle],[salesInCharge],[tin],[faxNo],[countryOfOrigin],[country],[category],[remarks],[salesName],[drName],[paymentTerm],[vatCode],[taxCode],[isActive],[decimalInPrice],[decimalInTotalPrice],[salesAddressType],[drAddressType],[discount],[discountType],[includePoInInvoice],[vatInclusive],[salesInChargeId],createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code,@name,@contactPerson,@cpnumber,@email,@address,@shortName,@businessStyle,@salesInCharge,@tin,@faxNo,@countryOfOrigin,@country,@category,@remarks,@salesName,@drName,@paymentTerm,@vatCode,@taxCode,@isActive,@decimalInPrice,@decimalInTotalPrice,@salesAddressType,@drAddressType,@discount,@discountType,@includePoInInvoice,@vatInclusive,@salesInChargeId,SYSUTCDATETIME(),SYSUTCDATETIME())`);
+      const result = await req.query(`INSERT INTO dbo.Customers ([name],[contactPerson],[cpnumber],[email],[address],[shortName],[businessStyle],[salesInCharge],[tin],[faxNo],[countryOfOrigin],[country],[category],[remarks],[salesName],[drName],[paymentTerm],[vatCode],[taxCode],[isActive],[decimalInPrice],[decimalInTotalPrice],[salesAddressType],[drAddressType],[discount],[discountType],[includePoInInvoice],[vatInclusive],[salesInChargeId],createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name,@contactPerson,@cpnumber,@email,@address,@shortName,@businessStyle,@salesInCharge,@tin,@faxNo,@countryOfOrigin,@country,@category,@remarks,@salesName,@drName,@paymentTerm,@vatCode,@taxCode,@isActive,@decimalInPrice,@decimalInTotalPrice,@salesAddressType,@drAddressType,@discount,@discountType,@includePoInInvoice,@vatInclusive,@salesInChargeId,SYSUTCDATETIME(),SYSUTCDATETIME())`);
       saved = result.recordset[0].id;
     }
     if (!current || Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
@@ -251,7 +235,9 @@ router.post('/customers', async (req, res) => {
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'customers').input('action', sql.NVarChar(sql.MAX), id ? 'update' : 'create').input('recordId', sql.NVarChar(sql.MAX), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     return saved;
   });
-  const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+  const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],CONVERT(varchar(10),(SELECT MAX(i.invoiceDate)
+    FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId
+    WHERE o.customerId=c.id),23) AS lastSalesDate FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
   if (!recordResult.recordset.length) {
     const error = new Error('The customer could not be found.');
     error.status = 404;
@@ -289,7 +275,7 @@ router.put('/customers/:id', async (req, res) => {
   const savedId = await transaction(async tx => {
     let current;
     if (id) {
-      const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],c.salesInCharge AS _salesInChargeSnapshot FROM dbo.Customers c WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+      const currentResult = await request(tx).input('id', sql.Int, id).query(`SELECT c.[id],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],c.salesInCharge AS _salesInChargeSnapshot FROM dbo.Customers c WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
       if (!currentResult.recordset.length) {
         const error = new Error('The customer could not be found.');
         error.status = 404;
@@ -305,7 +291,7 @@ router.put('/customers/:id', async (req, res) => {
       ...defaults,
       ...(current || {})
     };
-    for (const key of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() || null : null;
+    for (const key of ["name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() || null : null;
     for (const key of ['isActive', 'includePoInInvoice', 'vatInclusive']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = input[key] === null || input[key] === '' ? null : input[key] === true;
     for (const key of ['decimalInPrice', 'decimalInTotalPrice', 'discount']) if (Object.hasOwn(input, key) && input[key] !== undefined) {
       const numericFieldValue = input[key] === null || String(input[key]).trim() === '' ? null : Number(input[key]);
@@ -317,6 +303,7 @@ router.put('/customers/:id', async (req, res) => {
       customer[key] = numericFieldValue;
     }
     for (const key of ['salesAddressType', 'drAddressType', 'discountType']) if (Object.hasOwn(input, key) && input[key] !== undefined) customer[key] = typeof input[key] === 'string' ? input[key].trim() || null : null;
+    if (customer.discountType === null) customer.discount = null;
     if (Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
       if (!Array.isArray(input.deliveryAddresses) || input.deliveryAddresses.length > 50) {
         const error = new Error('The submitted collection exceeds the supported size.');
@@ -335,7 +322,6 @@ router.put('/customers/:id', async (req, res) => {
       error.status = 400;
       throw error;
     }
-    if (current && !customer.code) customer.code = current.code;
     if (customer.discountType === 'percent' && customer.discount > 100) {
       const error = new Error('Percentage discount cannot exceed 100.');
       error.status = 400;
@@ -394,28 +380,8 @@ router.put('/customers/:id', async (req, res) => {
     }
     customer.salesInChargeId = assignment.id;
     customer.salesInCharge = assignment.name;
-    if (!customer.code) {
-      // Hold the customer table while reading its next identity, so generated codes
-      // remain tied to Company Id even when multiple customers are saved together.
-      await request(tx).query('SELECT COUNT_BIG(*) AS total FROM dbo.Customers WITH (TABLOCKX,HOLDLOCK)');
-      const result = await request(tx).query(`SELECT COALESCE(CONVERT(bigint,last_value)+CONVERT(bigint,increment_value),CONVERT(bigint,seed_value)) AS nextId
-    FROM sys.identity_columns WHERE object_id=OBJECT_ID(N'dbo.Customers') AND name=N'id'`);
-      const id = Number(result.recordset[0]?.nextId);
-      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
-        const error = new Error('A customer identifier could not be allocated.');
-        error.status = 409;
-        throw error;
-      }
-      const base = `C-${String(id).padStart(8, '0')}`;
-      let code = base;
-      let suffix = 0;
-      while ((await request(tx).input('code', sql.NVarChar(sql.MAX), code).query('SELECT id FROM dbo.Customers WHERE code=@code')).recordset.length) {
-        code = `${base}-${++suffix}`;
-      }
-      customer.code = code;
-    }
     const req = request(tx);
-    for (const fieldName of ["code", "name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
+    for (const fieldName of ["name", "contactPerson", "cpnumber", "email", "address", "shortName", "businessStyle", "salesInCharge", "tin", "faxNo", "countryOfOrigin", "country", "category", "remarks", "salesName", "drName", "paymentTerm", "vatCode", "taxCode"]) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
     for (const fieldName of ['isActive', 'includePoInInvoice', 'vatInclusive']) req.input(fieldName, sql.Bit, customer[fieldName]);
     for (const fieldName of ['decimalInPrice', 'decimalInTotalPrice']) req.input(fieldName, sql.Int, customer[fieldName]);
     for (const fieldName of ['salesAddressType', 'drAddressType', 'discountType']) req.input(fieldName, sql.NVarChar(sql.MAX), customer[fieldName]);
@@ -423,9 +389,9 @@ router.put('/customers/:id', async (req, res) => {
     req.input('salesInChargeId', sql.Int, customer.salesInChargeId);
     let saved = id;
     if (id) {
-      await req.input('id', sql.Int, id).query(`UPDATE dbo.Customers SET [code]=@code,[name]=@name,[contactPerson]=@contactPerson,[cpnumber]=@cpnumber,[email]=@email,[address]=@address,[shortName]=@shortName,[businessStyle]=@businessStyle,[salesInCharge]=@salesInCharge,[tin]=@tin,[faxNo]=@faxNo,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[category]=@category,[remarks]=@remarks,[salesName]=@salesName,[drName]=@drName,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[isActive]=@isActive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[salesAddressType]=@salesAddressType,[drAddressType]=@drAddressType,[discount]=@discount,[discountType]=@discountType,[includePoInInvoice]=@includePoInInvoice,[vatInclusive]=@vatInclusive,[salesInChargeId]=@salesInChargeId,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.Customers SET [name]=@name,[contactPerson]=@contactPerson,[cpnumber]=@cpnumber,[email]=@email,[address]=@address,[shortName]=@shortName,[businessStyle]=@businessStyle,[salesInCharge]=@salesInCharge,[tin]=@tin,[faxNo]=@faxNo,[countryOfOrigin]=@countryOfOrigin,[country]=@country,[category]=@category,[remarks]=@remarks,[salesName]=@salesName,[drName]=@drName,[paymentTerm]=@paymentTerm,[vatCode]=@vatCode,[taxCode]=@taxCode,[isActive]=@isActive,[decimalInPrice]=@decimalInPrice,[decimalInTotalPrice]=@decimalInTotalPrice,[salesAddressType]=@salesAddressType,[drAddressType]=@drAddressType,[discount]=@discount,[discountType]=@discountType,[includePoInInvoice]=@includePoInInvoice,[vatInclusive]=@vatInclusive,[salesInChargeId]=@salesInChargeId,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
     } else {
-      const result = await req.query(`INSERT INTO dbo.Customers ([code],[name],[contactPerson],[cpnumber],[email],[address],[shortName],[businessStyle],[salesInCharge],[tin],[faxNo],[countryOfOrigin],[country],[category],[remarks],[salesName],[drName],[paymentTerm],[vatCode],[taxCode],[isActive],[decimalInPrice],[decimalInTotalPrice],[salesAddressType],[drAddressType],[discount],[discountType],[includePoInInvoice],[vatInclusive],[salesInChargeId],createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code,@name,@contactPerson,@cpnumber,@email,@address,@shortName,@businessStyle,@salesInCharge,@tin,@faxNo,@countryOfOrigin,@country,@category,@remarks,@salesName,@drName,@paymentTerm,@vatCode,@taxCode,@isActive,@decimalInPrice,@decimalInTotalPrice,@salesAddressType,@drAddressType,@discount,@discountType,@includePoInInvoice,@vatInclusive,@salesInChargeId,SYSUTCDATETIME(),SYSUTCDATETIME())`);
+      const result = await req.query(`INSERT INTO dbo.Customers ([name],[contactPerson],[cpnumber],[email],[address],[shortName],[businessStyle],[salesInCharge],[tin],[faxNo],[countryOfOrigin],[country],[category],[remarks],[salesName],[drName],[paymentTerm],[vatCode],[taxCode],[isActive],[decimalInPrice],[decimalInTotalPrice],[salesAddressType],[drAddressType],[discount],[discountType],[includePoInInvoice],[vatInclusive],[salesInChargeId],createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name,@contactPerson,@cpnumber,@email,@address,@shortName,@businessStyle,@salesInCharge,@tin,@faxNo,@countryOfOrigin,@country,@category,@remarks,@salesName,@drName,@paymentTerm,@vatCode,@taxCode,@isActive,@decimalInPrice,@decimalInTotalPrice,@salesAddressType,@drAddressType,@discount,@discountType,@includePoInInvoice,@vatInclusive,@salesInChargeId,SYSUTCDATETIME(),SYSUTCDATETIME())`);
       saved = result.recordset[0].id;
     }
     if (!current || Object.hasOwn(input, 'deliveryAddresses') && input['deliveryAddresses'] !== undefined) {
@@ -437,7 +403,9 @@ router.put('/customers/:id', async (req, res) => {
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'customers').input('action', sql.NVarChar(sql.MAX), id ? 'update' : 'create').input('recordId', sql.NVarChar(sql.MAX), String(saved)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     return saved;
   });
-  const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[code],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId] FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
+  const recordResult = await request().input('id', sql.Int, savedId).query(`SELECT c.[id],c.[name],c.[contactPerson],c.[cpnumber],c.[email],c.[address],c.[shortName],c.[businessStyle],COALESCE(u.name,c.salesInCharge) AS salesInCharge,c.[tin],c.[faxNo],c.[countryOfOrigin],c.[country],c.[category],c.[remarks],c.[salesName],c.[drName],c.[paymentTerm],c.[vatCode],c.[taxCode],c.[isActive],c.[decimalInPrice],c.[decimalInTotalPrice],c.[salesAddressType],c.[drAddressType],c.[discount],c.[discountType],c.[includePoInInvoice],c.[vatInclusive],c.[salesInChargeId],CONVERT(varchar(10),(SELECT MAX(i.invoiceDate)
+    FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId
+    WHERE o.customerId=c.id),23) AS lastSalesDate FROM dbo.Customers c LEFT JOIN dbo.SalesUserLogin u ON u.id=c.salesInChargeId WHERE c.id=@id`);
   if (!recordResult.recordset.length) {
     const error = new Error('The customer could not be found.');
     error.status = 404;
@@ -586,7 +554,7 @@ router.get('/product-options', async (req, res) => {
     SELECT id,name,isActive FROM dbo.ConfigProductCategories WHERE isActive=1 ORDER BY name;
     SELECT id,sku,name,description FROM dbo.Products WHERE isActive=1 ORDER BY sku;
     SELECT id,code,name,description,unit,isActive FROM dbo.Supplies WHERE isActive=1 ORDER BY name;
-    SELECT id,code,name FROM dbo.Customers WHERE isActive=1 ORDER BY name;
+    SELECT id,name FROM dbo.Customers WHERE isActive=1 ORDER BY name;
     SELECT DISTINCT name FROM dbo.ProductProcesses ORDER BY name;`);
   res.json({
     units: result.recordsets[0],

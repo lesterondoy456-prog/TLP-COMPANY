@@ -34,7 +34,7 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
       customerWrites.push({ method, pathname, body });
       const id = method === 'POST' ? 101 : Number(pathname.split('/').pop());
       const index = records.findIndex(item => item.id === id);
-      const record = resolved({ ...(records[index] || {}), ...body, id, code: 'C-MOCK-000001' });
+      const record = resolved({ ...(records[index] || {}), ...body, id });
       if (body.salesInChargeId === null) record.salesInCharge = '';
       if (index === -1) records.push(record); else records[index] = record;
       return { status: method === 'POST' ? 201 : 200, json: { record } };
@@ -55,7 +55,7 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
     : basic.getByLabel(label, { exact: true });
   const salesField = label => label === 'Discount Type'
     ? sales.getByRole('combobox', { name: label, exact: true })
-    : sales.getByLabel(label, { exact: true });
+    : label === 'Discount' ? sales.locator('input[name="discount"]') : sales.getByLabel(label, { exact: true });
 
   await expect(dialog.locator('.required-mark')).toHaveCount(9);
   await expect(dialog.locator('[aria-required="true"]')).toHaveCount(9);
@@ -82,14 +82,14 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   }
   await assert.rejects(() => salesAssignee.fill('Arbitrary salesperson'), 'A native account select must reject free typing.');
   await salesTab.click();
-  for (const label of ['Sales Name', 'Decimal in Price *', 'Decimal in Total Price *', 'Payment Term', 'Discount', 'Discount Type', 'DR Name', 'VAT Code *', 'Tax Code']) {
+  for (const label of ['Sales Name', 'Decimal in Price *', 'Decimal in Total Price *', 'Payment Term', 'Discount Type', 'DR Name', 'VAT Code *', 'Tax Code']) {
     await expect(salesField(label)).toBeVisible();
   }
   for (const title of ['Sales', 'Delivery Receipt', 'TAX']) await expect(sales.getByRole('heading', { name: title, exact: true })).toBeVisible();
   await expect(salesField('Decimal in Price *')).toHaveValue('2');
   await expect(salesField('Decimal in Total Price *')).toHaveValue('2');
   await expect(salesField('Discount Type')).toHaveValue('');
-  await expect(salesField('Discount')).toHaveValue('');
+  await expect(salesField('Discount')).toHaveCount(0);
   const optionsFor = field => field.evaluate(element => [...document.getElementById(element.getAttribute('list')).options].map(option => option.value));
   const vatCodes = await optionsFor(salesField('VAT Code *'));
   for (const code of ['VS', 'VE', 'VZ']) assert.ok(vatCodes.includes(code));
@@ -177,13 +177,22 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await salesAddress.getByRole('radio', { name: 'Delivery Address', exact: true }).check();
   await drAddress.getByRole('radio', { name: 'Delivery Address', exact: true }).check();
   await salesField('Discount Type').selectOption('percent');
+  await expect(sales.getByLabel('Discount (%)', { exact: true })).toBeVisible();
+  await expect(salesField('Discount')).toHaveValue('');
   await salesField('Discount').fill('101');
   await invalidFromOtherTab(salesTab, salesField('Discount'));
   await salesField('Discount Type').selectOption('amount');
+  await expect(sales.getByLabel('Discount amount', { exact: true })).toBeVisible();
   await salesField('Discount').fill('1000000001');
   await invalidFromOtherTab(salesTab, salesField('Discount'));
   await salesField('Discount').fill('1250.1234567');
   await invalidFromOtherTab(salesTab, salesField('Discount'));
+  await salesField('Discount').fill('1250.123456');
+  await salesField('Discount Type').selectOption('');
+  await expect(salesField('Discount')).toHaveCount(0);
+  await salesField('Discount Type').selectOption('percent');
+  await expect(salesField('Discount')).toHaveValue('');
+  await salesField('Discount Type').selectOption('amount');
   await salesField('Discount').fill('1250.123456');
   await sales.getByRole('checkbox', { name: 'Include P.O. in Invoice', exact: true }).check();
   await sales.getByRole('radio', { name: 'Inclusive', exact: true }).check();
@@ -294,6 +303,8 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   for (const key of ['tin', 'contactPerson', 'email', 'countryOfOrigin', 'country', 'faxNo', 'cpnumber', 'category', 'remarks', 'paymentTerm', 'taxCode', 'discount', 'discountType', 'salesAddressType', 'drAddressType', 'includePoInInvoice', 'vatInclusive']) assert.equal(emptyOptional[key], null, key + ' must stay NULL when no value is entered.');
   await page.getByRole('row').filter({ hasText: 'Nullable Customer' }).getByRole('button', { name: 'Edit', exact: true }).click();
   await salesTab.click();
+  await expect(salesField('Discount')).toHaveCount(0);
+  await salesField('Discount Type').selectOption('percent');
   await salesField('Discount').fill('0');
   const includePo = sales.getByRole('checkbox', { name: 'Include P.O. in Invoice', exact: true });
   await includePo.check(); await includePo.uncheck();
@@ -301,7 +312,17 @@ test('customer form CAS fields, cross-tab validation, and mocked create/edit rou
   await save.click();
   await expect(dialog).toHaveCount(0);
   assert.equal(customerWrites.at(-1).body.discount, 0);
+  assert.equal(customerWrites.at(-1).body.discountType, 'percent');
   assert.equal(customerWrites.at(-1).body.includePoInInvoice, false);
   assert.equal(customerWrites.at(-1).body.vatInclusive, false);
+  await page.getByRole('row').filter({ hasText: 'Nullable Customer' }).getByRole('button', { name: 'Edit', exact: true }).click();
+  await salesTab.click();
+  await salesField('Discount').fill('4');
+  await salesField('Discount Type').selectOption('');
+  await expect(salesField('Discount')).toHaveCount(0);
+  await save.click();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(customerWrites.at(-1).body.discount, null);
+  assert.equal(customerWrites.at(-1).body.discountType, null);
   assertSafe();
 });

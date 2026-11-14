@@ -36,7 +36,7 @@ function initialValues(record) {
     paymentTerm: record?.paymentTerm ?? '',
     salesAddressType: record?.salesAddressType ?? '',
     drAddressType: record?.drAddressType ?? '',
-    discount: record?.discount ?? '',
+    discount: ['percent', 'amount'].includes(record?.discountType) ? record?.discount ?? '' : '',
     discountType: record?.discountType ?? '',
     includePoInInvoice: record?.includePoInInvoice ?? null,
     vatInclusive: record?.vatInclusive ?? null,
@@ -110,7 +110,7 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
   }, [tab, focusTarget]);
 
   function set(key, value) {
-    setForm(current => ({ ...current, [key]: value }));
+    setForm(current => ({ ...current, [key]: value, ...(key === 'discountType' && !value ? { discount: '' } : {}) }));
     setErrors(current => { if (!current[key] && !(key === 'discountType' && current.discount)) return current; const next = { ...current }; delete next[key]; if (key === 'discountType') delete next.discount; return next; });
   }
 
@@ -169,7 +169,7 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
     body.decimalInTotalPrice = Number(form.decimalInTotalPrice);
     body.salesAddressType = form.salesAddressType || null;
     body.drAddressType = form.drAddressType || null;
-    body.discount = String(form.discount ?? '').trim() === '' ? null : Number(form.discount);
+    body.discount = !form.discountType || String(form.discount ?? '').trim() === '' ? null : Number(form.discount);
     body.discountType = form.discountType || null;
     body.includePoInInvoice = form.includePoInInvoice;
     body.vatInclusive = form.vatInclusive;
@@ -220,8 +220,8 @@ export default function CreateCustomerForm({ record, customers = [], lookupOptio
                 {decimalField('decimalInPrice', 'Decimal in Price')}{decimalField('decimalInTotalPrice', 'Decimal in Total Price')}
                 {textField('paymentTerm', 'Payment Term', { wide: true, list: formId + '-payment-terms' })}<datalist id={formId + '-payment-terms'}>{paymentOptions.map(term => <option key={term} value={term} />)}</datalist>
                 {addressRadios('salesAddressType', 'Sales Address')}
-                <label className="field" htmlFor={fieldId('discount')}><span>Discount</span><input {...controlProps('discount', 'Discount')} type="number" min={0} max={form.discountType === 'percent' ? 100 : 1e9} step="0.000001" value={form.discount} onChange={event => set('discount', event.target.value)} />{fieldError('discount')}</label>
                 <label className="field" htmlFor={fieldId('discountType')}><span>Discount Type</span><select id={fieldId('discountType')} value={form.discountType} onChange={event => set('discountType', event.target.value)}><option value="">None</option><option value="percent">Percent</option><option value="amount">Amount</option></select></label>
+                {['percent', 'amount'].includes(form.discountType) && <label className="field" htmlFor={fieldId('discount')}><span>{form.discountType === 'percent' ? 'Discount (%)' : 'Discount amount'}</span><input {...controlProps('discount', form.discountType === 'percent' ? 'Discount (%)' : 'Discount amount')} type="number" min={0} max={form.discountType === 'percent' ? 100 : 1e9} step="0.000001" value={form.discount} onChange={event => set('discount', event.target.value)} />{fieldError('discount')}</label>}
                 <label className="checkbox customer-span-2"><input type="checkbox" checked={form.includePoInInvoice === true} onChange={event => set('includePoInInvoice', event.target.checked)} />Include P.O. in Invoice</label>
               </div></section>
               <section className="customer-section" aria-labelledby={formId + '-dr-heading'}><h3 id={formId + '-dr-heading'}>Delivery Receipt</h3><div className="customer-fields">

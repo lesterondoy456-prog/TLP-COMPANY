@@ -104,10 +104,10 @@ function validateCustomer(input, current) {
   for (const key of ['decimalInPrice', 'decimalInTotalPrice']) if (has(input, key)) result[key] = decimalPlaces(input, key);
   for (const key of ['salesAddressType', 'drAddressType']) if (has(input, key)) result[key] = input[key] === null || input[key] === '' ? null : choice(input, key, ['office', 'delivery']);
   if (has(input, 'discountType')) result.discountType = input.discountType === null || input.discountType === '' ? null : choice(input, 'discountType', ['percent', 'amount']);
-  if (has(input, 'discount')) result.discount = input.discount === null || String(input.discount).trim() === '' ? null : v.numeric(input, 'discount', { min: 0, max: 1e9, places: 6 });
+  if (result.discountType === null) result.discount = null;
+  else if (has(input, 'discount')) result.discount = input.discount === null || String(input.discount).trim() === '' ? null : v.numeric(input, 'discount', { min: 0, max: 1e9, places: 6 });
   if (result.discountType === 'percent' && result.discount > 100) throw new ApiError(400, 'Percentage discount cannot exceed 100.');
   if (has(input, 'deliveryAddresses')) result.deliveryAddresses = deliveryAddresses(input.deliveryAddresses);
-  if (current && !result.code) result.code = current.code;
   return result;
 }
 
@@ -199,7 +199,7 @@ function validateProduct(input, current) {
 const v = { text, email, bool, numeric, idValue, date, photo, password, username };
 
 const textLengths = {
-  code: 40, name: 180, contactPerson: 150, cpnumber: 30, email: 254, address: 500,
+  name: 180, contactPerson: 150, cpnumber: 30, email: 254, address: 500,
   shortName: 80, businessStyle: 180, salesInCharge: 150, tin: 50, faxNo: 30,
   countryOfOrigin: 100, country: 100, category: 100, remarks: 2000,
   salesName: 180, drName: 180, paymentTerm: 100, vatCode: 80, taxCode: 80,
@@ -215,7 +215,7 @@ const defaults = {
 
 const requiredExpanded = new Set(['address', 'shortName', 'businessStyle', 'salesName', 'drName', 'vatCode']);
 
-const legacyKeys = new Set(['id', 'code', 'name', 'contactPerson', 'cpnumber', 'email', 'address', 'isActive']);
+const legacyKeys = new Set(['id', 'name', 'contactPerson', 'cpnumber', 'email', 'address', 'isActive']);
 
 const extendedKeys = Object.keys(defaults).filter(key => !legacyKeys.has(key));
 
@@ -346,7 +346,7 @@ export function validateCustomerForm(form) {
   for (const [key, label] of [['decimalInPrice', 'Decimal in Price'], ['decimalInTotalPrice', 'Decimal in Total Price']]) {
     if (String(form[key] ?? '').trim() === '' || !Number.isInteger(Number(form[key])) || Number(form[key]) < 0 || Number(form[key]) > 6) errors[key] = label + ' must be a whole number from 0 to 6.';
   }
-  const discount = String(form.discount ?? '').trim() === '' ? null : Number(form.discount);
+  const discount = !form.discountType || String(form.discount ?? '').trim() === '' ? null : Number(form.discount);
   if (discount !== null && (!Number.isFinite(discount) || discount < 0 || discount > 1e9 || Math.abs(discount * 1e6 - Math.round(discount * 1e6)) > 0.00001)) errors.discount = 'Enter a discount from 0 to 1,000,000,000 with up to 6 decimal places.';
   else if (form.discountType === 'percent' && discount > 100) errors.discount = 'A Percent discount cannot exceed 100.';
   return errors;

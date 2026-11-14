@@ -14,7 +14,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     units: [{ id: 1, name: 'pcs', description: 'Piece', isActive: true }, { id: 2, name: 'box', description: 'Box', isActive: true }],
     currencies: [{ id: 1, code: 'PHP', description: 'Philippine Peso', isActive: true }],
     categories: [{ id: 1, name: 'Packaging', isActive: true }],
-    customers: [{ id: 10, code: 'C-001', name: 'Mock Customer A', isActive: true }, { id: 11, code: 'C-002', name: 'Mock Customer B', isActive: true }],
+    customers: [{ id: 10, name: 'Mock Customer A', isActive: true }, { id: 11, name: 'Mock Customer B', isActive: true }],
     headers: [header], processes: ['Printing', 'Cutting'],
     supplies: [{ id: 30, code: 'RM-001', name: 'Paper', description: 'Paper Roll', unit: 'kg', isActive: true }],
   };
@@ -100,6 +100,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await screenshot('product-basic-info-mocked.png');
   await tabs.Customer.click();
   await panel('Customer').getByRole('button', { name: 'Add customer', exact: true }).click();
+  await expect(panel('Customer').getByLabel('Customer Name 1', { exact: true }).locator('option[value="10"]')).toHaveText('Mock Customer A');
   await panel('Customer').getByLabel('Customer Name 1', { exact: true }).selectOption('10');
   await panel('Customer').getByLabel('Approval Date 1', { exact: true }).fill('2026-11-13');
   await panel('Customer').getByLabel('EOL Date 1', { exact: true }).fill('2026-11-12');

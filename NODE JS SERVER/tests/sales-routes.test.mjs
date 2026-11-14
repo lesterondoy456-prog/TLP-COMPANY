@@ -22,6 +22,13 @@ function routeFixture(steps, initial = {}) {
         input(key, _type, value) { values[key] = value; return this; },
         async query(query) {
           assert.doesNotMatch(query, /dbo\.ProductOffices\b/, 'Product Office associations must never be queried or saved.');
+          for (const statement of query.split(';')) {
+            if (/\b(?:FROM|INTO|UPDATE)\s+dbo\.Customers\b/i.test(statement)) assert.doesNotMatch(statement, /\bcode\b/i, 'Customer codes are not stored or queried.');
+          }
+          if (query.startsWith('SELECT c.[id]') && !query.includes('UPDLOCK,HOLDLOCK')) {
+            assert.match(query, /CONVERT\(varchar\(10\),\(SELECT MAX\(i\.invoiceDate\)[\s\S]*FROM dbo\.SalesInvoices i JOIN dbo\.SalesOrders o ON o\.id=i\.orderId[\s\S]*WHERE o\.customerId=c\.id\),23\) AS lastSalesDate/);
+            assert.doesNotMatch(query, /GETDATE|COALESCE\([^)]*invoiceDate/i, 'A customer without an invoice has no Last Sales Date.');
+          }
           const next = pending.shift();
           assert.ok(next, 'Unexpected SQL: ' + query);
           assert.match(query, next.match);
@@ -49,8 +56,9 @@ function routeFixture(steps, initial = {}) {
   };
 }
 const customer = {
-  id: 7, code: 'C-00000007', name: 'Customer', shortName: 'C', businessStyle: 'Trade', address: 'Office',
+  id: 7, name: 'Customer', shortName: 'C', businessStyle: 'Trade', address: 'Office',
   salesName: 'Sales name', drName: 'DR name', vatCode: 'VS', salesInChargeId: null, salesInCharge: '', isActive: true,
+  lastSalesDate: null,
 };
 const product = {
   id: 7, sku: 'P7', name: 'Product', description: 'Old', unit: 'PCS', secondaryUnit: '', currency: 'USD',
@@ -58,22 +66,62 @@ const product = {
 };
 const productResult = record => ({ recordsets: [[record], [{ productId: 7, name: 'Cut' }], [], []] });
 
-test('customer creation allocates its generated code and ordered delivery addresses atomically', async () => {
+test('Customer list and detail return Last Sales Date from the latest customer invoice, or NULL without sales', async () => {
+  const records = [{ ...customer, lastSalesDate: null }, { ...customer, id: 8, name: 'Customer with invoices', lastSalesDate: '2026-11-14' }];
+  const list = routeFixture([step(/FROM dbo\.Customers/, records), step(/FROM dbo\.CustomerDeliveryAddresses/, [])]);
+  const response = await list.invoke('get', '/customers', {});
+  assert.deepEqual(response.body.records.map(row => row.lastSalesDate), [null, '2026-11-14']);
+  list.done();
+  for (const lastSalesDate of [null, '2026-11-14']) {
+    const detail = routeFixture([step(/FROM dbo\.Customers/, [{ ...customer, lastSalesDate }]), step(/FROM dbo\.CustomerDeliveryAddresses/, [])]);
+    const record = await detail.invoke('get', '/customers/:id', {});
+    assert.equal(record.body.record.lastSalesDate, lastSalesDate);
+    detail.done();
+  }
+});
+
+test('customer creation uses its row identity and saves ordered delivery addresses atomically', async () => {
   const fixture = routeFixture([
-    step(/TABLOCKX,HOLDLOCK/, [{ total: 0 }]), step(/sys\.identity_columns/, [{ nextId: 7 }]),
-    step(/WHERE code=@code/, []),
-    step(/INSERT INTO dbo\.Customers/, [{ id: 7 }], (values, _state, query) => { assert.equal(values.code, 'C-00000007'); assert.equal(values.isActive, true); assert.equal(values.discount, null); assert.equal(values.discountType, null); assert.equal(values.cpnumber, null); assert.match(query, /createdAt,updatedAt/); }),
+    step(/INSERT INTO dbo\.Customers/, [{ id: 7 }], (values, _state, query) => { assert.equal(Object.hasOwn(values, 'code'), false); assert.equal(values.isActive, true); assert.equal(values.discount, null); assert.equal(values.discountType, null); assert.equal(values.cpnumber, null); assert.match(query, /createdAt,updatedAt/); }),
     step(/DELETE FROM dbo\.CustomerDeliveryAddresses/),
     step(/INSERT INTO dbo\.CustomerDeliveryAddresses/, [], values => { assert.equal(values.position, 0); assert.equal(values.address, 'Delivery A'); }),
     step(/INSERT INTO dbo\.CustomerDeliveryAddresses/, [], values => { assert.equal(values.position, 1); assert.equal(values.address, 'Delivery B'); }),
     audit(), step(/FROM dbo\.Customers/, [customer]),
     step(/FROM dbo\.CustomerDeliveryAddresses/, [{ address: 'Delivery A' }, { address: 'Delivery B' }]),
   ]);
-  const response = await fixture.invoke('post', '/customers', { ...customer, code: '', isActive: false, deliveryAddresses: ['Delivery A', 'Delivery B'] });
+  const response = await fixture.invoke('post', '/customers', { ...customer, code: 'ignored legacy customer code', isActive: false, deliveryAddresses: ['Delivery A', 'Delivery B'] });
   assert.equal(response.statusCode, 201);
+  assert.equal(response.body.record.id, 7);
+  assert.equal(Object.hasOwn(response.body.record, 'code'), false);
+  assert.equal(response.body.record.lastSalesDate, null);
   assert.deepEqual(response.body.record.deliveryAddresses, ['Delivery A', 'Delivery B']);
   assert.equal(fixture.state.commits, 1);
   fixture.done();
+});
+
+test('None discount type clears a stale numeric discount on Customer create and update', async () => {
+  const saved = { ...customer, discountType: null, discount: null };
+  const create = routeFixture([
+    step(/INSERT INTO dbo\.Customers/, [{ id: 7 }], values => { assert.equal(values.discountType, null); assert.equal(values.discount, null); assert.equal(Object.hasOwn(values, 'code'), false); }),
+    step(/DELETE FROM dbo\.CustomerDeliveryAddresses/), audit(),
+    step(/FROM dbo\.Customers/, [saved]), step(/FROM dbo\.CustomerDeliveryAddresses/, []),
+  ]);
+  const created = await create.invoke('post', '/customers', { ...customer, discountType: null, discount: 4 });
+  assert.equal(created.body.record.discount, null);
+  assert.equal(create.state.commits, 1);
+  create.done();
+
+  const update = routeFixture([
+    step(/UPDLOCK,HOLDLOCK/, [{ ...customer, discountType: 'percent', discount: 25 }]), step(/FROM dbo\.CustomerDeliveryAddresses/, []),
+    step(/UPDATE dbo\.Customers/, [], values => { assert.equal(values.discountType, null); assert.equal(values.discount, null); assert.equal(Object.hasOwn(values, 'code'), false); }),
+    audit(), step(/FROM dbo\.Customers/, [saved]), step(/FROM dbo\.CustomerDeliveryAddresses/, []),
+  ]);
+  const updated = await update.invoke('put', '/customers/:id', { discountType: '', discount: 4, code: 'ignored legacy customer code' });
+  assert.equal(updated.body.record.discount, null);
+  assert.equal(updated.body.record.discountType, null);
+  assert.equal(Object.hasOwn(updated.body.record, 'code'), false);
+  assert.equal(update.state.commits, 1);
+  update.done();
 });
 
 test('partial customer edits preserve legacy assignments and omitted address collections', async () => {
@@ -86,6 +134,7 @@ test('partial customer edits preserve legacy assignments and omitted address col
   const response = await fixture.invoke('put', '/customers/:id', { name: 'Renamed', isActive: false });
   assert.equal(response.body.record.salesInCharge, 'Legacy Person');
   assert.equal(response.body.record.isActive, false);
+  assert.equal(response.body.record.lastSalesDate, null);
   assert.deepEqual(response.body.record.deliveryAddresses, ['Preserved']);
   assert.equal(fixture.state.commits, 1);
   fixture.done();
@@ -238,7 +287,7 @@ test('Product creation writes each named child table with its own literal SQL an
 
 
 test('former Customer and Product CHECK invariants reject invalid direct writes before SQL', async () => {
-  for (const change of [{ decimalInPrice: -1 }, { decimalInTotalPrice: 7 }, { salesAddressType: 'unknown' }, { discountType: 'unknown' }, { discount: -1 }, { discount: 1000000001 }]) {
+  for (const change of [{ decimalInPrice: -1 }, { decimalInTotalPrice: 7 }, { salesAddressType: 'unknown' }, { discountType: 'unknown' }, { discountType: 'amount', discount: -1 }, { discountType: 'amount', discount: 1000000001 }]) {
     const fixture = routeFixture([]);
     await assert.rejects(() => fixture.invoke('post', '/customers', { ...customer, ...change }), error => error.status === 400);
     assert.equal(fixture.state.commits, 0);

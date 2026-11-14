@@ -7,6 +7,23 @@ SET CONCAT_NULL_YIELDS_NULL ON;
 SET ARITHABORT ON;
 SET NUMERIC_ROUNDABORT OFF;
 
+-- Customer links use Customers.id; a separate generated customer code is unused.
+IF COL_LENGTH(N'dbo.Customers',N'code') IS NOT NULL
+BEGIN
+  DECLARE @customerCodeConstraint SYSNAME,@dropCustomerCodeConstraint NVARCHAR(500);
+  SELECT @customerCodeConstraint=k.name
+  FROM sys.key_constraints k
+  JOIN sys.index_columns i ON i.object_id=k.parent_object_id AND i.index_id=k.unique_index_id
+  JOIN sys.columns c ON c.object_id=i.object_id AND c.column_id=i.column_id
+  WHERE k.parent_object_id=OBJECT_ID(N'dbo.Customers') AND k.type=N'UQ' AND c.name=N'code';
+  IF @customerCodeConstraint IS NOT NULL
+  BEGIN
+    SET @dropCustomerCodeConstraint=N'ALTER TABLE dbo.Customers DROP CONSTRAINT '+QUOTENAME(@customerCodeConstraint)+N';';
+    EXEC sys.sp_executesql @dropCustomerCodeConstraint;
+  END;
+  ALTER TABLE dbo.Customers DROP COLUMN code;
+END;
+
 -- A single company uses the systems; no Product/Supplies office links are saved.
 IF OBJECT_ID(N'dbo.ProductOffices',N'U') IS NOT NULL
 BEGIN

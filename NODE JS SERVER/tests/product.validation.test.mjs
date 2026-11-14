@@ -69,8 +69,9 @@ test('blank optional Sales fields remain null while explicit zero and false valu
   assert.equal(customer.discount, null);
   assert.equal(customer.contactPerson, null);
   assert.equal(customer.includePoInInvoice, null);
-  const explicit = validateCustomer({ ...requiredCustomer, discount: 0, includePoInInvoice: false, vatInclusive: false });
+  const explicit = validateCustomer({ ...requiredCustomer, discountType: 'amount', discount: 0, includePoInInvoice: false, vatInclusive: false });
   assert.equal(explicit.discount, 0);
   assert.equal(explicit.includePoInInvoice, false);
   assert.equal(explicit.vatInclusive, false);
+  assert.equal(validateCustomer({ ...requiredCustomer, discountType: null, discount: 4 }).discount, null);
 });

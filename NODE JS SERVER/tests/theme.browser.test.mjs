@@ -86,6 +86,10 @@ for (const specification of projects) {
     release();
     await expect(page.locator('.loading-skeleton')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: specification.heading, exact: true })).toBeVisible();
+    if (system === 'sales') {
+      await expect(page.getByRole('row').filter({ hasText: 'Northline Packaging Corporation' }).locator('.entity-cell small')).toHaveCount(0);
+      await expect(page.getByText('C-00000001', { exact: true })).toHaveCount(0);
+    }
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await settled(page);
     await expect(page.locator('.sidebar .nav-item')).toHaveCount(specification.count);

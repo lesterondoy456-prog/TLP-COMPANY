@@ -74,7 +74,7 @@ export default function CreateOrderForm({
   return <Modal wide title={record ? 'Edit ' + record.number : 'New sales order'} subtitle="Choose a customer, add products, and confirm when ready." onClose={onClose} busy={busy}>
     <form onSubmit={submit}><div className="modal-body"><ErrorNotice message={error || validation || currencyError} /><fieldset disabled={busy}>
       <div className="form-grid">
-        <Field label="Customer *"><select required value={form.customerId} onChange={e => set('customerId', e.target.value)}><option value="">Select a customer</option>{customers.filter(c => c.isActive || c.id === record?.customerId).map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}</select></Field>
+        <Field label="Customer *"><select required value={form.customerId} onChange={e => set('customerId', e.target.value)}><option value="">Select a customer</option>{customers.filter(c => c.isActive || c.id === record?.customerId).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
         <Field label="Order date *"><input type="date" required value={form.orderDate} onChange={e => set('orderDate', e.target.value)} /></Field>
         <Field label="Currency *"><select ref={currencyControl} required aria-required="true" value={currency} onChange={e => { set('currency', e.target.value); setValidation(''); }}><option value="">{loadingCurrencies ? 'Loading currencies...' : 'Select a currency'}</option>{currencyOptions.map(option => <option key={option.code} value={option.code}>{option.code}{option.description && option.description !== option.code ? ' · ' + option.description : ''}</option>)}</select></Field>
       </div>

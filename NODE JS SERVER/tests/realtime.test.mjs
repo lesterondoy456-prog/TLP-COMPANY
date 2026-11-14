@@ -23,7 +23,7 @@ function cookie(system, id = 1, expires = Math.floor(Date.now() / 1000) + 3600) 
 function databaseFixture({ business, failAudit = false } = {}) {
   let state = {
     accounts: Object.fromEntries(systems.map(system => [system, [1, 2].map(id => ({ id, name: `Mock ${system} ${id}`, username: `mock_${id}`, cpnumber: '', email: '', photo: '', role: id === 1 ? 'admin' : system, isActive: true }))])),
-    customers: [100], countries: [], audits: [],
+    customers: [100], countries: [], audits: [], invoices: [],
   };
   const events = [];
   const sql = new Proxy({}, { get: (_object, type) => type === 'MAX' ? -1 : (...args) => ({ type, args }) });
@@ -58,7 +58,19 @@ function databaseFixture({ business, failAudit = false } = {}) {
             for (const input of inputs) query.input(...input);
             return query.query(statement);
           }
+          if (text.startsWith('SELECT i.id') && text.includes('FROM dbo.SalesInvoices')) return { recordset: current.invoices.filter(row => row.id === params.id).map(row => ({ ...row, customerId: 100, customerName: 'Mock Customer', currency: 'USD', status: 'unpaid' })) };
+          if (text.startsWith('SELECT productId,productName') && text.includes('FROM dbo.SalesOrderItems')) return { recordset: [{ productId: 1, productName: 'Mock Product', sku: 'P1', unit: 'PCS', quantity: 1, unitPrice: 10, lineTotal: 10 }] };
           assert.ok(scope, 'Every mutation must belong to the fake transaction.');
+          if (text.startsWith('SELECT o.id') && text.includes('FROM dbo.SalesOrders')) return { recordset: [{ id: 7, number: 'SO-MOCK', customerId: 100, customerName: 'Mock Customer', orderDate: '2026-11-13', status: 'confirmed', total: 10, currency: 'USD', invoiced: current.invoices.some(row => row.orderId === 7) }] };
+          if (text.startsWith('INSERT INTO dbo.SalesInvoices')) {
+            const id = current.invoices.length + 1;
+            current.invoices.push({ ...params, id, paidAmount: 0 });
+            return { recordset: [{ id }] };
+          }
+          if (text.startsWith('UPDATE dbo.SalesInvoices SET number=@number')) {
+            current.invoices.find(row => row.id === params.id).number = params.number;
+            return { recordset: [] };
+          }
           if (text.startsWith('DELETE FROM dbo.Customers')) {
             const present = current.customers.includes(params.id);
             current.customers = current.customers.filter(id => id !== params.id);
@@ -212,6 +224,34 @@ test('committed receiving notifies Warehouse once, while rollback and replay nev
   const watched = await failed.joined('warehouse');
   assert.equal((await failed.request('/api/purchasing/receivings/1/post', cookie('purchasing'), 'POST')).status, 500);
   await delay(40); assert.deepEqual(watched.events, []); assert.equal(failedMemory.events.at(-1), 'rollback');
+});
+
+test('committed invoice creation refreshes Customer Last Sales Date while duplicate and rolled-back invoices emit nothing', async t => {
+  const api = await fixture(t);
+  const sales = await api.joined('sales'), warehouse = await api.joined('warehouse');
+  const received = once(sales.socket, 'data:changed');
+  const body = { orderId: 7, invoiceDate: '2026-11-14', dueDate: '2026-12-14' };
+  const response = await api.request('/api/sales/sales-invoices', cookie('sales'), 'POST', body);
+  assert.equal(response.status, 201, await response.clone().text());
+  const [event] = await received;
+  assert.equal(api.events.at(-1), 'commit');
+  assert.ok(event.resources.includes('customers'));
+  assert.ok(event.resources.includes('sales-invoices'));
+  assert.ok(event.resources.includes('sales-orders'));
+  assert.equal(api.snapshot().invoices[0].invoiceDate, '2026-11-14');
+  assert.deepEqual(Object.keys(event).sort(), ['changedAt', 'resources', 'system'], 'Realtime events carry metadata, not invoice dates or records.');
+  assert.equal((await api.request('/api/sales/sales-invoices', cookie('sales'), 'POST', body)).status, 409);
+  await delay(40);
+  assert.equal(sales.events.length, 1);
+  assert.deepEqual(warehouse.events, []);
+
+  const failed = await fixture(t, { failAudit: true });
+  const watcher = await failed.joined('sales');
+  assert.equal((await failed.request('/api/sales/sales-invoices', cookie('sales'), 'POST', body)).status, 409);
+  await delay(40);
+  assert.deepEqual(failed.snapshot().invoices, []);
+  assert.deepEqual(watcher.events, []);
+  assert.equal(failed.events.at(-1), 'rollback');
 });
 
 test('configuration saves refresh dependent systems without exposing master values', async t => {

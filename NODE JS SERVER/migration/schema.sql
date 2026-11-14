@@ -22,7 +22,6 @@ IF OBJECT_ID(N'dbo.Customers', N'U') IS NULL
 BEGIN
   CREATE TABLE dbo.Customers (
     id INT IDENTITY PRIMARY KEY,
-    code NVARCHAR(40) NOT NULL UNIQUE,
     name NVARCHAR(180) NOT NULL,
     contactPerson NVARCHAR(150) NULL,
     cpnumber NVARCHAR(30) NULL,
