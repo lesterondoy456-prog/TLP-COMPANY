@@ -5,6 +5,7 @@ import ThemeToggle from './ThemeToggle.jsx';
 
 export default function Layout({ user, page, pages, data, loaded, onPage, onProfile, onLogout, logoutBusy, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('tti-sales-sidebar-collapsed') === 'true'; }
     catch { return false; }
@@ -13,12 +14,18 @@ export default function Layout({ user, page, pages, data, loaded, onPage, onProf
     try { localStorage.setItem('tti-sales-sidebar-collapsed', String(sidebarCollapsed)); }
     catch { /* Keep the toggle usable when browser storage is unavailable. */ }
   }, [sidebarCollapsed]);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const transition = useRef(null);
   const navigation = useRef(null);
   const activeIndicator = useRef(null);
   const isAdmin = user.role === 'admin';
   const canManageUsers = isAdmin || user.role === 'saleshead';
-  const current = pages.find(item => item.id === page);
+  const date = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(now);
+  const time = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(now);
+  const compactTime = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
 
   useEffect(() => { setMenuOpen(false); }, [page]);
   useLayoutEffect(() => {
@@ -63,13 +70,11 @@ export default function Layout({ user, page, pages, data, loaded, onPage, onProf
       </nav>
       {canManageUsers && <><p className="nav-label administration">{isAdmin ? 'ADMINISTRATION' : 'TEAM'}</p><button aria-label="SalesUserLogin" title="SalesUserLogin" className={'nav-item ' + (page === 'users' ? 'active' : '')} aria-current={page === 'users' ? 'page' : undefined} onClick={() => { onPage('users'); setMenuOpen(false); }}><Icon name="shield" size={19} /><span>SalesUserLogin</span></button></>}
       </div>
+      <div className="sidebar-preferences"><time className="sidebar-clock" dateTime={now.toISOString()} aria-label={'Philippine time: ' + date + ', ' + time} title={date + ' · ' + time + ' PHT'}><span className="sidebar-time">{time}</span><span className="sidebar-time-compact">{compactTime}</span><span className="sidebar-date">{date}</span></time><ThemeToggle /></div>
       <div className="sidebar-bottom"><button className="account-button" aria-label={'Open profile: ' + (user.name || user.username)} title={'Open profile: ' + (user.name || user.username)} onClick={() => { onProfile(); setMenuOpen(false); }}><Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span></button><button className="sidebar-signout" aria-label={logoutBusy ? 'Signing out' : 'Sign out'} title="Sign out" onClick={onLogout} disabled={logoutBusy}><Icon name="logout" size={18} /></button></div>
     </aside>
     <div className="main-shell">
-      <header className="topbar">
-        <div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="sales-sidebar" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>Sales</span><Icon name="chevronRight" size={13} /><strong>{current?.title || 'Customer'}</strong></div>
-        <div className="topbar-right"><span className="today-label">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())}</span><ThemeToggle /></div>
-      </header>
+      <button className="icon-button mobile-menu mobile-navigation-trigger" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="sales-sidebar" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button>
       <main className="workspace-content">
         <div className="page-transition" ref={transition} data-page={page}>{children}</div>
 

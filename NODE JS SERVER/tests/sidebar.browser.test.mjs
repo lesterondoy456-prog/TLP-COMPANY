@@ -1,6 +1,7 @@
 ﻿import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { writeFile } from 'node:fs/promises';
 import { expect } from '@playwright/test';
 import { mockBrowser } from './helpers/mock-browser.mjs';
 import { loadApi } from './helpers/load-api.mjs';
@@ -11,6 +12,121 @@ const projects = [
   { project: 'WarehouseSystem', system: 'warehouse', first: 'Supplies Stock', next: 'WarehouseUserLogin', count: 2 },
   { project: 'ConfigurationSystem', system: 'configuration', first: 'ATC', next: 'Bank', count: 14 },
 ];
+
+async function settled(page) {
+  await page.evaluate(async () => {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})));
+  });
+}
+
+async function assertFooterClock(page, collapsed, ticking = false) {
+  const preferences = page.locator('.sidebar-preferences');
+  const clock = preferences.locator('time.sidebar-clock');
+  await expect(clock).toBeInViewport();
+  const snapshot = await clock.evaluate(element => {
+    const timestamp = new Date(element.dateTime);
+    const date = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(timestamp);
+    const time = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(timestamp);
+    const compact = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(timestamp);
+    return { date, time, compact, actualDate: element.querySelector('.sidebar-date').textContent, actualTime: element.querySelector('.sidebar-time').textContent, actualCompact: element.querySelector('.sidebar-time-compact').textContent, label: element.getAttribute('aria-label'), age: Date.now() - timestamp.getTime() };
+  });
+  assert.equal(snapshot.actualDate, snapshot.date);
+  assert.equal(snapshot.actualTime, snapshot.time);
+  assert.equal(snapshot.actualCompact, snapshot.compact);
+  assert.equal(snapshot.label, 'Philippine time: ' + snapshot.date + ', ' + snapshot.time);
+  assert.ok(snapshot.age >= 0 && snapshot.age < 2500, 'The sidebar clock shows current Philippine time.');
+  await expect(clock.locator('.sidebar-time')).toBeVisible({ visible: !collapsed });
+  await expect(clock.locator('.sidebar-time-compact')).toBeVisible({ visible: collapsed });
+  await expect(clock.locator('.sidebar-date')).toBeVisible({ visible: !collapsed });
+  const footer = await page.locator('.sidebar-bottom').boundingBox();
+  const settings = await preferences.boundingBox();
+  const theme = await preferences.locator('.theme-toggle').boundingBox();
+  assert.ok(settings.y + settings.height <= footer.y + 1, 'Clock and theme controls sit above the profile footer.');
+  assert.ok(theme.y + theme.height <= footer.y + 1);
+  if (ticking) {
+    const before = await clock.getAttribute('datetime');
+    await expect.poll(() => clock.getAttribute('datetime'), { timeout: 3000 }).not.toBe(before);
+  }
+}
+
+async function sampleIndicatorMovement(target) {
+  return target.evaluate(button => new Promise(resolve => {
+    const navigation = button.closest('.sidebar-navigation');
+    const indicator = navigation.querySelector('.sidebar-active-indicator');
+    const position = () => indicator.getBoundingClientRect().top - navigation.getBoundingClientRect().top + navigation.scrollTop;
+    const start = position();
+    const end = button.offsetTop;
+    const began = performance.now();
+    const samples = [];
+    button.click();
+    const frame = timestamp => {
+      const rect = indicator.getBoundingClientRect();
+      const bounds = navigation.getBoundingClientRect();
+      samples.push({ ms: timestamp - began, y: position(), visible: rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1, opacity: getComputedStyle(indicator).opacity });
+      if (timestamp - began < 650) requestAnimationFrame(frame);
+      else resolve({ start, end, samples, sameNode: indicator === navigation.querySelector('.sidebar-active-indicator'), background: getComputedStyle(indicator).backgroundColor });
+    };
+    requestAnimationFrame(frame);
+  }));
+}
+
+function assertVisibleMovement(result, label) {
+  const distance = result.end - result.start;
+  const sign = Math.sign(distance);
+  assert.ok(Math.abs(distance) > 20, label + ' travels between distinct navigation rows.');
+  const intermediate = result.samples.filter(sample => sign * (sample.y - result.start) > 1 && sign * (result.end - sample.y) > 1 && sample.visible && Number(sample.opacity) > 0.95);
+  assert.ok(intermediate.length >= 4, label + ' must paint several visible intermediate positions, not jump straight to the destination.');
+  for (let index = 1; index < result.samples.length; index++) assert.ok(sign * (result.samples[index].y - result.samples[index - 1].y) >= -0.5, label + ' moves monotonically toward the selected row.');
+  assert.ok(Math.abs(result.samples.at(-1).y - result.end) <= 1, label + ' settles aligned with its selected row.');
+  assert.ok(result.sameNode, 'Navigation preserves the same painted indicator element.');
+  assert.notEqual(result.background, 'rgba(0, 0, 0, 0)', 'The moving pill has a visible background.');
+}
+
+async function screenshotMovingIndicator(app, target, name) {
+  const paused = await target.evaluate(button => new Promise((resolve, reject) => {
+    const navigation = button.closest('.sidebar-navigation');
+    const indicator = navigation.querySelector('.sidebar-active-indicator');
+    const position = () => indicator.getBoundingClientRect().top - navigation.getBoundingClientRect().top + navigation.scrollTop;
+    const start = position();
+    const end = button.offsetTop;
+    const began = performance.now();
+    button.click();
+    const frame = () => {
+      const progress = (position() - start) / (end - start);
+      if (progress >= 0.35 && progress <= 0.7) {
+        const animations = indicator.getAnimations().filter(animation => animation.transitionProperty === 'transform');
+        for (const animation of animations) animation.pause();
+        resolve({ start, end, y: position(), progress, pausedAnimations: animations.length });
+      } else if (performance.now() - began > 700) reject(new Error('The real indicator transition did not paint a middle position for its screenshot.'));
+      else requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }));
+  assert.ok(paused.pausedAnimations > 0);
+  await app.screenshot(name);
+  await app.page.locator('.sidebar-active-indicator').evaluate(element => { for (const animation of element.getAnimations()) if (animation.playState === 'paused') animation.play(); });
+  await settled(app.page);
+  return paused;
+}
+
+async function assertRapidRetargeting(page, names) {
+  const result = await page.locator('.sidebar-navigation').evaluate(async (navigation, names) => {
+    const indicator = navigation.querySelector('.sidebar-active-indicator');
+    const buttons = names.map(name => [...navigation.querySelectorAll('.nav-item')].find(button => button.getAttribute('aria-label') === name));
+    for (const button of buttons) {
+      button.click();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+    await Promise.all(indicator.getAnimations().map(animation => animation.finished.catch(() => {})));
+    const active = navigation.querySelector('.nav-item.active');
+    return { active: active.getAttribute('aria-label'), y: indicator.getBoundingClientRect().top, targetY: active.getBoundingClientRect().top, height: indicator.getBoundingClientRect().height, targetHeight: active.getBoundingClientRect().height, sameNode: indicator === navigation.querySelector('.sidebar-active-indicator') };
+  }, names);
+  assert.equal(result.active, names.at(-1));
+  assert.ok(Math.abs(result.y - result.targetY) <= 1, 'Rapid navigation ends at the most recent selected row, including a scrolled menu.');
+  assert.ok(Math.abs(result.height - result.targetHeight) <= 1);
+  assert.ok(result.sameNode);
+}
 
 for (const { project, system, first, next, count } of projects) {
   test(`${project} has a floating sidebar card, animated active rail and accessible persistent mobile navigation`, { timeout: 90000 }, async t => {
@@ -34,8 +150,12 @@ for (const { project, system, first, next, count } of projects) {
     const heading = name => page.getByRole('heading', { level: 1, name, exact: true });
     const toggle = name => page.getByRole('button', { name, exact: true }).filter({ visible: true });
     const key = `tti-${system}-sidebar-collapsed`;
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.goto(origin);
     await expect(heading(first)).toBeVisible();
+    await expect(page.locator('.topbar')).toHaveCount(0);
+    await expect(page.locator('.main-shell > header')).toHaveCount(0);
+    assert.ok((await page.locator('.workspace-content').boundingBox()).y <= 1, 'Desktop content starts without a header above it.');
     await expect(sidebar).toHaveCSS('width', '246px');
     await expect(sidebar).toHaveCSS('left', '14px');
     await expect(sidebar).toHaveCSS('top', '14px');
@@ -46,6 +166,7 @@ for (const { project, system, first, next, count } of projects) {
     await expect(sidebar.locator('.brand-mark')).toBeVisible();
     await expect(sidebar.getByRole('searchbox')).toHaveCount(0);
     await expect(indicator).toBeVisible();
+    await assertFooterClock(page, false, true);
     const expandedWidth = (await main.boundingBox()).width;
     const collapse = toggle('Collapse sidebar');
     await expect(collapse).toHaveCount(1);
@@ -65,6 +186,25 @@ for (const { project, system, first, next, count } of projects) {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await app.screenshot(`${system}-sidebar-card-light.png`);
     await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+
+    // Record rendered frames rather than merely observing a transition event.
+    // A taller desktop keeps every Configuration row visible during full travel.
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    await settled(page);
+    const lastButton = sidebar.locator('.nav-item').last();
+    const lastName = await lastButton.getAttribute('aria-label');
+    await expect(lastButton).toBeInViewport();
+    const forward = await sampleIndicatorMovement(lastButton);
+    assertVisibleMovement(forward, 'First-to-last pill movement');
+    const backward = await sampleIndicatorMovement(sidebar.getByRole('button', { name: first, exact: true }));
+    assertVisibleMovement(backward, 'Last-to-first pill movement');
+    const midflight = await screenshotMovingIndicator(app, lastButton, `${system}-sidebar-pill-midflight.png`);
+    await assertRapidRetargeting(page, [first, lastName, next]);
+    await sidebar.getByRole('button', { name: first, exact: true }).click();
+    await settled(page);
+    await writeFile(fileURLToPath(new URL(`../.qa/screenshots/${system}-sidebar-pill-motion.json`, import.meta.url)), JSON.stringify({ project, forward, backward, midflight }, null, 2));
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await settled(page);
     await collapse.click();
     await expect(sidebar).toHaveCSS('width', '76px');
     await expect(main).toHaveCSS('margin-left', '104px');
@@ -81,21 +221,15 @@ for (const { project, system, first, next, count } of projects) {
     await expect(sidebar.getByRole('button', { name: first, exact: true })).toHaveClass(/active/);
     await expect(sidebar.locator('.brand-mark')).toBeVisible();
     await expect(signout).toBeVisible();
+    await assertFooterClock(page, true);
     await sidebar.getByRole('button', { name: 'Open profile: Alex Santos', exact: true }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
     const nextButton = sidebar.getByRole('button', { name: next, exact: true });
-    const initialTransform = await indicator.evaluate(element => getComputedStyle(element).transform);
-    await indicator.evaluate(element => {
-      window.sidebarIndicatorTransitions = [];
-      element.addEventListener('transitionrun', event => { window.sidebarIndicatorTransitions.push(event.propertyName); });
-    });
     await nextButton.focus();
     await nextButton.press('Enter');
     await expect(heading(next)).toBeVisible();
     await expect(nextButton).toHaveAttribute('aria-current', 'page');
-    await expect.poll(() => indicator.evaluate(element => getComputedStyle(element).transform)).not.toBe(initialTransform);
-    await expect.poll(() => page.evaluate(() => window.sidebarIndicatorTransitions)).toContain('transform');
     await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBe('true');
     await page.evaluate(async () => {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -117,14 +251,22 @@ for (const { project, system, first, next, count } of projects) {
       assert.ok(await navigation.evaluate(element => element.scrollHeight > element.clientHeight), 'Long Configuration menus scroll inside the card.');
       const footerBefore = await sidebar.locator('.sidebar-bottom').boundingBox();
       const headerBefore = await sidebar.locator('.sidebar-header').boundingBox();
+      const preferencesBefore = await sidebar.locator('.sidebar-preferences').boundingBox();
       await navigation.evaluate(element => { element.scrollTop = element.scrollHeight; });
       const footerAfter = await sidebar.locator('.sidebar-bottom').boundingBox();
       const headerAfter = await sidebar.locator('.sidebar-header').boundingBox();
+      const preferencesAfter = await sidebar.locator('.sidebar-preferences').boundingBox();
       assert.equal(footerAfter.y, footerBefore.y, 'Scrolling modules must not move the profile and sign-out footer.');
       assert.equal(headerAfter.y, headerBefore.y, 'Scrolling modules must not move the brand.');
+      assert.equal(preferencesAfter.y, preferencesBefore.y, 'Scrolling modules must not move the clock or theme controls.');
+      const lastNames = await sidebar.locator('.nav-item').evaluateAll(buttons => buttons.slice(-3).map(button => button.getAttribute('aria-label')));
+      await assertRapidRetargeting(page, [lastNames[2], lastNames[0], lastNames[1]]);
       await expect(signout).toBeInViewport();
+      await assertFooterClock(page, false);
       await app.screenshot('configuration-sidebar-card-scroll.png');
       await navigation.evaluate(element => { element.scrollTop = 0; });
+      await sidebar.getByRole('button', { name: first, exact: true }).click();
+      await settled(page);
       await page.setViewportSize({ width: 1440, height: 1000 });
     }
     await toggle('Collapse sidebar').click();
@@ -139,6 +281,11 @@ for (const { project, system, first, next, count } of projects) {
     await expect(toggle('Expand sidebar')).toBeVisible();
     await toggle('Expand sidebar').click();
     await expect(sidebar).toHaveCSS('width', '246px');
+    await assertFooterClock(page, false);
+    await sidebar.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(sidebar).toHaveClass(/open/);
+    await sidebar.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
     await expect(sidebar.getByRole('button', { name: next, exact: true }).locator('span').first()).toBeVisible();
     await sidebar.getByRole('button', { name: next, exact: true }).click();
     await expect(heading(next)).toBeVisible();
@@ -159,6 +306,7 @@ for (const { project, system, first, next, count } of projects) {
     await expect(main).toHaveCSS('transition-duration', '0s');
     assert.ok(await indicator.evaluate(element => getComputedStyle(element).transitionDuration.split(',').every(value => parseFloat(value) === 0)), 'Reduced motion disables the active indicator transition.');
     await expect(main).toHaveCSS('margin-left', '0px');
+    await assertFooterClock(page, true);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'The mobile page must not gain horizontal overflow.');
     await page.screenshot({ path: fileURLToPath(new URL(`../.qa/screenshots/${system}-sidebar-icons-mobile.png`, import.meta.url)), fullPage: false });
     await page.getByRole('button', { name: 'Close navigation', exact: true }).click({ position: { x: 300, y: 100 } });

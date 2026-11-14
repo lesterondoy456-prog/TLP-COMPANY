@@ -7,6 +7,7 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
   const [tab, setTab] = useState(tabs[0].id);
   const content = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('tti-warehouse-sidebar-collapsed') === 'true'; }
     catch { return false; }
@@ -15,6 +16,10 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
     try { localStorage.setItem('tti-warehouse-sidebar-collapsed', String(sidebarCollapsed)); }
     catch { /* Keep the toggle usable when browser storage is unavailable. */ }
   }, [sidebarCollapsed]);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [error, setError] = useState('');
@@ -40,6 +45,9 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
     return () => animation?.cancel();
   }, [tab]);
 
+  const date = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(now);
+  const time = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(now);
+  const compactTime = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
   const navigationRef = useRef(null);
   const activeIndicator = useRef(null);
   useLayoutEffect(() => {
@@ -108,6 +116,14 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
           </>}
         </nav>
       </div>
+      <div className="sidebar-preferences">
+        <time className="sidebar-clock" dateTime={now.toISOString()} aria-label={'Philippine time: ' + date + ', ' + time} title={date + ' ? ' + time + ' PHT'}>
+          <span className="sidebar-time">{time}</span>
+          <span className="sidebar-time-compact">{compactTime}</span>
+          <span className="sidebar-date">{date}</span>
+        </time>
+        <ThemeToggle />
+      </div>
       <div className="sidebar-bottom">
         <button className="account-button" aria-label={'Open profile: ' + (user.name || user.username)} title={'Open profile: ' + (user.name || user.username)} onClick={() => { setProfileOpen(true); setMenuOpen(false); }}>
           <Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span>
@@ -118,10 +134,9 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
       </div>
     </aside>
     <div className="main-shell">
-      <header className="topbar">
-        <div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" aria-controls="warehouse-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>{app.appName}</span><Icon name="chevronRight" size={13} /><strong>{current.title}</strong></div>
-        <div className="topbar-right"><ThemeToggle /><span className="today-label">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())}</span></div>
-      </header>
+      <button className="icon-button mobile-menu mobile-navigation-trigger" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="warehouse-sidebar" onClick={() => setMenuOpen(true)}>
+        <Icon name="menu" />
+      </button>
       <main className="workspace-content">
         <ErrorNotice message={error} />
         {notice && <div className="toast" role="status"><Icon name="check" size={18} />{notice}<button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><Icon name="x" size={16} /></button></div>}

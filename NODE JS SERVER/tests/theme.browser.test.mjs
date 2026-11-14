@@ -92,6 +92,9 @@ for (const specification of projects) {
     }
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await settled(page);
+    await expect(page.locator('.topbar')).toHaveCount(0);
+    await expect(page.locator('.main-shell > header')).toHaveCount(0);
+    assert.ok((await page.locator('.workspace-content').boundingBox()).y <= 1, 'Content starts directly in the main area without a header above it.');
     await expect(page.locator('.sidebar .nav-item')).toHaveCount(specification.count);
     await expect(page.locator('.sidebar .nav-item:visible')).toHaveCount(specification.count);
     await expect(page.locator('.sales-group')).toHaveCount(0);
@@ -99,7 +102,7 @@ for (const specification of projects) {
     const darkSurface = await page.locator('body').evaluate(element => getComputedStyle(element).backgroundColor);
     assert.equal(await page.locator('.sidebar').evaluate(element => getComputedStyle(element).backgroundImage), 'none');
     await app.screenshot(`${system}-theme-dark-desktop.png`);
-    await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+    await page.locator('.sidebar').getByRole('button', { name: 'Switch to light mode', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await expect.poll(() => page.evaluate(() => localStorage.getItem('tti-theme'))).toBe('light');
     await settled(page);
@@ -148,7 +151,9 @@ for (const specification of projects) {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await app.screenshot(`${system}-theme-dark-mobile-form.png`);
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
-    await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+    await page.locator('.sidebar').getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+    await page.getByRole('button', { name: 'Close navigation', exact: true }).click({ position: { x: 300, y: 100 } });
     await settled(page);
     await app.screenshot(`${system}-theme-light-mobile.png`);
     signedIn = false;

@@ -5,6 +5,7 @@ import { Icon } from './Icons.jsx';
 
 export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigate, onProfile, notice, onNotice, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('tti-purchasing-sidebar-collapsed') === 'true'; }
     catch { return false; }
@@ -13,11 +14,13 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
     try { localStorage.setItem('tti-purchasing-sidebar-collapsed', String(sidebarCollapsed)); }
     catch { /* Keep the toggle usable when browser storage is unavailable. */ }
   }, [sidebarCollapsed]);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [error, setError] = useState('');
   const administrator = user.role === 'admin' && user.system === app.system;
-  const navigation = administrator ? [...tabs, { id: 'users', title: app.userTable, icon: 'shield' }] : tabs;
-  const current = navigation.find(item => item.id === tab) || tabs[0];
   const contentRef = useRef(null);
   const previousTab = useRef(tab);
 
@@ -42,6 +45,9 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
     if (tab === 'users' && !administrator) onNavigate(tabs[0].id);
   }, [tab, administrator, tabs]);
 
+  const date = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(now);
+  const time = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(now);
+  const compactTime = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
   const navigationRef = useRef(null);
   const activeIndicator = useRef(null);
   useLayoutEffect(() => {
@@ -105,6 +111,14 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
           </>}
         </nav>
       </div>
+      <div className="sidebar-preferences">
+        <time className="sidebar-clock" dateTime={now.toISOString()} aria-label={'Philippine time: ' + date + ', ' + time} title={date + ' ? ' + time + ' PHT'}>
+          <span className="sidebar-time">{time}</span>
+          <span className="sidebar-time-compact">{compactTime}</span>
+          <span className="sidebar-date">{date}</span>
+        </time>
+        <ThemeToggle />
+      </div>
       <div className="sidebar-bottom">
         <button className="account-button" aria-label={'Open profile: ' + (user.name || user.username)} title={'Open profile: ' + (user.name || user.username)} onClick={() => { onProfile(); setMenuOpen(false); }}>
           <Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span>
@@ -115,10 +129,9 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
       </div>
     </aside>
     <div className="main-shell">
-      <header className="topbar">
-        <div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" aria-controls="purchasing-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>{app.appName}</span><Icon name="chevronRight" size={13} /><strong>{current.title}</strong></div>
-        <div className="topbar-right"><ThemeToggle /><span className="today-label">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())}</span></div>
-      </header>
+      <button className="icon-button mobile-menu mobile-navigation-trigger" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="purchasing-sidebar" onClick={() => setMenuOpen(true)}>
+        <Icon name="menu" />
+      </button>
       <main className="workspace-content">
         <ErrorNotice message={error} />
         {notice && <div className="toast" role="status"><Icon name="check" size={18} />{notice}<button className="icon-button" aria-label="Dismiss notification" onClick={() => onNotice('')}><Icon name="x" size={16} /></button></div>}

@@ -107,7 +107,7 @@ Customers use their table row ID for links; there is no separate generated custo
 
 ## Appearance
 
-All four apps have matte navy and light themes with blue navigation accents. Use the sun/moon button on the login page or top bar to switch; each app remembers the preference in the browser. Sidebar modules are direct buttons without expandable groups. Collapse the desktop sidebar to keep only its navigation icons and give the page more space; each app remembers this choice. Mobile navigation remains a drawer. Page changes use a short transition, initial record loads use animated skeletons, and new table rows fade into place. Realtime refreshes retain loaded records and open drafts. Reduced-motion browser preferences disable these animations. Printed documents remain white with dark text.
+All four apps have matte navy and light themes with blue navigation accents. Use the sun/moon button on the login page or above the profile at the bottom of the sidebar to switch; each app remembers the preference in the browser. The sidebar also shows live Philippine time and the date. Pages have no top header bar. Sidebar modules are direct buttons without expandable groups, and a blue highlight slides between selected tabs. Collapse the desktop sidebar to keep only its navigation icons and give the page more space; each app remembers this choice. Mobile navigation uses a floating menu button and drawer. Page changes use a short transition, initial record loads use animated skeletons, and new table rows fade into place. Realtime refreshes retain loaded records and open drafts. Reduced-motion browser preferences disable these animations. Printed documents remain white with dark text.
 
 ## Realtime updates
 
