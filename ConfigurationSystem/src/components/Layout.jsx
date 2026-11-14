@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ThemeToggle from './ThemeToggle.jsx';
 import { Avatar, ErrorNotice, roleLabel } from './UI.jsx';
 import { Icon } from './Icons.jsx';
@@ -46,6 +46,25 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
     if (tab === 'users' && !administrator) setTab(tabs[0].id);
   }, [tab, administrator, tabs]);
 
+  const navigationRef = useRef(null);
+  const activeIndicator = useRef(null);
+  useLayoutEffect(() => {
+    const links = navigationRef.current;
+    const active = links?.querySelector('.nav-item.active');
+    const indicator = activeIndicator.current;
+    if (!active || !indicator) return;
+    const position = () => {
+      indicator.style.transform = 'translateY(' + active.offsetTop + 'px)';
+      indicator.style.height = active.offsetHeight + 'px';
+      indicator.style.opacity = '1';
+    };
+    position();
+    const observer = new ResizeObserver(position);
+    observer.observe(links);
+    observer.observe(active);
+    return () => observer.disconnect();
+  }, [tab, sidebarCollapsed, administrator]);
+
   function navigate(id) {
     setTab(id);
     setMenuOpen(false);
@@ -71,21 +90,43 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
   return <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
     {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
     <aside id="configuration-sidebar" className={'sidebar ' + (menuOpen ? 'open' : '')}>
-      <div className="brand"><div className="brand-mark">T</div><div><strong>TTI Laguna Philippines Inc.</strong><span>{app.appName}</span></div></div>
-      <button className="icon-button sidebar-mobile-toggle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="configuration-sidebar" onClick={() => setSidebarCollapsed(current => !current)}><Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} size={18} /></button>
-      <p className="nav-label">{app.label.toUpperCase()}</p>
-      <nav aria-label={app.navLabel}>
-        {tabs.map(item => <button key={item.id} aria-label={item.title} title={item.title} className={'nav-item ' + (tab === item.id ? 'active' : '')} aria-current={tab === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon name={item.icon} size={18} /><span>{item.title}</span></button>)}
-        {administrator && <><p className="nav-label administration">ACCOUNTS</p><button aria-label={app.userTable} title={app.userTable} className={'nav-item ' + (tab === 'users' ? 'active' : '')} aria-current={tab === 'users' ? 'page' : undefined} onClick={() => navigate('users')}><Icon name="shield" size={18} /><span>{app.userTable}</span></button></>}
-      </nav>
+      <div className="sidebar-header">
+        <div className="brand">
+          <div className="brand-mark">T</div>
+          <div><strong>TTI Laguna Philippines Inc.</strong><span>{app.appName}</span></div>
+        </div>
+      </div>
+      <button className="sidebar-toggle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="configuration-sidebar" onClick={() => setSidebarCollapsed(current => !current)}>
+        <Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} size={14} />
+      </button>
+      <div className="sidebar-navigation" ref={navigationRef}>
+        <div className="sidebar-active-indicator" ref={activeIndicator} aria-hidden="true" />
+        <p className="nav-label">{app.label.toUpperCase()}</p>
+        <nav aria-label={app.navLabel}>
+          {tabs.map(item => <button key={item.id} aria-label={item.title} title={item.title} className={'nav-item ' + (tab === item.id ? 'active' : '')} aria-current={tab === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>
+            <Icon name={item.icon} size={18} /><span>{item.title}</span>
+          </button>)}
+          {administrator && <>
+            <p className="nav-label administration">ACCOUNTS</p>
+            <button aria-label={app.userTable} title={app.userTable} className={'nav-item ' + (tab === 'users' ? 'active' : '')} aria-current={tab === 'users' ? 'page' : undefined} onClick={() => navigate('users')}>
+              <Icon name="shield" size={18} /><span>{app.userTable}</span>
+            </button>
+          </>}
+        </nav>
+      </div>
       <div className="sidebar-bottom">
-        <button className="account-button" aria-label={'Open profile: ' + (user.name || user.username)} title={'Open profile: ' + (user.name || user.username)} onClick={() => { setProfileOpen(true); setMenuOpen(false); }}><Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span><Icon name="chevronRight" size={16} /></button>
+        <button className="account-button" aria-label={'Open profile: ' + (user.name || user.username)} title={'Open profile: ' + (user.name || user.username)} onClick={() => { setProfileOpen(true); setMenuOpen(false); }}>
+          <Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span>
+        </button>
+        <button className="sidebar-signout" aria-label={logoutBusy ? 'Signing out' : 'Sign out'} title="Sign out" onClick={logout} disabled={logoutBusy}>
+          <Icon name="logout" size={18} />
+        </button>
       </div>
     </aside>
     <div className="main-shell">
       <header className="topbar">
-        <div className="breadcrumb"><button className="icon-button sidebar-toggle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="configuration-sidebar" onClick={() => setSidebarCollapsed(current => !current)}><Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} size={18} /></button><button className="icon-button mobile-menu" aria-label="Open navigation" aria-controls="configuration-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>{app.appName}</span><Icon name="chevronRight" size={13} /><strong>{current.title}</strong></div>
-        <div className="topbar-right"><ThemeToggle /><span className="today-label">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())}</span><button className="signout-button" disabled={logoutBusy} onClick={logout}><Icon name="logout" size={17} /><span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span></button></div>
+        <div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" aria-controls="configuration-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>{app.appName}</span><Icon name="chevronRight" size={13} /><strong>{current.title}</strong></div>
+        <div className="topbar-right"><ThemeToggle /><span className="today-label">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())}</span></div>
       </header>
       <main className="workspace-content">
         <ErrorNotice message={error} />
