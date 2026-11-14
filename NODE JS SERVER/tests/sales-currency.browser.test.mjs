@@ -3,39 +3,31 @@ import test from 'node:test';
 import { expect } from '@playwright/test';
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
-test('USD sales uses configured currency choices, preserves micro-prices, and displays USD invoices and payments', { timeout: 120_000 }, async t => {
-  const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
-  const customer = { id: 20, name: 'Mock USD Customer', isActive: true };
-  const products = [
-    { id: 10, sku: 'USD-MICRO', name: 'USD Micro Product', unit: 'pcs', price: '0.115300', currency: 'USD', stock: 0, isActive: true },
-    { id: 11, sku: 'PHP-LOCAL', name: 'PHP Product', unit: 'pcs', price: '10.000000', currency: 'PHP', stock: 0, isActive: true },
-  ];
-  const orders = [];
-  const writes = [];
-  const invoice = () => orders[0] ? { id: 1, number: 'SI-MOCK-USD', orderId: 1, orderNumber: orders[0].number, customerName: customer.name, invoiceDate: '2026-11-13', dueDate: '2026-12-13', currency: 'USD', total: '207.54', paidAmount: '0.00', status: 'unpaid', items: orders[0].items } : null;
+const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true };
+const customer = { id: 20, name: 'Mock USD Customer', salesName: 'Mock USD Billing', address: 'Main office, Laguna', deliveryAddresses: ['Delivery gate, Laguna'], salesAddressType: 'office', paymentTerm: '30 DAYS', vatCode: 'VZ', vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, isActive: true };
+const options = {
+  currencies: [{ id: 1, code: 'USD', description: 'US Dollar', isActive: true }, { id: 2, code: 'PHP', description: 'Peso', isActive: true }, { id: 3, code: 'EUR', description: 'Inactive Euro', isActive: false }],
+  paymentTerms: [{ id: 1, name: '30 DAYS', description: '30 DAYS', isActive: true }],
+  vatCodes: [{ id: 1, code: 'VZ', description: 'Zero rated', rate: '0.000000', isActive: true }, { id: 2, code: 'VS', description: 'Vatable sales', rate: '12.000000', isActive: true }, { id: 3, code: 'UNKNOWN', description: 'Rate not configured', rate: null, isActive: true }],
+  countries: [{ id: 1, name: 'Japan', isActive: true }],
+  shipments: [{ value: 'air', label: 'By Air' }, { value: 'land', label: 'By Land' }, { value: 'boat', label: 'By Boat' }, { value: 'na', label: 'N/A' }],
+};
+
+test('configured USD sales preserve micro-prices, invoice amounts and six-decimal payments', { timeout: 120_000 }, async t => {
+  const products = [{ id: 10, sku: 'USD-MICRO', name: 'USD Micro Product', description: 'Micro component', unit: 'pcs', price: '0.115300', currency: 'USD', stock: 0, isActive: true }];
+  const orders = [], writes = [];
+  const invoice = () => orders[0] ? { ...orders[0], id: 1, number: 'SI-MOCK-USD', orderNumber: orders[0].number, invoiceDate: '2026-11-14', dueDate: '2026-12-14', paidAmount: '0.000000', status: 'unpaid' } : null;
   const { page, origin, screenshot, assertSafe } = await mockBrowser(t, async ({ method, pathname, body }) => {
     if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: actor } };
-    if (method === 'GET' && pathname === '/api/customers') return { json: { records: [customer] } };
-    if (method === 'GET' && pathname === '/api/products') return { json: { records: products } };
-    if (method === 'GET' && pathname === '/api/product-options') return { json: { currencies: [
-      { id: 1, code: 'USD', description: 'US Dollar', isActive: true },
-      { id: 2, code: 'EUR', description: 'Euro', isActive: true },
-      { id: 3, code: 'PHP', description: 'Inactive Peso', isActive: false },
-    ] } };
-    if (method === 'GET' && pathname === '/api/sales-orders') return { json: { records: orders } };
-    if (method === 'GET' && pathname === '/api/sales-orders/1') return { json: { record: orders[0] } };
-    if (method === 'GET' && pathname === '/api/sales-invoices') return { json: { records: invoice() ? [invoice()] : [] } };
+    const lists = { '/api/customers': [customer], '/api/products': products, '/api/sales-orders': orders, '/api/sales-invoices': invoice() ? [invoice()] : [], '/api/delivery-receipts': [], '/api/shipping-invoices': [], '/api/users': [actor] };
+    if (method === 'GET' && lists[pathname]) return { json: { records: lists[pathname] } };
+    if (method === 'GET' && pathname === '/api/sales-order-options') return { json: options };
     if (method === 'GET' && pathname === '/api/sales-invoices/1') return { json: { record: invoice() } };
-    if (method === 'GET' && ['/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [actor] : [] } };
-    if (method === 'PATCH' && pathname === '/api/sales-invoices/1/payment') {
-      writes.push({ method, pathname, body });
-      return { json: { record: { ...invoice(), paidAmount: body.paidAmount } } };
-    }
+    if (method === 'PATCH' && pathname === '/api/sales-invoices/1/payment') { writes.push({ pathname, body }); return { json: { record: { ...invoice(), paidAmount: body.paidAmount } } }; }
     if (method === 'POST' && pathname === '/api/sales-orders') {
-      writes.push({ method, pathname, body });
-      const record = { ...body, id: 1, number: 'SO-MOCK-USD', customerName: customer.name, currency: 'USD', total: '207.54', invoiced: true, delivered: false, items: [{ productId: 10, productName: 'USD Micro Product', sku: 'USD-MICRO', unit: 'pcs', quantity: 1800, unitPrice: '0.115300', lineTotal: '207.54' }] };
-      orders.push(record);
-      return { status: 201, json: { record } };
+      writes.push({ pathname, body });
+      const record = { ...body, id: 1, number: 'SO-MOCK-USD', customerName: customer.name, preparedByName: actor.name, sourceCurrency: 'USD', decimalInTotalPrice: 2, grossAmount: '207.540000', discountAmount: '0.000000', netAmount: '207.540000', vatAmount: '0.000000', total: '207.540000', invoiced: true, delivered: false, items: [{ ...body.items[0], productName: products[0].name, sku: products[0].sku, unit: 'pcs', currency: 'USD', convertedUnitPrice: '0.115300', grossAmount: '207.540000', discountAmount: '0.000000', netAmount: '207.540000', vatAmount: '0.000000', amount: '207.540000', lineTotal: '207.540000' }] };
+      orders.push(record); return { status: 201, json: { record } };
     }
   }, { project: 'SalesSystem', screenshotName: 'sales-currency-mock-last.png' });
   await page.goto(origin);
@@ -43,92 +35,71 @@ test('USD sales uses configured currency choices, preserves micro-prices, and di
   await page.getByRole('button', { name: 'Sales Order', exact: true }).click();
   await page.getByRole('button', { name: 'New sales order', exact: false }).click();
   let dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('combobox', { name: 'Customer *', exact: true }).locator('option[value="20"]')).toHaveText('Mock USD Customer');
   await dialog.getByRole('combobox', { name: 'Customer *', exact: true }).selectOption('20');
+  await dialog.getByLabel('Expected delivery date *', { exact: true }).fill('2026-12-14');
+  await dialog.getByRole('combobox', { name: 'Shipment *', exact: true }).selectOption('air');
   await dialog.getByLabel('Product 1', { exact: true }).selectOption('10');
   await dialog.getByLabel('Quantity 1', { exact: true }).fill('1800');
   await dialog.getByRole('combobox', { name: 'Status *', exact: true }).selectOption('confirmed');
   const currency = dialog.getByRole('combobox', { name: 'Currency *', exact: true });
-  await expect.poll(() => currency.locator('option').evaluateAll(options => options.map(option => option.value))).toEqual(['', 'USD', 'EUR']);
+  await expect.poll(() => currency.locator('option').evaluateAll(values => values.map(option => option.value))).toEqual(['', 'USD', 'PHP']);
   await expect(currency).toHaveValue('');
   await expect(currency).toHaveAttribute('required', '');
   await expect(currency).toHaveAttribute('aria-required', 'true');
   await expect(dialog.locator('.order-bottom strong')).toHaveText('—');
-  await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
-  await expect(dialog.getByRole('alert')).toContainText('Choose an active currency');
-  await expect(currency).toBeFocused();
-  assert.equal(writes.length, 0, 'A currency must be selected before any order request.');
-  await currency.selectOption('EUR');
   await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('must match the selected product prices');
-  assert.equal(writes.length, 0, 'Selecting a different configured currency must not convert the product price.');
+  await expect(dialog.getByRole('alert')).toContainText('Choose an active currency');
+  await expect(currency).toBeFocused(); assert.equal(writes.length, 0);
   await currency.selectOption('USD');
   await expect(dialog.getByLabel('Unit price 1', { exact: true })).toHaveValue('0.115300');
-  const usdTotal = await page.evaluate(() => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'USD' }).format(207.54));
+  const usdTotal = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'USD' }).format(207.54);
   await expect(dialog.locator('.order-bottom strong')).toHaveText(usdTotal);
-  await screenshot('sales-usd-order-mocked.png');
-  await dialog.getByRole('button', { name: '+ Add product', exact: true }).click();
-  await dialog.getByLabel('Product 2', { exact: true }).selectOption('11');
-  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('same currency');
-  assert.equal(writes.length, 0, 'Mixed currency must be rejected before submitting an order.');
-  await dialog.getByRole('button', { name: 'Remove product 2', exact: true }).click();
   await expect(dialog.locator('.line-head .required-mark')).toHaveCount(3);
   await dialog.getByLabel('Unit price 1', { exact: true }).fill('');
-  await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
-  await expect(dialog.getByRole('alert')).toContainText('Enter a quantity and unit price');
-  assert.equal(writes.length, 0, 'A blank unit price must be rejected before numeric conversion or a request.');
-  await dialog.getByLabel('Unit price 1', { exact: true }).fill('0');
-  assert.equal(await dialog.getByLabel('Unit price 1', { exact: true }).evaluate(input => input.checkValidity()), true, 'A numeric zero price remains valid.');
-  await dialog.getByLabel('Unit price 1', { exact: true }).fill('0.115300');
   await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  assert.equal(writes.length, 1);
+  await expect(dialog.getByRole('alert')).toContainText('Enter a quantity and unit price'); assert.equal(writes.length, 0);
+  await dialog.getByLabel('Unit price 1', { exact: true }).fill('0');
+  assert.equal(await dialog.getByLabel('Unit price 1', { exact: true }).evaluate(input => input.checkValidity()), true);
+  await dialog.getByLabel('Unit price 1', { exact: true }).fill('0.115300');
+  await screenshot('sales-usd-order-mocked.png');
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
+  await expect(dialog).toHaveCount(0); assert.equal(writes.length, 1);
   assert.equal(writes[0].body.currency, 'USD');
-  assert.deepEqual(writes[0].body.items, [{ productId: 10, quantity: 1800, unitPrice: 0.1153 }]);
+  assert.deepEqual(writes[0].body.items, [{ productId: 10, quantity: '1800', unitPrice: '0.115300', refNumber: null, quotationNumber: null, discountRate: null, deliveryDate: null }]);
+  assert.equal(writes[0].body.billToCustomerId, 20); assert.equal(writes[0].body.discount, null);
   await page.getByRole('button', { name: 'Invoice', exact: true }).click();
   await page.getByRole('button', { name: 'View', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Invoice', exact: true });
   await expect(dialog.locator('.document-totals')).toContainText(usdTotal);
   await expect(dialog.getByRole('cell', { name: /0\.1153/ })).toBeVisible();
-  assert.equal((await dialog.innerText()).includes('₱'), false, 'USD documents must not be formatted as PHP.');
-  await screenshot('sales-usd-invoice-mocked.png');
+  await expect(dialog).toContainText('Mock USD Billing');
+  assert.equal((await dialog.innerText()).includes('₱'), false);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('button', { name: 'Payment', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Record payment', exact: true });
-  await expect(dialog.getByLabel(/^Total received to date \(USD\)/)).toBeVisible();
-  await expect(dialog.locator('.document-summary')).toContainText(usdTotal);
-  assert.equal((await dialog.innerText()).includes('₱'), false);
   const received = dialog.getByLabel(/^Total received to date \(USD\)/);
+  await expect(received).toHaveAttribute('step', '0.000001');
   await received.fill('');
   await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
-  await expect(dialog.getByRole('alert')).toContainText('Total received to date is required.');
-  assert.equal(writes.length, 1, 'A blank payment must not be converted to zero and submitted.');
-  await received.fill('0');
+  await expect(dialog.getByRole('alert')).toContainText('Total received to date is required.'); assert.equal(writes.length, 1);
+  await received.fill('0.000001');
   await dialog.getByRole('button', { name: 'Save payment', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  assert.equal(writes.at(-1).pathname, '/api/sales-invoices/1/payment');
-  assert.equal(writes.at(-1).body.paidAmount, 0, 'An explicit numeric zero remains valid.');
-  assertSafe();
+  assert.equal(writes.at(-1).body.paidAmount, '0.000001'); assertSafe();
 });
 
-test('empty or removed Configuration currencies cannot create or update an order or inject historical choices', { timeout: 120_000 }, async t => {
-  const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true, cpnumber: '', email: '', photo: '' };
-  const customer = { id: 20, name: 'Mock Customer', isActive: true };
+test('empty or removed Configuration choices block saving while preserving an open order draft', { timeout: 120_000 }, async t => {
   const product = { id: 10, sku: 'USD-MICRO', name: 'USD Micro Product', unit: 'pcs', price: '0.115300', currency: 'USD', stock: 0, isActive: true };
-  const order = { id: 1, number: 'SO-HISTORICAL', customerId: 20, customerName: customer.name, orderDate: '2026-11-13', currency: 'JPY', status: 'draft', total: '0.35', invoiced: false, delivered: false, items: [{ productId: 10, quantity: 3, unitPrice: '0.115300' }] };
-  let configured = [];
-  let optionReads = 0;
+  const order = { id: 1, number: 'SO-HISTORICAL', customerId: 20, customerName: customer.name, orderDate: '2026-11-14', currency: 'JPY', status: 'draft', total: '0.350000', invoiced: false, delivered: false, items: [{ productId: 10, quantity: 3, unitPrice: '0.115300' }] };
+  let configured = [], optionReads = 0;
   const writes = [];
   const { page, origin, assertSafe } = await mockBrowser(t, async ({ method, pathname, body }) => {
     if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: actor } };
-    if (method === 'GET' && pathname === '/api/customers') return { json: { records: [customer] } };
-    if (method === 'GET' && pathname === '/api/products') return { json: { records: [product] } };
-    if (method === 'GET' && pathname === '/api/sales-orders') return { json: { records: [order] } };
+    const lists = { '/api/customers': [customer], '/api/products': [product], '/api/sales-orders': [order], '/api/sales-invoices': [], '/api/delivery-receipts': [], '/api/shipping-invoices': [], '/api/users': [actor] };
+    if (method === 'GET' && lists[pathname]) return { json: { records: lists[pathname] } };
     if (method === 'GET' && pathname === '/api/sales-orders/1') return { json: { record: order } };
-    if (method === 'GET' && pathname === '/api/product-options') { optionReads++; return { json: { currencies: configured } }; }
-    if (method === 'GET' && ['/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [actor] : [] } };
-    if (['POST', 'PUT'].includes(method)) { writes.push({ method, pathname, body }); return { status: 500, json: { message: 'Invalid orders must never reach this mocked endpoint.' } }; }
+    if (method === 'GET' && pathname === '/api/sales-order-options') { optionReads++; return { json: { ...options, currencies: configured } }; }
+    if (['POST', 'PUT'].includes(method)) { writes.push({ pathname, body }); return { status: 500, json: { message: 'Invalid orders must never reach this mocked endpoint.' } }; }
   }, { project: 'SalesSystem' });
   await page.goto(origin);
   await expect(page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
@@ -142,44 +113,132 @@ test('empty or removed Configuration currencies cannot create or update an order
   await dialog.getByRole('textbox', { name: 'Notes', exact: true }).fill('Keep this unsaved draft.');
   await expect(dialog.getByText('No active currencies are available.', { exact: false })).toBeVisible();
   await expect(currency.locator('option')).toHaveCount(1);
-  await expect(currency).toHaveValue('');
   await expect(dialog.locator('.order-bottom strong')).toHaveText('—');
-  assert.equal((await dialog.innerText()).includes('₱'), false, 'An unselected currency must not display a PHP fallback.');
+  assert.equal((await dialog.innerText()).includes('₱'), false);
   await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
-  await expect(currency).toBeFocused();
-  await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   await expect(dialog.getByRole('alert')).toContainText('Choose an active currency');
   assert.equal(writes.length, 0);
-
-  const invalidateOptions = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('tti:sales:data-changed', { detail: { system: 'sales', resources: ['options'] } })));
-  configured = [{ id: 1, code: 'USD', description: 'US Dollar', isActive: true }, { id: 2, code: 'GBP', description: 'Inactive Sterling', isActive: false }];
-  await invalidateOptions();
-  await expect.poll(() => currency.locator('option').evaluateAll(options => options.map(option => option.value))).toEqual(['', 'USD']);
+  const invalidate = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('tti:sales:data-changed', { detail: { system: 'sales', resources: ['options'] } })));
+  configured = [options.currencies[0], options.currencies[2]];
+  await invalidate();
+  await expect.poll(() => currency.locator('option').evaluateAll(values => values.map(option => option.value))).toEqual(['', 'USD']);
   await currency.selectOption('USD');
   await expect(dialog.getByLabel('Quantity 1', { exact: true })).toHaveValue('3.125');
   await expect(dialog.getByLabel('Unit price 1', { exact: true })).toHaveValue('0.115300');
   await expect(dialog.getByRole('textbox', { name: 'Notes', exact: true })).toHaveValue('Keep this unsaved draft.');
   configured = [];
-  await invalidateOptions();
+  await invalidate();
   await expect(currency.locator('option')).toHaveCount(1);
   await expect(currency).toHaveValue('');
   await expect(dialog.getByRole('textbox', { name: 'Notes', exact: true })).toHaveValue('Keep this unsaved draft.');
-  await expect(dialog.locator('.order-bottom strong')).toHaveText('—');
-  await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('Choose an active currency');
-  assert.equal(writes.length, 0, 'A removed currency must block saving without clearing the draft.');
+  assert.equal(writes.length, 0);
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-
-  await page.getByRole('row').filter({ hasText: 'SO-HISTORICAL' }).getByRole('button', { name: 'Edit', exact: true }).click();
-  dialog = page.getByRole('dialog');
-  currency = dialog.getByRole('combobox', { name: 'Currency *', exact: true });
-  await expect(dialog.getByText('No active currencies are available.', { exact: false })).toBeVisible();
-  await expect(currency.locator('option')).toHaveCount(1);
-  await expect(currency).toHaveValue('');
-  await expect(dialog.locator('.order-bottom strong')).toHaveText('—');
-  await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await page.getByRole('row').filter({ hasText: order.number }).getByRole('button', { name: 'Edit', exact: true }).click();
+  dialog = page.getByRole('dialog'); currency = dialog.getByRole('combobox', { name: 'Currency *', exact: true });
+  await expect(currency.locator('option')).toHaveCount(1); await expect(currency).toHaveValue('');
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('Choose an active currency');
-  assert.equal(writes.length, 0, 'An inactive historical currency must not be inserted into the dropdown or submitted on update.');
-  assert.ok(optionReads >= 4, 'Configuration invalidations and edit opening must refresh the configured currency list.');
+  assert.equal(writes.length, 0); assert.ok(optionReads >= 4); assertSafe();
+});
+
+test('CAS sales header and items convert source prices, allow VAT overrides and monitor each line without Branch', { timeout: 120_000 }, async t => {
+  const products = [{ id: 10, sku: 'USD-PART', name: 'USD Part', description: 'Precision cable component', unit: 'PCS', price: '10.000000', currency: 'USD', stock: 10, isActive: true }, { id: 11, sku: 'PHP-PART', name: 'Peso Part', unit: 'PCS', price: '5.000000', currency: 'PHP', isActive: true }];
+  const orders = [], writes = [];
+  const { page, origin, screenshot, assertSafe } = await mockBrowser(t, async ({ method, pathname, body }) => {
+    if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: actor } };
+    const lists = { '/api/customers': [customer], '/api/products': products, '/api/sales-orders': orders, '/api/sales-invoices': [], '/api/delivery-receipts': [], '/api/shipping-invoices': [], '/api/users': [actor] };
+    if (method === 'GET' && lists[pathname]) return { json: { records: lists[pathname] } };
+    if (method === 'GET' && pathname === '/api/sales-order-options') return { json: options };
+    if (method === 'GET' && pathname === '/api/sales-orders/1') return { json: { record: orders[0] } };
+    if (method === 'POST' && pathname === '/api/sales-orders') {
+      writes.push(body);
+      const item = { ...body.items[0], id: 7, productName: products[0].name, description: products[0].description, sku: products[0].sku, unit: 'PCS', currency: 'USD', convertedUnitPrice: '550.000000', grossAmount: '1100.000000', discountAmount: '159.500000', netAmount: '940.500000', vatAmount: '112.860000', amount: '1053.360000', lineTotal: '1053.360000' };
+      const record = { ...body, id: 1, number: 'SO-FX-MOCK', customerName: customer.name, preparedByName: actor.name, sourceCurrency: 'USD', vatRate: '12.000000', decimalInTotalPrice: 2, total: '1053.360000', grossAmount: item.grossAmount, discountAmount: item.discountAmount, netAmount: item.netAmount, vatAmount: item.vatAmount, invoiced: false, delivered: false, items: [item] };
+      orders.push(record); return { status: 201, json: { record } };
+    }
+  }, { project: 'SalesSystem', viewport: { width: 1440, height: 1000 }, screenshotName: 'sales-order-rich-last.png' });
+  await page.goto(origin);
+  await expect(page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Sales Order', exact: true }).click();
+  await page.getByRole('button', { name: 'New sales order', exact: false }).click();
+  let dialog = page.getByRole('dialog');
+  await dialog.getByRole('combobox', { name: 'Customer *', exact: true }).selectOption('20');
+  await expect(dialog.getByLabel('Bill to *', { exact: true })).toHaveValue('20');
+  await expect(dialog.getByLabel('Billing address', { exact: true })).toHaveValue(customer.address);
+  await expect(dialog.getByLabel('Prepared by', { exact: true })).toHaveValue(actor.name);
+  await expect(dialog.getByLabel('VAT code *', { exact: true })).toHaveValue('VZ');
+  await expect(dialog.getByLabel('VAT pricing *', { exact: true })).toHaveValue('exclusive');
+  await expect(dialog.getByLabel('Payment term *', { exact: true })).toHaveValue('30 DAYS');
+  await expect(dialog.getByLabel('Discount (%)', { exact: true })).toHaveCount(0);
+  await dialog.getByLabel('Currency *', { exact: true }).selectOption('PHP');
+  await dialog.getByLabel('Product 1', { exact: true }).selectOption('10');
+  await dialog.getByLabel('Quantity 1', { exact: true }).fill('2');
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Expected delivery date is required'); assert.equal(writes.length, 0);
+  await dialog.getByLabel('Expected delivery date *', { exact: true }).fill('2026-12-14');
+  await dialog.getByLabel('Shipment *', { exact: true }).selectOption('air');
+  await dialog.getByLabel('Rate *', { exact: true }).fill('55');
+  await expect(dialog.locator('.sales-order-rate')).toHaveText('1 USD = 55 PHP');
+  await dialog.getByLabel('Reference 1', { exact: true }).fill('REF-2026');
+  await dialog.getByLabel('Quotation number 1', { exact: true }).fill('QT-14');
+  await dialog.getByLabel('Discount rate 1', { exact: true }).fill('10');
+  await dialog.getByLabel('VAT code *', { exact: true }).selectOption('UNKNOWN');
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Set the VAT rate in Configuration'); assert.equal(writes.length, 0);
+  await dialog.getByLabel('VAT code *', { exact: true }).selectOption('VS');
+  await dialog.getByLabel('Discount type', { exact: true }).selectOption('percent');
+  await dialog.getByLabel('Discount (%)', { exact: true }).fill('5');
+  const peso = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value);
+  await expect(dialog.locator('.sales-order-items tbody tr').first().locator('td').nth(7)).toHaveText(peso(550));
+  await expect(dialog.getByLabel('Unit price 1', { exact: true })).toHaveValue('10.000000');
+  await expect(dialog.locator('.order-bottom strong')).toHaveText(peso(1053.36));
+  await expect(dialog.locator('.sales-order-totals strong')).toHaveText([peso(1100), peso(159.5), peso(940.5), peso(112.86), peso(1053.36)]);
+  await dialog.getByLabel('VAT pricing *', { exact: true }).selectOption('inclusive');
+  await expect(dialog.locator('.order-bottom strong')).toHaveText(peso(940.5));
+  await dialog.getByLabel('VAT pricing *', { exact: true }).selectOption('exclusive');
+  await dialog.getByLabel('Discount type', { exact: true }).selectOption('');
+  await expect(dialog.getByLabel('Discount (%)', { exact: true })).toHaveCount(0);
+  await expect(dialog.locator('.order-bottom strong')).toHaveText(peso(1108.8));
+  await dialog.getByLabel('Discount type', { exact: true }).selectOption('percent');
+  await expect(dialog.getByLabel('Discount (%)', { exact: true })).toHaveValue('');
+  await dialog.getByLabel('Discount (%)', { exact: true }).fill('5');
+  await dialog.getByRole('button', { name: '+ Add product', exact: true }).click();
+  await dialog.getByLabel('Product 2', { exact: true }).selectOption('11');
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('same currency'); assert.equal(writes.length, 0);
+  await dialog.getByRole('button', { name: 'Remove product 2', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await dialog.locator('.modal-body').evaluate(element => { element.scrollTop = 0; });
+  await dialog.locator('.sales-order-items-scroll').evaluate(element => { element.scrollLeft = 0; });
+  assert.ok((await dialog.boundingBox()).width > 1300, 'The full header uses the available desktop width.');
+  await screenshot('sales-order-header-dark.png');
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Measure the responsive layout after the sidebar's margin transition ends.
+  await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))); });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.ok(await dialog.locator('.sales-order-items-scroll').evaluate(element => element.scrollWidth > element.clientWidth));
+  await screenshot('sales-order-header-mobile.png');
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
+  await expect(dialog).toHaveCount(0); assert.equal(writes.length, 1);
+  assert.equal(writes[0].rate, '55'); assert.equal(writes[0].currency, 'PHP'); assert.equal(writes[0].vatCode, 'VS'); assert.equal(writes[0].vatInclusive, false);
+  assert.equal(writes[0].discountType, 'percent'); assert.equal(writes[0].discount, '5');
+  assert.equal(writes[0].items[0].unitPrice, '10.000000'); assert.equal(writes[0].items[0].discountRate, '10');
+  for (const key of ['total', 'vatRate', 'grossAmount', 'preparedByName', 'branch']) assert.equal(Object.hasOwn(writes[0], key), false, key + ' must not be supplied as a trusted calculated/system value.');
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const table = page.locator('.sales-order-monitor .records-table');
+  await expect(table.getByRole('columnheader', { name: 'Branch', exact: true })).toHaveCount(0);
+  const row = table.getByRole('row').filter({ hasText: 'SO-FX-MOCK' });
+  await expect(row).toContainText('REF-2026'); await expect(row).toContainText('Precision cable component'); await expect(row).toContainText(peso(1053.36));
+  await expect(row.locator('td').nth(10)).toHaveText('2');
+  await row.getByRole('button', { name: 'View', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'Sales Order', exact: true });
+  await expect(dialog).toContainText('Bill to'); await expect(dialog).toContainText('Mock USD Billing'); await expect(dialog).toContainText('QT-14');
+  await expect(dialog.locator('.document-totals')).toContainText(peso(1053.36));
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+  await page.locator('.sales-order-monitor .table-scroll').evaluate(element => { element.scrollLeft = 0; });
+  await screenshot('sales-order-monitor-light.png');
   assertSafe();
 });

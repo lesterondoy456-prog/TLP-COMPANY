@@ -19,10 +19,8 @@ const TEXT_FIELDS = {
   unit: { label: 'UOP', max: 30, required: true },
   secondaryUnit: { label: 'UOP2', max: 30 },
   currency: { label: 'Currency', max: 30, required: true },
-  model: { label: 'Model', max: 150 },
-  category: { label: 'Category', max: 100 },
-  planType: { label: 'Plan Type', max: 100 },
-  color: { label: 'Color', max: 80 },
+  model: { label: 'Model / Item code', max: 150 },
+  category: { label: 'Category / Platform', max: 100 },
   remarks: { label: 'Remarks', max: 2000 },
   tagColor: { label: 'Tag Color', max: 30 },
 };
@@ -34,7 +32,6 @@ const NUMBER_FIELDS = {
   unitCost: { label: 'Unit Cost', places: 6 },
   price: { label: 'Selling Price', places: 6 },
   divisor: { label: 'Divisor', places: 6 },
-  thickness: { label: 'Thickness', places: 6 },
   weight: { label: 'Weight', places: 6 },
 };
 const ROW_LIMITS = { processes: 100, customerApprovals: 100, linkedSupplies: 200 };
@@ -68,7 +65,7 @@ function initialValues(record) {
     vatMode: record?.vatMode ?? '',
     productHeaderId: record?.productHeaderId ?? '',
     processes: (record?.processes || []).map(row => ({ name: row.name || '' })),
-    customerApprovals: (record?.customerApprovals || []).map(row => ({ ...row, approvalDate: dateInput(row.approvalDate), eolDate: dateInput(row.eolDate) })),
+    customerApprovals: (record?.customerApprovals || []).map(row => ({ customerId: row.customerId, approvalDate: dateInput(row.approvalDate), approvalRemarks: row.approvalRemarks ?? '' })),
     inventorySetup: record?.inventorySetup ?? '',
     linkedSupplies: (record?.linkedSupplies || []).map(row => ({ ...row })),
     isActive: record?.isActive !== false,
@@ -223,9 +220,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
     body.customerApprovals = form.customerApprovals.map(row => ({
         customerId: Number(row.customerId),
         approvalDate: row.approvalDate || null,
-        eolDate: row.eolDate || null,
         approvalRemarks: (row.approvalRemarks || '').trim() || null,
-        eolRemarks: (row.eolRemarks || '').trim() || null,
       }));
     body.inventorySetup = form.inventorySetup || null;
     body.linkedSupplies = form.linkedSupplies.map(row => ({ suppliesId: Number(row.suppliesId), quantity: Number(row.quantity), unit: row.unit || '' }));
@@ -274,10 +269,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
                 <div className="product-fields">
                   {textField('model')}
                   {optionField('category', categories, 'name', 'name', true)}
-                  {textField('planType')}
-                  {textField('color')}
                   {numberField('divisor')}
-                  {numberField('thickness')}
                   {numberField('weight')}
                   <label className="field" htmlFor={fieldId('productHeaderId')}><span>Product Header</span><select {...controlProps('productHeaderId', 'Product Header')} value={form.productHeaderId} onChange={event => set('productHeaderId', event.target.value)}><option value="">None</option>{form.productHeaderId && !headers.some(row => Number(row.id) === Number(form.productHeaderId)) && <option value={form.productHeaderId} disabled>Current product header</option>}{headers.map(row => <option key={row.id} value={row.id}>{row.sku} · {row.name || row.description}</option>)}</select>{fieldError('productHeaderId')}</label>
                   {textField('tagColor')}
@@ -295,15 +287,13 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
             </div>
           </div>
           <div role="tabpanel" id={formId + '-panel-customer'} aria-labelledby={formId + '-tab-customer'} hidden={tab !== 'customer'}>
-            <div className="product-tab-heading"><div><h3>Customer</h3><p>Record customer approval and end-of-life details.</p></div><button type="button" className="button secondary small" disabled={form.customerApprovals.length >= ROW_LIMITS.customerApprovals} onClick={() => set('customerApprovals', [...form.customerApprovals, { customerId: '', approvalDate: '', eolDate: '', approvalRemarks: '', eolRemarks: '' }])}>Add customer</button></div>
+            <div className="product-tab-heading"><div><h3>Customer</h3><p>Record customer approval details.</p></div><button type="button" className="button secondary small" disabled={form.customerApprovals.length >= ROW_LIMITS.customerApprovals} onClick={() => set('customerApprovals', [...form.customerApprovals, { customerId: '', approvalDate: '', approvalRemarks: '' }])}>Add customer</button></div>
             <div className="product-row-cards">{form.customerApprovals.map((row, index) => <section className="product-section" key={index}>
               <div className="product-section-heading"><h3>Customer {index + 1}</h3><button type="button" className="icon-button danger-text" aria-label={'Remove customer approval ' + (index + 1)} onClick={() => removeRow('customerApprovals', index)}><Icon name="x" size={16} /></button></div>
               <div className="product-fields">
                 <label className="field product-span-2"><span>Customer Name</span><select {...controlProps('customerApprovals.' + index + '.customerId', 'Customer Name ' + (index + 1))} value={row.customerId} onChange={event => updateRow('customerApprovals', index, 'customerId', event.target.value)}><option value="">Select a customer</option>{(options.customers || []).map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select>{fieldError('customerApprovals.' + index + '.customerId')}</label>
                 <label className="field"><span>Approval Date</span><input {...controlProps('customerApprovals.' + index + '.approvalDate', 'Approval Date ' + (index + 1))} type="date" value={row.approvalDate || ''} onChange={event => updateRow('customerApprovals', index, 'approvalDate', event.target.value)} />{fieldError('customerApprovals.' + index + '.approvalDate')}</label>
-                <label className="field"><span>EOL Date</span><input {...controlProps('customerApprovals.' + index + '.eolDate', 'EOL Date ' + (index + 1))} type="date" value={row.eolDate || ''} onChange={event => updateRow('customerApprovals', index, 'eolDate', event.target.value)} />{fieldError('customerApprovals.' + index + '.eolDate')}</label>
                 <label className="field"><span>Approval Remarks</span><textarea {...controlProps('customerApprovals.' + index + '.approvalRemarks', 'Approval Remarks ' + (index + 1))} rows={3} maxLength={2000} value={row.approvalRemarks || ''} onChange={event => updateRow('customerApprovals', index, 'approvalRemarks', event.target.value)} />{fieldError('customerApprovals.' + index + '.approvalRemarks')}</label>
-                <label className="field"><span>EOL Remarks</span><textarea {...controlProps('customerApprovals.' + index + '.eolRemarks', 'EOL Remarks ' + (index + 1))} rows={3} maxLength={2000} value={row.eolRemarks || ''} onChange={event => updateRow('customerApprovals', index, 'eolRemarks', event.target.value)} />{fieldError('customerApprovals.' + index + '.eolRemarks')}</label>
               </div>
             </section>)}{!form.customerApprovals.length && <div className="product-empty-panel">No customer approvals added.</div>}</div>
           </div>

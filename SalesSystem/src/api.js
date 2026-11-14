@@ -32,15 +32,22 @@ export async function api(path, options = {}) {
   return result;
 }
 
-function currencyAmount(value, currency, maximumFractionDigits) {
+function currencyAmount(value, currency, maximumFractionDigits, minimumFractionDigits = 2) {
   const code = String(currency || 'PHP').trim().toUpperCase() || 'PHP';
-  const format = { minimumFractionDigits: 2, maximumFractionDigits };
+  const format = { minimumFractionDigits, maximumFractionDigits };
+  const decimal = typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? value.trim() : Number.isFinite(value) ? value : 0;
   return /^[A-Z]{3}$/.test(code)
-    ? new Intl.NumberFormat('en-PH', { ...format, style: 'currency', currency: code }).format(Number(value) || 0)
-    : code + ' ' + new Intl.NumberFormat('en-PH', format).format(Number(value) || 0);
+    ? new Intl.NumberFormat('en-PH', { ...format, style: 'currency', currency: code }).format(decimal)
+    : code + ' ' + new Intl.NumberFormat('en-PH', format).format(decimal);
 }
-export const money = (value, currency = 'PHP') => currencyAmount(value, currency, 2);
+export const money = (value, currency = 'PHP', places = 2) => currencyAmount(value, currency, Math.max(0, Math.min(6, Number(places) || 0)), Math.max(0, Math.min(6, Number(places) || 0)));
 export const unitMoney = (value, currency = 'PHP') => currencyAmount(value, currency, 6);
+export function balanceAmount(total, paid) {
+  const parts = [total, paid].map(value => String(value ?? '0').split('.'));
+  const balance = BigInt(parts[0][0] + (parts[0][1] || '').padEnd(6, '0').slice(0, 6)) - BigInt(parts[1][0] + (parts[1][1] || '').padEnd(6, '0').slice(0, 6));
+  const digits = (balance < 0n ? -balance : balance).toString().padStart(7, '0');
+  return (balance < 0n ? '-' : '') + digits.slice(0, -6) + '.' + digits.slice(-6);
+}
 export const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 export const dateInput = value => value ? String(value).slice(0, 10) : '';
 export const dateLabel = value => value ? new Intl.DateTimeFormat('en-PH', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(dateInput(value) + 'T00:00:00Z')) : '—';

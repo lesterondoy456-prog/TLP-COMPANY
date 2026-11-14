@@ -1,0 +1,44 @@
+.invoice-monitor { min-width: 0; container-type: inline-size; }
+.invoice-monitor-hint { display: flex; align-items: center; gap: 7px; padding: 0 22px 16px; color: var(--muted); font-size: 11px; }
+.invoice-monitor-hint > svg { color: var(--accent); }
+.invoice-monitor .invoice-summary-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--accent) var(--surface-muted); }
+.invoice-monitor .invoice-summary-table { min-width: 2450px; width: 100%; border-collapse: separate; border-spacing: 0; }
+.invoice-monitor .invoice-summary-table > thead > tr > th { white-space: nowrap; }
+.invoice-monitor .invoice-summary-row { cursor: pointer; outline-offset: -3px; }
+.invoice-monitor .invoice-summary-row:focus-visible { outline: 2px solid var(--focus-ring); }
+.invoice-monitor .invoice-summary-row > td { vertical-align: top; background: var(--surface); border-bottom: 1px solid var(--line); padding: 18px 16px; line-height: 1.6; }
+.invoice-monitor .invoice-summary-row:hover > td, .invoice-monitor .invoice-group-open .invoice-summary-row > td { background: var(--surface-hover); }
+.invoice-monitor .invoice-summary-row > td:first-child, .invoice-monitor .invoice-summary-table > thead > tr > th:first-child { position: sticky; left: 0; z-index: 2; min-width: 195px; border-right: 1px solid var(--line); }
+.invoice-monitor .invoice-summary-row > td:last-child, .invoice-monitor .invoice-summary-table > thead > tr > th:last-child { position: sticky; right: 0; z-index: 2; min-width: 140px; border-left: 1px solid var(--line); box-shadow: -5px 0 10px #00000008; }
+.invoice-number-cell { display: flex; gap: 9px; align-items: center; }
+.invoice-number-cell .invoice-expand { width: 28px; height: 28px; flex: 0 0 28px; color: var(--muted); border: 1px solid var(--line); border-radius: 7px; background: var(--surface-raised); }
+.invoice-number-cell .invoice-expand svg { transition: transform .18s ease, color .18s ease; }
+.invoice-number-cell .invoice-expand[aria-expanded='true'] { color: var(--accent); background: var(--accent-soft); }
+.invoice-number-cell .invoice-expand[aria-expanded='true'] svg { transform: rotate(90deg); }
+.invoice-number-cell .document-number { white-space: nowrap; }
+.invoice-monitor .invoice-bill-to { min-width: 240px; max-width: 320px; white-space: normal; overflow-wrap: anywhere; }
+.invoice-bill-to > small { white-space: pre-line; color: var(--muted); margin-top: 5px; font-size: 10px; }
+.invoice-monitor .invoice-summary-row .numeric { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.invoice-monitor .invoice-expansion-row:hover { background: transparent; }
+.invoice-monitor .invoice-expansion-row > td { padding: 0; background: var(--surface-muted); border-bottom: 1px solid var(--line); }
+.invoice-item-panel { width: calc(100cqw - 2px); max-width: 100%; min-width: 0; position: sticky; left: 0; padding: 19px 20px 22px; background: var(--surface-muted); animation: invoice-items-enter .18s ease-out both; }
+.invoice-item-heading, .invoice-item-heading > div { display: flex; align-items: center; gap: 10px; }
+.invoice-item-heading { justify-content: space-between; margin-bottom: 16px; }
+.invoice-item-heading h3 { margin: 0; color: var(--text-strong); font-size: 12px; }
+.invoice-item-heading p { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
+.invoice-item-icon { display: grid; place-items: center; width: 31px; height: 31px; color: var(--accent); background: var(--accent-soft); border-radius: 8px; flex-shrink: 0; }
+.invoice-updating { color: var(--muted); font-size: 10px; }
+.invoice-item-error { align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 14px; white-space: normal; }
+.invoice-item-error > button { flex-shrink: 0; }
+.invoice-item-panel .invoice-items-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--accent) var(--surface); border: 1px solid var(--line); border-radius: 9px; }
+.invoice-item-panel .invoice-items-table { min-width: 1800px; width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+.invoice-item-panel .invoice-items-table th { padding: 11px 14px; color: var(--muted); background: var(--surface-raised); border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 500; white-space: nowrap; text-align: left; }
+.invoice-item-panel .invoice-items-table td { padding: 14px; color: var(--text); background: var(--surface); border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; line-height: 1.6; }
+.invoice-item-panel .invoice-items-table tbody tr:last-child td { border-bottom: 0; }
+.invoice-item-panel .invoice-items-table th.numeric, .invoice-item-panel .invoice-items-table td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.invoice-item-panel .invoice-items-table td:nth-child(1) { min-width: 150px; color: var(--text-strong); }
+.invoice-item-panel .invoice-items-table td:nth-child(2) { min-width: 240px; max-width: 300px; white-space: normal; overflow-wrap: anywhere; }
+.invoice-items-empty { padding: 25px 18px; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 9px; font-size: 12px; text-align: center; }
+@keyframes invoice-items-enter { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 680px) { .invoice-monitor-hint { padding: 0 16px 15px; font-size: 10px; } .invoice-item-panel { padding: 15px 12px 17px; } .invoice-monitor .invoice-summary-row > td:first-child, .invoice-monitor .invoice-summary-table > thead > tr > th:first-child, .invoice-monitor .invoice-summary-row > td:last-child, .invoice-monitor .invoice-summary-table > thead > tr > th:last-child { position: static; } .invoice-item-heading { align-items: flex-start; } .invoice-item-error { align-items: flex-start; flex-direction: column; } }
+@media (prefers-reduced-motion: reduce) { .invoice-item-panel { animation: none; } .invoice-number-cell .invoice-expand svg { transition: none; } }

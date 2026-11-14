@@ -306,3 +306,29 @@
     font-size: 11px;
   }
 }
+
+/* Product monitoring keeps catalog and approval details in one contained table. */
+.product-monitor { min-width: 0; max-width: 100%; }
+.product-monitor .table-scroll { max-width: 100%; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--accent) var(--surface-muted); }
+.product-monitor .records-table { min-width: 4000px; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.product-monitor .records-table th { width: 140px; white-space: normal; line-height: 1.5; }
+.product-monitor .records-table td { vertical-align: top; white-space: normal; overflow-wrap: anywhere; line-height: 1.6; background: var(--surface); border-right: 1px solid var(--line); padding: 16px; }
+.product-monitor .records-table tbody tr:hover td { background: var(--surface-hover); }
+.product-monitor .records-table .product-code-column { width: 200px; position: sticky; left: 0; z-index: 2; box-shadow: 1px 0 var(--line); }
+.product-monitor .records-table .product-actions-column { width: 130px; position: sticky; right: 0; z-index: 2; box-shadow: -1px 0 var(--line); }
+.product-monitor .records-table th.product-code-column, .product-monitor .records-table th.product-actions-column { z-index: 3; }
+.product-monitor .records-table .product-description-column, .product-monitor .records-table .product-supplies-column { width: 280px; }
+.product-monitor .records-table .product-approvals-column { width: 340px; }
+.product-monitor .records-table .product-model-column { width: 180px; }
+.product-monitor .records-table .product-small-column { width: 90px; }
+.product-monitor .records-table .product-number-column { width: 110px; }
+.product-monitor .entity-icon { flex-shrink: 0; }
+.product-monitor .entity-cell { align-items: flex-start; }
+.product-monitor .records-table td.product-lines-cell, .product-monitor .records-table td.product-description-column { white-space: pre-line; }
+.product-related-block + .product-related-block { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.product-related-block > strong { display: block; color: var(--text-strong); font-weight: 650; }
+.product-related-block > span { display: block; color: var(--accent); font-size: 10px; margin-top: 5px; }
+.product-related-block > p { margin: 6px 0 0; white-space: pre-line; }
+@media (max-width: 600px) {
+  .product-monitor .records-table .product-code-column, .product-monitor .records-table .product-actions-column { position: static; box-shadow: none; }
+}

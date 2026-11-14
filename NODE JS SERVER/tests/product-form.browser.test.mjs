@@ -23,7 +23,10 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     if (method === 'GET' && pathname === '/api/configuration') return { json: { modules: configurationMetadata() } };
     if (method === 'GET' && pathname === '/api/product-options') return { json: options };
     if (method === 'GET' && pathname === '/api/products') return { json: { records } };
-    if (method === 'GET' && /^\/api\/products\/\d+$/.test(pathname)) return { json: { record: { ...records.find(record => record.id === Number(pathname.split('/').pop())), offices: [{ name: 'Legacy Office' }], inventorySchedules: [{ scheduleDate: '2026-11-13', month: 'Legacy editable schedule' }] } } };
+    if (method === 'GET' && /^\/api\/products\/\d+$/.test(pathname)) {
+      const record = records.find(record => record.id === Number(pathname.split('/').pop()));
+      return { json: { record: { ...record, color: 'Retired color', planType: 'Retired plan', thickness: 99, customerApprovals: (record.customerApprovals || []).map(row => ({ ...row, eolDate: '2099-01-01', eolRemarks: 'Retired EOL remarks' })), offices: [{ name: 'Legacy Office' }], inventorySchedules: [{ scheduleDate: '2026-11-13', month: 'Legacy editable schedule' }] } } };
+    }
     if (method === 'GET' && ['/api/customers', '/api/sales-orders', '/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [admin] : [] } };
     if ((method === 'POST' && pathname === '/api/products') || (method === 'PUT' && /^\/api\/products\/\d+$/.test(pathname))) {
       writes.push({ method, pathname, body });
@@ -52,7 +55,8 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   }
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   for (const tab of Object.values(tabs)) await expect(tab).toBeVisible();
-  for (const label of ['Code *', 'Rev', 'Description', 'UOP *', 'UOP2', 'Qty per UOP2', 'MOQ', 'SPQ', 'Unit Cost', 'Selling Price', 'Currency *', 'Model', 'Category', 'Plan Type', 'Color', 'Divisor', 'Thickness', 'Weight', 'Product Header', 'Remarks', 'Tag Color']) await expect(field(label)).toBeVisible();
+  for (const label of ['Code *', 'Rev', 'Description', 'UOP *', 'UOP2', 'Qty per UOP2', 'MOQ', 'SPQ', 'Unit Cost', 'Selling Price', 'Currency *', 'Model / Item code', 'Category / Platform', 'Divisor', 'Weight', 'Product Header', 'Remarks', 'Tag Color']) await expect(field(label)).toBeVisible();
+  for (const label of ['Plan Type', 'Color', 'Thickness']) await expect(field(label)).toHaveCount(0);
   await expect(field('Product Id')).toHaveCount(0);
   await expect(panel('Basic Info').getByRole('heading', { name: 'Office', exact: true })).toHaveCount(0);
   await expect(panel('Basic Info').getByRole('checkbox')).toHaveCount(0);
@@ -86,11 +90,11 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await expect(tabs['Basic Info']).toHaveAttribute('aria-selected', 'true');
   await expect(field('Qty per UOP2')).toBeFocused();
   assert.equal(writes.length, 0);
-  const numbers = { 'Qty per UOP2': '12.000001', MOQ: '100', SPQ: '10', 'Unit Cost': '5.123456', 'Selling Price': '12.34', Divisor: '2.5', Thickness: '0.25', Weight: '3.000001' };
+  const numbers = { 'Qty per UOP2': '12.000001', MOQ: '100', SPQ: '10', 'Unit Cost': '5.123456', 'Selling Price': '12.34', Divisor: '2.5', Weight: '3.000001' };
   for (const [label, value] of Object.entries(numbers)) await field(label).fill(value);
-  const textValues = { Model: 'Model X', 'Plan Type': 'Make to order', Color: 'Blue', Remarks: ' Mock product remarks ', 'Tag Color': '#33ccff' };
+  const textValues = { 'Model / Item code': 'Model X', Remarks: ' Mock product remarks ', 'Tag Color': '#33ccff' };
   for (const [label, value] of Object.entries(textValues)) await field(label).fill(value);
-  await field('Category').selectOption('Packaging');
+  await field('Category / Platform').selectOption('Packaging');
   await field('Product Header').selectOption('20');
   await panel('Basic Info').getByRole('radio', { name: 'Inclusive', exact: true }).check();
   for (const [index, name] of ['Printing', 'Cutting'].entries()) {
@@ -100,18 +104,17 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await screenshot('product-basic-info-mocked.png');
   await tabs.Customer.click();
   await panel('Customer').getByRole('button', { name: 'Add customer', exact: true }).click();
+  await expect(panel('Customer').getByLabel('EOL Date 1', { exact: true })).toHaveCount(0);
+  await expect(panel('Customer').getByLabel('EOL Remarks 1', { exact: true })).toHaveCount(0);
   await expect(panel('Customer').getByLabel('Customer Name 1', { exact: true }).locator('option[value="10"]')).toHaveText('Mock Customer A');
-  await panel('Customer').getByLabel('Customer Name 1', { exact: true }).selectOption('10');
-  await panel('Customer').getByLabel('Approval Date 1', { exact: true }).fill('2026-11-13');
-  await panel('Customer').getByLabel('EOL Date 1', { exact: true }).fill('2026-11-12');
   await tabs['Basic Info'].click();
   await save.click();
   await expect(tabs.Customer).toHaveAttribute('aria-selected', 'true');
-  await expect(panel('Customer').getByLabel('EOL Date 1', { exact: true })).toBeFocused();
+  await expect(panel('Customer').getByLabel('Customer Name 1', { exact: true })).toBeFocused();
   assert.equal(writes.length, 0);
-  await panel('Customer').getByLabel('EOL Date 1', { exact: true }).fill('2026-12-31');
+  await panel('Customer').getByLabel('Customer Name 1', { exact: true }).selectOption('10');
+  await panel('Customer').getByLabel('Approval Date 1', { exact: true }).fill('2026-11-13');
   await panel('Customer').getByLabel('Approval Remarks 1', { exact: true }).fill(' Approved sample ');
-  await panel('Customer').getByLabel('EOL Remarks 1', { exact: true }).fill(' Review at year end ');
   await panel('Customer').getByRole('button', { name: 'Add customer', exact: true }).click();
   await panel('Customer').getByLabel('Customer Name 2', { exact: true }).selectOption('11');
   await screenshot('product-customers-mocked.png');
@@ -148,10 +151,10 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await expect(dialog).toHaveCount(0);
   const expected = {
     sku: 'MOCK-PRODUCT', revision: '1', description: 'Mock Product Description', unit: 'pcs', secondaryUnit: 'box', currency: 'PHP',
-    model: 'Model X', category: 'Packaging', planType: 'Make to order', color: 'Blue', remarks: 'Mock product remarks', tagColor: '#33ccff',
-    quantityPerSecondaryUnit: 12.000001, moq: 100, spq: 10, unitCost: 5.123456, price: 12.34, divisor: 2.5, thickness: 0.25, weight: 3.000001,
+    model: 'Model X', category: 'Packaging', remarks: 'Mock product remarks', tagColor: '#33ccff',
+    quantityPerSecondaryUnit: 12.000001, moq: 100, spq: 10, unitCost: 5.123456, price: 12.34, divisor: 2.5, weight: 3.000001,
     vatMode: 'inclusive', productHeaderId: 20, processes: [{ name: 'Printing' }, { name: 'Cutting' }],
-    customerApprovals: [{ customerId: 10, approvalDate: '2026-11-13', eolDate: '2026-12-31', approvalRemarks: 'Approved sample', eolRemarks: 'Review at year end' }, { customerId: 11, approvalDate: null, eolDate: null, approvalRemarks: null, eolRemarks: null }],
+    customerApprovals: [{ customerId: 10, approvalDate: '2026-11-13', approvalRemarks: 'Approved sample' }, { customerId: 11, approvalDate: null, approvalRemarks: null }],
     inventorySetup: 'monthly',
     linkedSupplies: [{ suppliesId: 30, quantity: 1.234567, unit: 'kg' }], isActive: true,
   };
@@ -170,6 +173,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await expect(activeProduct).toBeChecked();
   await activeProduct.uncheck();
   await expect(field('Product Id')).toHaveCount(0);
+  for (const label of ['Plan Type', 'Color', 'Thickness']) await expect(field(label)).toHaveCount(0);
   await expect(panel('Basic Info').getByRole('heading', { name: 'Office', exact: true })).toHaveCount(0);
   await expect(panel('Basic Info').getByRole('checkbox')).toHaveCount(0);
   await expect(field('Code *')).toHaveValue('MOCK-PRODUCT');
@@ -208,9 +212,10 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   await save.click();
   await expect(dialog).toHaveCount(0);
   const emptyOptional = writes.at(-1).body;
-  for (const key of ['revision', 'description', 'secondaryUnit', 'model', 'category', 'planType', 'color', 'remarks', 'tagColor', 'quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'price', 'divisor', 'thickness', 'weight', 'vatMode', 'inventorySetup']) assert.equal(emptyOptional[key], null, key + ' must stay NULL when no value is entered.');
+  for (const key of ['revision', 'description', 'secondaryUnit', 'model', 'category', 'remarks', 'tagColor', 'quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'price', 'divisor', 'weight', 'vatMode', 'inventorySetup']) assert.equal(emptyOptional[key], null, key + ' must stay NULL when no value is entered.');
+  for (const key of ['planType', 'color', 'thickness']) assert.equal(Object.hasOwn(emptyOptional, key), false);
   const nullableRow = page.getByRole('row').filter({ hasText: 'NULLABLE-PRODUCT' });
-  await expect(nullableRow.locator('td').nth(2)).toHaveText('\u2014');
+  await expect(nullableRow.locator('.product-price-cell')).toHaveText('\u2014');
   await nullableRow.getByRole('button', { name: 'Edit', exact: true }).click();
   await field('Selling Price').fill('0');
   await field('MOQ').fill('0');
@@ -219,5 +224,72 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   assert.equal(writes.at(-1).body.price, 0);
   assert.equal(writes.at(-1).body.moq, 0);
   assert.equal(writes.at(-1).body.revision, null);
+  assertSafe();
+});
+
+test('Product monitoring shows retained catalog and approval details without retired fields on desktop and mobile', { timeout: 60_000 }, async t => {
+  const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true };
+  const product = {
+    id: 10, sku: 'BOX-MONITOR', name: 'Printed export box', description: 'Printed export box\nReinforced packaging for shipment',
+    model: 'ITEM-X', category: 'Platform A', revision: '0', unit: 'pcs', secondaryUnit: 'box', quantityPerSecondaryUnit: '12.000001', moq: 0, spq: 10,
+    vatMode: 'customer', unitCost: 0, price: '0.115300', currency: 'USD', divisor: '2.5', weight: '3.000001',
+    productHeaderCode: 'BOX-HEADER', productHeaderName: 'Export packaging header', tagColor: '#3366ff', inventorySetup: 'quarterly',
+    remarks: 'Keep dry.\nUse approved packaging.', stock: '125.500', isActive: true, processes: [{ name: 'Printing' }, { name: 'Cutting' }],
+    customerApprovals: [{ customerId: 20, customerName: 'Mock Customer A', approvalDate: '2026-11-13', approvalRemarks: 'Approved printed sample.', eolDate: '2099-01-01', eolRemarks: 'RETIRED EOL TEXT' }, { customerId: 21, customerName: 'Mock Customer B', approvalDate: null, approvalRemarks: null }],
+    linkedSupplies: [{ suppliesId: 30, code: 'S-PAPER', name: 'Paper roll', quantity: '0.123456', unit: 'kg' }],
+    planType: 'RETIRED PLAN TEXT', color: 'RETIRED COLOR TEXT', thickness: '999.123456',
+  };
+  const empty = { id: 11, sku: 'EMPTY-PRODUCT', name: 'EMPTY-PRODUCT', description: null, unit: 'pcs', currency: 'USD', price: null, stock: 0, isActive: false };
+  const { page, origin, screenshot, apiRequests, assertSafe } = await mockBrowser(t, async ({ method, pathname }) => {
+    if (method !== 'GET') throw new Error('Product monitoring checks must not save records.');
+    if (pathname === '/api/auth/session') return { json: { user: actor } };
+    if (pathname === '/api/products') return { json: { records: [product, empty] } };
+    if (['/api/customers', '/api/sales-orders', '/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [actor] : [] } };
+  }, { project: 'SalesSystem', viewport: { width: 1440, height: 1000 }, screenshotName: 'product-monitor-last.png' });
+  await page.goto(origin);
+  await expect(page.getByRole('heading', { name: 'Customer', level: 1, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  const table = page.locator('.product-monitor .records-table');
+  const headers = ['Code', 'Description', 'Model / Item code', 'Category / Platform', 'Rev', 'UOP', 'UOP2', 'Qty per UOP2', 'MOQ', 'SPQ', 'VAT setting', 'Unit cost', 'Selling price', 'Currency', 'Customer approvals', 'Process', 'Divisor', 'Weight', 'Product header', 'Tag color', 'Inventory setup', 'Linked supplies', 'Remarks', 'Stock on hand', 'Status', 'Actions'];
+  await expect(table.getByRole('columnheader')).toHaveText(headers);
+  const row = table.getByRole('row').filter({ hasText: product.sku });
+  const cells = row.locator('td');
+  for (const [index, value] of [[0, product.sku], [1, product.description], [2, product.model], [3, product.category], [4, '0'], [5, 'pcs'], [6, 'box'], [7, '12.000001'], [8, '0'], [9, '10'], [10, 'Customer setting'], [13, 'USD'], [15, 'Printing\nCutting'], [16, '2.5'], [17, '3.000001'], [19, product.tagColor], [20, 'Quarterly'], [22, product.remarks], [23, '125.5'], [24, 'Active']]) await expect(cells.nth(index)).toHaveText(value);
+  const usd = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value);
+  await expect(cells.nth(11)).toHaveText(usd(0));
+  await expect(cells.nth(12)).toHaveText(usd(0.1153));
+  await expect(cells.nth(18)).toContainText(product.productHeaderCode);
+  await expect(cells.nth(18)).toContainText(product.productHeaderName);
+  for (const index of [1, 15, 22]) await expect(cells.nth(index)).toHaveCSS('white-space', 'pre-line');
+  const approvals = cells.nth(14);
+  await expect(approvals.locator('.product-related-block > strong')).toHaveText(['Mock Customer A', 'Mock Customer B']);
+  await expect(approvals.locator('.product-related-block > span')).toHaveText(['Approval date · Nov 13, 2026', 'Approval date · —']);
+  await expect(approvals.locator('p')).toHaveText(['Approved printed sample.', '—']);
+  await expect(cells.nth(21)).toContainText('Paper roll');
+  await expect(cells.nth(21)).toContainText('0.123456 kg');
+  for (const retired of ['RETIRED PLAN TEXT', 'RETIRED COLOR TEXT', 'RETIRED EOL TEXT', '999.123456', '2099-01-01']) await expect(table.getByText(retired, { exact: true })).toHaveCount(0);
+  const emptyCells = table.getByRole('row').filter({ hasText: empty.sku }).locator('td');
+  for (const index of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 19, 20, 21, 22]) await expect(emptyCells.nth(index)).toHaveText('—');
+  await expect(emptyCells.nth(23)).toHaveText('0');
+  await expect(emptyCells.nth(24)).toHaveText('Inactive');
+  const scroller = page.locator('.product-monitor .table-scroll');
+  assert.ok(await scroller.evaluate(element => element.scrollWidth > element.clientWidth));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await expect(cells.first()).toHaveCSS('position', 'sticky');
+  await expect(cells.last()).toHaveCSS('position', 'sticky');
+  await screenshot('product-monitor-dark-desktop.png');
+  await approvals.scrollIntoViewIfNeeded();
+  await screenshot('product-monitor-approvals-desktop.png');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))); });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await expect(cells.first()).toHaveCSS('position', 'static');
+  await expect(cells.last()).toHaveCSS('position', 'static');
+  await approvals.scrollIntoViewIfNeeded();
+  await screenshot('product-monitor-approvals-mobile.png');
+  await scroller.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+  await expect(row.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
+  assert.ok(apiRequests.every(request => request.method === 'GET'));
   assertSafe();
 });

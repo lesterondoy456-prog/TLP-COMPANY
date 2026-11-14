@@ -5,6 +5,14 @@ import { Icon } from './Icons.jsx';
 
 export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigate, onProfile, notice, onNotice, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('tti-purchasing-sidebar-collapsed') === 'true'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('tti-purchasing-sidebar-collapsed', String(sidebarCollapsed)); }
+    catch { /* Keep the toggle usable when browser storage is unavailable. */ }
+  }, [sidebarCollapsed]);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [error, setError] = useState('');
   const administrator = user.role === 'admin' && user.system === app.system;
@@ -51,22 +59,23 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
   }
 
 
-  return <div className="app-shell">
+  return <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
     {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
-    <aside className={'sidebar ' + (menuOpen ? 'open' : '')}>
+    <aside id="purchasing-sidebar" className={'sidebar ' + (menuOpen ? 'open' : '')}>
       <div className="brand"><div className="brand-mark">T</div><div><strong>TTI Laguna Philippines Inc.</strong><span>{app.appName}</span></div></div>
+      <button className="icon-button sidebar-mobile-toggle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="purchasing-sidebar" onClick={() => setSidebarCollapsed(current => !current)}><Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} size={18} /></button>
       <p className="nav-label">{app.label.toUpperCase()}</p>
       <nav aria-label={app.navLabel}>
-        {tabs.map(item => <button key={item.id} className={'nav-item ' + (tab === item.id ? 'active' : '')} aria-current={tab === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon name={item.icon} size={18} /><span>{item.title}</span></button>)}
-        {administrator && <><p className="nav-label administration">ACCOUNTS</p><button className={'nav-item ' + (tab === 'users' ? 'active' : '')} aria-current={tab === 'users' ? 'page' : undefined} onClick={() => navigate('users')}><Icon name="shield" size={18} /><span>{app.userTable}</span></button></>}
+        {tabs.map(item => <button key={item.id} aria-label={item.title} title={item.title} className={'nav-item ' + (tab === item.id ? 'active' : '')} aria-current={tab === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon name={item.icon} size={18} /><span>{item.title}</span></button>)}
+        {administrator && <><p className="nav-label administration">ACCOUNTS</p><button aria-label={app.userTable} title={app.userTable} className={'nav-item ' + (tab === 'users' ? 'active' : '')} aria-current={tab === 'users' ? 'page' : undefined} onClick={() => navigate('users')}><Icon name="shield" size={18} /><span>{app.userTable}</span></button></>}
       </nav>
       <div className="sidebar-bottom">
-        <button className="account-button" onClick={() => { onProfile(); setMenuOpen(false); }}><Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span><Icon name="chevronRight" size={16} /></button>
+        <button className="account-button" aria-label={'Open profile: ' + (user.name || user.username)} title={'Open profile: ' + (user.name || user.username)} onClick={() => { onProfile(); setMenuOpen(false); }}><Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span><Icon name="chevronRight" size={16} /></button>
       </div>
     </aside>
     <div className="main-shell">
       <header className="topbar">
-        <div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>{app.appName}</span><Icon name="chevronRight" size={13} /><strong>{current.title}</strong></div>
+        <div className="breadcrumb"><button className="icon-button sidebar-toggle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="purchasing-sidebar" onClick={() => setSidebarCollapsed(current => !current)}><Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} size={18} /></button><button className="icon-button mobile-menu" aria-label="Open navigation" aria-controls="purchasing-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Icon name="menu" /></button><span>{app.appName}</span><Icon name="chevronRight" size={13} /><strong>{current.title}</strong></div>
         <div className="topbar-right"><ThemeToggle /><span className="today-label">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())}</span><button className="signout-button" disabled={logoutBusy} onClick={logout}><Icon name="logout" size={17} /><span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span></button></div>
       </header>
       <main className="workspace-content">

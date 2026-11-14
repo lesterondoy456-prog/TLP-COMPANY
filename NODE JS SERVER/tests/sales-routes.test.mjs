@@ -22,6 +22,7 @@ function routeFixture(steps, initial = {}) {
         input(key, _type, value) { values[key] = value; return this; },
         async query(query) {
           assert.doesNotMatch(query, /dbo\.ProductOffices\b/, 'Product Office associations must never be queried or saved.');
+          assert.doesNotMatch(query, /\[(?:color|thickness|planType)\]|@(?:color|thickness|planType)\b|\beolDate\b|\beolRemarks\b/i, 'Removed Product fields must not be queried or saved.');
           for (const statement of query.split(';')) {
             if (/\b(?:FROM|INTO|UPDATE)\s+dbo\.Customers\b/i.test(statement)) assert.doesNotMatch(statement, /\bcode\b/i, 'Customer codes are not stored or queried.');
           }
@@ -211,6 +212,38 @@ test('a successful delivery deducts stock within its receipt transaction and lin
   duplicate.done();
 });
 
+test('Invoice list and expanded detail preserve financial snapshots, legacy NULL values and exact item amounts without writes', async () => {
+  const detailed = { id: 7, number: 'SI-MOCK', orderId: 8, orderNumber: 'SO-MOCK', customerName: 'Customer', currency: 'PHP', sourceCurrency: 'USD', rate: '55.000000', preparedByName: 'Invoice author', sourcePreparedByName: 'Source author', grossAmount: '1100.000000', lineDiscountAmount: '110.000000', headerDiscountAmount: '49.500000', discountAmount: '159.500000', netAmount: '940.500000', vatAmount: '112.860000', amount: '1053.360000', total: '1053.360000', paidAmount: '0.000001' };
+  const legacy = { id: 9, number: 'SI-LEGACY', orderId: 10, total: '207.540000', paidAmount: '0.000000', grossAmount: null, discountAmount: null, netAmount: null, vatAmount: null, amount: null };
+  const checkHeader = (_values, _state, query) => {
+    for (const name of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) assert.ok(query.includes('CONVERT(varchar(60),o.' + name + ') AS ' + name), name);
+    assert.match(query, /o\.sourceCurrency,CONVERT\(varchar\(60\),o\.rate\) AS rate/);
+    assert.match(query, /invoiceCreator\.name AS preparedByName,o\.preparedByName AS sourcePreparedByName/);
+    assert.match(query, /LEFT JOIN dbo\.SalesUserLogin invoiceCreator ON invoiceCreator\.id=i\.createdBy/);
+    assert.match(query, /CONVERT\(varchar\(60\),i\.total\) AS total,CONVERT\(varchar\(60\),i\.paidAmount\) AS paidAmount/);
+    assert.doesNotMatch(query, /CreditNote|COALESCE\(o\.(?:grossAmount|discountAmount|netAmount|vatAmount),0\)/i);
+  };
+  const listed = routeFixture([step(/FROM dbo\.SalesInvoices i JOIN dbo\.SalesOrders o/, [detailed, legacy], checkHeader)]);
+  assert.deepEqual((await listed.invoke('get', '/sales-invoices', {})).body.records, [detailed, legacy]);
+  assert.equal(listed.state.commits, 0);
+  listed.done();
+  for (const invoice of [detailed, legacy]) {
+    const item = { id: 11, orderId: invoice.orderId, productId: 12, productName: 'Snapshot product', refNumber: 'REF', quotationNumber: null, description: 'Snapshot description', quantity: '0.333', unitPrice: '0.115300', convertedUnitPrice: invoice === detailed ? '6.341500' : null, grossAmount: invoice === detailed ? '2.110000' : null, discountAmount: null, netAmount: null, vatAmount: null, amount: '0.040000', lineTotal: '0.040000', currency: 'USD', sourceCurrency: 'USD' };
+    const expanded = routeFixture([
+      step(/FROM dbo\.SalesInvoices i JOIN dbo\.SalesOrders o/, [invoice], (values, state, query) => { checkHeader(values, state, query); assert.match(query, /WHERE i\.id=@id/); assert.equal(values.id, 7); }),
+      step(/FROM dbo\.SalesOrderItems WHERE orderId=@orderId ORDER BY id/, [item], (values, _state, query) => {
+        assert.equal(values.orderId, invoice.orderId);
+        assert.match(query, /CONVERT\(varchar\(60\),COALESCE\(amount,lineTotal\)\) AS amount/);
+        assert.match(query, /description AS productDescription,currency,currency AS sourceCurrency/);
+        for (const name of ['convertedUnitPrice', 'discountRate', 'grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount']) assert.ok(query.includes('CONVERT(varchar(60),' + name + ') AS ' + name), name);
+      }),
+    ]);
+    assert.deepEqual((await expanded.invoke('get', '/sales-invoices/:id', {})).body.record, { ...invoice, items: [item] });
+    assert.equal(expanded.state.commits, 0);
+    expanded.done();
+  }
+});
+
 test('invoice/shipping source locks reject duplicates and dates before the source invoice', async () => {
   const invoice = routeFixture([step(/UPDLOCK,HOLDLOCK/, [{ ...order, invoiced: true }]), step(/FROM dbo\.SalesOrderItems/, items)]);
   await assert.rejects(() => invoice.invoke('post', '/sales-invoices', { orderId: 7, invoiceDate: '2026-11-13', dueDate: '2026-11-13' }), error => error.status === 409);
@@ -224,7 +257,7 @@ test('invoice/shipping source locks reject duplicates and dates before the sourc
 });
 
 test('payment handlers reject negative, overprecision and excessive payments without recording an audit', async () => {
-  for (const paidAmount of [-1, '0.001', '1000000000001']) {
+  for (const paidAmount of [-1, '0.0000001', '1000000000000.000001']) {
     const fixture = routeFixture([]);
     await assert.rejects(() => fixture.invoke('patch', '/sales-invoices/:id/payment', { paidAmount }), error => error.status === 400);
     fixture.done();
@@ -234,30 +267,47 @@ test('payment handlers reject negative, overprecision and excessive payments wit
   assert.equal(excessive.state.rollbacks, 1);
   excessive.done();
 });
+
+test('invoice payments retain six-place precision and exact large decimal strings', async () => {
+  for (const paidAmount of ['0.000001', '999999999999.999999', '0']) {
+    const canonical = paidAmount === '0' ? '0.000000' : paidAmount;
+    const fixture = routeFixture([
+      step(/UPDATE dbo\.SalesInvoices/, [{ id: 7 }], values => assert.equal(values.paidAmount, canonical)),
+      audit(), step(/FROM dbo\.SalesInvoices/, [{ id: 7, orderId: 7, total: '1000000000000.000000', paidAmount: canonical }]),
+      step(/FROM dbo\.SalesOrderItems/, []),
+    ]);
+    const response = await fixture.invoke('patch', '/sales-invoices/:id/payment', { paidAmount });
+    assert.equal(response.body.record.paidAmount, canonical);
+    assert.equal(fixture.state.commits, 1);
+    fixture.done();
+  }
+});
 test('Product creation writes each named child table with its own literal SQL and preserves the linked supply unit', async () => {
   const input = {
     sku: 'P7', description: 'Product', unit: 'PCS', currency: 'USD', price: 0.1153, isActive: false,
+    color: 'ignored legacy color', thickness: -99, planType: 'ignored legacy plan',
     processes: [{ name: 'Cut' }], offices: [{ name: 'TTI Laguna Philippines Inc.' }],
-    customerApprovals: [{ customerId: 2, approvalDate: '2026-11-13', eolDate: null, approvalRemarks: 'Approved', eolRemarks: null }],
+    customerApprovals: [{ customerId: 2, approvalDate: '2026-11-13', eolDate: 'invalid ignored legacy date', approvalRemarks: 'Approved', eolRemarks: 'ignored legacy EOL remarks' }],
     inventorySetup: 'quarterly', inventorySchedules: [{ scheduleDate: 'not-a-date', month: 'ignored stale row' }],
     linkedSupplies: [{ suppliesId: 4, quantity: 0.000001, unit: 'KG' }],
   };
+  const approvals = [{ customerId: 2, customerName: 'Approved Customer', approvalDate: '2026-11-13', approvalRemarks: 'Approved' }];
   const returned = { recordsets: [
     [{ ...product, stock: 0, inventorySetup: input.inventorySetup }], [{ productId: 7, name: 'Cut' }],
-    [{ productId: 7, ...input.customerApprovals[0] }], [{ productId: 7, ...input.linkedSupplies[0] }],
+    [{ productId: 7, ...approvals[0] }], [{ productId: 7, ...input.linkedSupplies[0] }],
   ] };
   const fixture = routeFixture([
     step(/ConfigUnits/, [{ id: 1 }]), step(/ConfigCurrencies/, [{ id: 1 }]),
     step(/FROM dbo.Customers/, [{ id: 2 }]), step(/FROM dbo.Supplies/, [{ unit: 'KG', isActive: true }]),
-    step(/INSERT INTO dbo.Products/, [{ id: 7 }], (values, _state, query) => { assert.equal(values.price, '0.1153'); assert.equal(values.stock, 0); assert.equal(values.isActive, true); assert.equal(values.inventorySetup, 'quarterly'); assert.equal(values.revision, null); assert.equal(values.moq, null); assert.equal(values.vatMode, null); assert.match(query, /createdAt,updatedAt/); }),
+    step(/INSERT INTO dbo.Products/, [{ id: 7 }], (values, _state, query) => { assert.equal(values.price, '0.1153'); assert.equal(values.stock, 0); assert.equal(values.isActive, true); assert.equal(values.inventorySetup, 'quarterly'); assert.equal(values.revision, null); assert.equal(values.moq, null); assert.equal(values.vatMode, null); assert.match(query, /createdAt,updatedAt/); for (const key of ['color', 'thickness', 'planType']) assert.equal(Object.hasOwn(values, key), false); }),
     step(/DELETE FROM dbo.ProductProcesses/), step(/INSERT INTO dbo.ProductProcesses/, [], values => assert.equal(values.name, 'Cut')),
-    step(/DELETE FROM dbo.ProductCustomerApprovals/), step(/INSERT INTO dbo.ProductCustomerApprovals/, [], values => { assert.equal(values.customerId, 2); assert.equal(values.approvalDate, '2026-11-13'); }),
+    step(/DELETE FROM dbo.ProductCustomerApprovals/), step(/INSERT INTO dbo.ProductCustomerApprovals/, [], values => { assert.equal(values.customerId, 2); assert.equal(values.approvalDate, '2026-11-13'); assert.equal(Object.hasOwn(values, 'eolDate'), false); assert.equal(Object.hasOwn(values, 'eolRemarks'), false); }),
     step(/DELETE FROM dbo.ProductSupplies/), step(/INSERT INTO dbo.ProductSupplies/, [], values => { assert.equal(values.suppliesId, 4); assert.equal(values.quantity, 0.000001); assert.equal(values.unit, 'KG'); }),
     audit(), step(/SELECT p.id/, returned),
   ]);
   const response = await fixture.invoke('post', '/products', input);
   assert.equal(response.statusCode, 201);
-  assert.deepEqual(response.body.record.customerApprovals, input.customerApprovals);
+  assert.deepEqual(response.body.record.customerApprovals, approvals);
   assert.equal(Object.hasOwn(response.body.record, 'offices'), false);
   assert.equal(response.body.record.inventorySetup, 'quarterly');
   assert.equal(Object.hasOwn(response.body.record, 'inventorySchedules'), false);
@@ -268,7 +318,7 @@ test('Product creation writes each named child table with its own literal SQL an
     const reader = routeFixture([step(/SELECT p.id/, returned)]);
     const read = await reader.invoke('get', path, {});
     const record = path === '/products' ? read.body.records[0] : read.body.record;
-    assert.deepEqual(record.customerApprovals, input.customerApprovals, 'Approvals must map from the shifted third recordset.');
+    assert.deepEqual(record.customerApprovals, approvals, 'Approvals include their Customer name, date and remarks.');
     assert.deepEqual(record.linkedSupplies, input.linkedSupplies, 'Supplies must map from the shifted fourth recordset.');
     assert.equal(Object.hasOwn(record, 'offices'), false);
     assert.equal(record.inventorySetup, 'quarterly');
@@ -293,7 +343,7 @@ test('former Customer and Product CHECK invariants reject invalid direct writes 
     assert.equal(fixture.state.commits, 0);
     fixture.done();
   }
-  for (const change of [{ price: -1 }, { divisor: -1 }, { vatMode: 'unknown' }, { linkedSupplies: [{ suppliesId: 4, quantity: 0, unit: 'kg' }] }, { customerApprovals: [{ customerId: 2, approvalDate: '2026-11-13', eolDate: '2026-11-12' }] }]) {
+  for (const change of [{ price: -1 }, { divisor: -1 }, { vatMode: 'unknown' }, { linkedSupplies: [{ suppliesId: 4, quantity: 0, unit: 'kg' }] }, { customerApprovals: [{ customerId: 0, approvalDate: '2026-11-13' }] }]) {
     const fixture = routeFixture([]);
     await assert.rejects(() => fixture.invoke('post', '/products', { sku: 'P7', unit: 'PCS', currency: 'USD', ...change }), error => error.status === 400);
     assert.equal(fixture.state.commits, 0);

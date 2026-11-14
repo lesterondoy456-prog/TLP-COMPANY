@@ -633,3 +633,26 @@ button:focus-visible, a:focus-visible { outline-color: var(--focus-ring); }
 :root input[aria-invalid=true], :root select[aria-invalid=true], :root textarea[aria-invalid=true] { border-color: var(--required); background: var(--input-bg); }
 :root .customer-field-error, :root .product-field-error, :root .purchase-field-error, :root .field-error { color: var(--required); }
 :root input[aria-invalid=true]:focus, :root select[aria-invalid=true]:focus, :root textarea[aria-invalid=true]:focus { border-color: var(--required); box-shadow: 0 0 0 3px color-mix(in srgb, var(--required) 15%, transparent); }
+
+/* Collapsible navigation. */
+.sidebar { overflow-x: hidden; transition: width .22s ease, padding .22s ease, transform .22s ease; }
+.main-shell { transition: margin-left .22s ease; }
+.sidebar-toggle { flex-shrink: 0; }
+.sidebar-mobile-toggle { display: none; }
+.sidebar-collapsed .sidebar { width: 76px; padding-inline: 12px; }
+.sidebar-collapsed .sidebar .brand { margin-inline: auto; }
+.sidebar-collapsed .sidebar .brand > div:last-child,
+.sidebar-collapsed .sidebar .nav-label,
+.sidebar-collapsed .sidebar .nav-item > span,
+.sidebar-collapsed .account-button > span:not(.avatar),
+.sidebar-collapsed .account-button > svg { display: none; }
+.sidebar-collapsed .sidebar > nav { margin-top: 24px; }
+.sidebar-collapsed .nav-item { justify-content: center; padding-inline: 0; gap: 0; }
+.sidebar-collapsed .nav-item > svg { flex-shrink: 0; }
+.sidebar-collapsed .account-button { justify-content: center; padding-inline: 0; }
+@media (min-width: 901px) { .sidebar-collapsed .main-shell { margin-left: 76px; } }
+@media (max-width: 900px) {
+  .sidebar-toggle { display: none; }
+  .sidebar-mobile-toggle { display: inline-flex; align-self: flex-end; margin: 4px 0 0; }
+  .sidebar-collapsed .sidebar-mobile-toggle { align-self: center; }
+}

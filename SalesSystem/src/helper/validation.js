@@ -145,6 +145,10 @@ function validateProduct(input, current) {
     inventorySetup: null,
     ...(current || {}),
   };
+  delete result.planType;
+  delete result.color;
+  delete result.thickness;
+  result.customerApprovals = result.customerApprovals.map(({ customerId, approvalDate, approvalRemarks }) => ({ customerId, approvalDate, approvalRemarks }));
   const creating = !current;
   const expanded = Object.keys(input).some(key => !legacyFields.has(key));
   for (const [key, maximum] of Object.entries(PRODUCT_TEXT_LENGTHS)) {
@@ -179,9 +183,7 @@ function validateProduct(input, current) {
       if (customers.has(customerId)) throw new ApiError(400, 'A customer can appear only once in Product Customer settings.');
       customers.add(customerId);
       const approvalDate = optionalDate(row, 'approvalDate');
-      const eolDate = optionalDate(row, 'eolDate');
-      if (approvalDate && eolDate && eolDate < approvalDate) throw new ApiError(400, 'EOL date cannot be earlier than approval date.');
-      return { customerId, approvalDate, eolDate, approvalRemarks: v.text(row, 'approvalRemarks', 2000), eolRemarks: v.text(row, 'eolRemarks', 2000) };
+      return { customerId, approvalDate, approvalRemarks: v.text(row, 'approvalRemarks', 2000) };
     });
   }
   if (has(input, 'linkedSupplies')) {
@@ -222,11 +224,11 @@ const extendedKeys = Object.keys(defaults).filter(key => !legacyKeys.has(key));
 const PRODUCT_TEXT_LENGTHS = {
   sku: 40, name: 180, description: 1000, unit: 30, revision: 30,
   secondaryUnit: 30, currency: 30, model: 150, category: 100,
-  planType: 100, color: 80, remarks: 2000, tagColor: 30,
+  remarks: 2000, tagColor: 30,
 };
 
 const PRODUCT_QUANTITIES = [
-  'quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'divisor', 'thickness', 'weight',
+  'quantityPerSecondaryUnit', 'moq', 'spq', 'unitCost', 'divisor', 'weight',
 ];
 
 const legacyFields = new Set(['id', 'sku', 'name', 'description', 'unit', 'price', 'stock', 'isActive']);
@@ -259,7 +261,19 @@ export function validateSalesRequest(path, options = {}) {
   if (/^\/sales-orders(?:\/\d+)?$/.test(route)) {
     text(input, 'currency', 30, true);
     idValue(input.customerId, 'customer');
-    date(input, 'orderDate');
+    idValue(input.billToCustomerId, 'billing customer');
+    text(input, 'billToName', 180, true);
+    text(input, 'billToAddress', 500);
+    const orderDate = date(input, 'orderDate');
+    if (date(input, 'expectedDeliveryDate') < orderDate) throw new Error('Expected delivery date cannot be earlier than the order date.');
+    numeric(input, 'rate', { min: 0.000001, max: 1e6, places: 6 });
+    text(input, 'paymentTerm', 100, true);
+    choice(input, 'shipment', ['air', 'land', 'boat', 'na']);
+    text(input, 'countryOfOrigin', 100);
+    text(input, 'vatCode', 80, true);
+    if (typeof input.vatInclusive !== 'boolean') throw new Error('Choose Inclusive or Exclusive VAT pricing.');
+    if (input.discountType != null && input.discountType !== '') choice(input, 'discountType', ['percent', 'amount']);
+    if (input.discountType && input.discount != null && String(input.discount).trim() !== '') numeric(input, 'discount', { min: 0, max: input.discountType === 'percent' ? 100 : 1e12, places: 6 });
     text(input, 'notes', 2000);
     if (!['draft', 'confirmed'].includes(input.status)) throw new Error('Choose Draft or Confirmed for the order status.');
     if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100) throw new Error('Add between 1 and 100 order items.');
@@ -270,10 +284,14 @@ export function validateSalesRequest(path, options = {}) {
       products.add(productId);
       numeric(item, 'quantity', { min: 0.001, max: 1e6, places: 3 });
       numeric(item, 'unitPrice', { min: 0, max: 1e8, places: 6 });
+      text(item, 'refNumber', 100);
+      text(item, 'quotationNumber', 100);
+      if (item.discountRate != null && String(item.discountRate).trim() !== '') numeric(item, 'discountRate', { min: 0, max: 100, places: 6 });
+      if (item.deliveryDate && date(item, 'deliveryDate') < orderDate) throw new Error('An item delivery date cannot be earlier than the order date.');
     }
     return;
   }
-  if (/^\/sales-invoices\/\d+\/payment$/.test(route)) { numeric(input, 'paidAmount', { min: 0, max: 1e12, places: 2 }); return; }
+  if (/^\/sales-invoices\/\d+\/payment$/.test(route)) { numeric(input, 'paidAmount', { min: 0, max: 1e12, places: 6 }); return; }
   if (route === '/sales-invoices') {
     idValue(input.orderId, 'sales order');
     const invoiceDate = date(input, 'invoiceDate');
@@ -322,14 +340,65 @@ const CUSTOMER_FORM_FIELDS = {
   taxCode: { label: 'Tax Code', max: 80, tab: 'sales' },
 };
 
-export function validateOrderCurrency(currency, configuredCurrencies, productCurrencies = []) {
+export function validateOrderCurrency(currency, configuredCurrencies, productCurrencies = [], rate = 1) {
   const selected = String(currency || '').trim().toUpperCase();
   const configured = configuredCurrencies.some(option => option.isActive !== false && option.isActive !== 0 && String(option.code || '').trim().toUpperCase() === selected);
   if (!selected || !configured) return 'Choose an active currency from Configuration before saving.';
   const prices = [...new Set(productCurrencies.map(code => String(code || '').trim().toUpperCase()))];
   if (prices.length > 1) return 'Use products with the same currency in one sales order.';
-  if (prices.length === 1 && prices[0] !== selected) return 'Order currency must match the selected product prices. No currency conversion is applied.';
+  if (prices.some(code => !code)) return 'Set a currency on each selected product before creating an order.';
+  if (prices.length === 1 && prices[0] === selected && Number(rate) !== 1) return 'Use a rate of 1 when the product and order currencies are the same.';
   return '';
+}
+
+export function validateOrderForm(form, items, options, products, customers) {
+  const errors = {};
+  const selectedProducts = items.map(item => products.find(product => String(product.id) === String(item.productId))).filter(Boolean);
+  const currencyError = validateOrderCurrency(form.currency, options.currencies, selectedProducts.map(product => product.currency), form.rate);
+  if (currencyError) errors.currency = currencyError;
+  if (!customers.some(customer => String(customer.id) === String(form.customerId))) errors.customerId = 'Choose a customer.';
+  const billTo = customers.find(customer => String(customer.id) === String(form.billToCustomerId));
+  if (!billTo) errors.billToCustomerId = 'Choose a billing customer.';
+  const knownAddresses = [billTo?.address, ...(billTo?.deliveryAddresses || [])].filter(Boolean);
+  if (form.billToAddress && !knownAddresses.includes(form.billToAddress)) errors.billToAddress = 'Choose an address saved on the billing customer.';
+  if (!dateIsValid(form.orderDate)) errors.orderDate = 'Order date is required. Enter a valid date.';
+  if (!dateIsValid(form.expectedDeliveryDate)) errors.expectedDeliveryDate = 'Expected delivery date is required. Enter a valid date.';
+  else if (dateIsValid(form.orderDate) && form.expectedDeliveryDate < form.orderDate) errors.expectedDeliveryDate = 'Expected delivery date cannot be earlier than the order date.';
+  if (!numberIsValid(form.rate, 6, 0.000001) || Number(form.rate) > 1e6) errors.rate = 'Enter a positive conversion rate with up to 6 decimal places.';
+  if (!options.paymentTerms.some(option => (option.name || option.description) === form.paymentTerm)) errors.paymentTerm = 'Choose a payment term from Configuration.';
+  if (!options.shipments.some(option => option.value === form.shipment)) errors.shipment = 'Choose a shipment method.';
+  if (form.countryOfOrigin && !options.countries.some(option => option.name === form.countryOfOrigin)) errors.countryOfOrigin = 'Choose a country from Configuration or leave it blank.';
+  const vat = options.vatCodes.find(option => option.code === form.vatCode);
+  if (!vat) errors.vatCode = 'Choose a VAT code from Configuration.';
+  else if (vat.rate == null || String(vat.rate).trim() === '' || !numberIsValid(vat.rate, 6)) errors.vatCode = 'Set the VAT rate in Configuration before saving.';
+  if (typeof form.vatInclusive !== 'boolean') errors.vatInclusive = 'Choose Inclusive or Exclusive VAT pricing.';
+  if (form.discountType && !['percent', 'amount'].includes(form.discountType)) errors.discountType = 'Choose Percent, Amount or None.';
+  if (form.discountType && String(form.discount ?? '').trim() !== '' && (!numberIsValid(form.discount, 6) || form.discountType === 'percent' && Number(form.discount) > 100)) errors.discount = form.discountType === 'percent' ? 'Enter a discount from 0 to 100 percent with up to 6 decimal places.' : 'Enter a valid discount amount with up to 6 decimal places.';
+  if (!['draft', 'confirmed'].includes(form.status)) errors.status = 'Choose Draft or Confirmed.';
+  if (String(form.notes ?? '').length > 2000) errors.notes = 'Use 2,000 characters or fewer.';
+  if (!items.length || items.length > 100) errors['items.0.productId'] = 'Add between 1 and 100 order items.';
+  const seen = new Set();
+  items.forEach((item, index) => {
+    const key = 'items.' + index + '.';
+    if (!products.some(product => String(product.id) === String(item.productId))) errors[key + 'productId'] = 'Choose a product.';
+    else if (seen.has(String(item.productId))) errors[key + 'productId'] = 'Use one line per product. Combine repeated quantities.';
+    seen.add(String(item.productId));
+    if (!numberIsValid(item.quantity, 3, 0.001) || Number(item.quantity) > 1e6) errors[key + 'quantity'] = 'Enter a quantity greater than zero with up to 3 decimal places.';
+    if (!numberIsValid(item.unitPrice, 6) || Number(item.unitPrice) > 1e8) errors[key + 'unitPrice'] = 'Enter a quantity and unit price for every order item. Unit price must be zero or more, with up to 6 decimal places.';
+    if (String(item.discountRate ?? '').trim() && (!numberIsValid(item.discountRate, 6) || Number(item.discountRate) > 100)) errors[key + 'discountRate'] = 'Enter a line discount from 0 to 100 percent.';
+    if (item.deliveryDate && (!dateIsValid(item.deliveryDate) || item.deliveryDate < form.orderDate)) errors[key + 'deliveryDate'] = 'Choose a valid delivery date on or after the order date.';
+    for (const field of ['refNumber', 'quotationNumber']) if (String(item[field] ?? '').length > 100) errors[key + field] = 'Use 100 characters or fewer.';
+  });
+  return errors;
+}
+
+export function validateInvoicePayment(amount, total) {
+  if (String(amount ?? '').trim() === '') return 'Total received to date is required.';
+  if (!/^\d+(?:\.\d{1,6})?$/.test(String(amount).trim())) return 'Enter a received amount of zero or more with up to 6 decimal places.';
+  try { numeric({ paidAmount: amount }, 'paidAmount', { min: 0, max: 1e12, places: 6 }); }
+  catch { return 'Enter a received amount of zero or more with up to 6 decimal places.'; }
+  const values = [amount, total].map(value => String(value).split('.')).map(parts => BigInt(parts[0] + (parts[1] || '').padEnd(6, '0').slice(0, 6)));
+  return values[0] > values[1] ? 'Total received cannot exceed the invoice total.' : '';
 }
 
 export function validateCustomerForm(form) {
@@ -359,10 +428,8 @@ const PRODUCT_FORM_FIELDS = {
   unit: { label: 'UOP', max: 30, required: true },
   secondaryUnit: { label: 'UOP2', max: 30 },
   currency: { label: 'Currency', max: 30, required: true },
-  model: { label: 'Model', max: 150 },
-  category: { label: 'Category', max: 100 },
-  planType: { label: 'Plan Type', max: 100 },
-  color: { label: 'Color', max: 80 },
+  model: { label: 'Model / Item code', max: 150 },
+  category: { label: 'Category / Platform', max: 100 },
   remarks: { label: 'Remarks', max: 2000 },
   tagColor: { label: 'Tag Color', max: 30 },
 };
@@ -374,7 +441,6 @@ const PRODUCT_FORM_NUMBERS = {
   unitCost: { label: 'Unit Cost', places: 6 },
   price: { label: 'Selling Price', places: 6 },
   divisor: { label: 'Divisor', places: 6 },
-  thickness: { label: 'Thickness', places: 6 },
   weight: { label: 'Weight', places: 6 },
 };
 
@@ -413,10 +479,7 @@ export function validateProductForm(form) {
     else if (seenCustomers.has(Number(row.customerId))) errors[key + '.customerId'] = 'Use one row per customer.';
     seenCustomers.add(Number(row.customerId));
     if (row.approvalDate && !dateIsValid(row.approvalDate)) errors[key + '.approvalDate'] = 'Enter a valid Approval Date.';
-    if (row.eolDate && !dateIsValid(row.eolDate)) errors[key + '.eolDate'] = 'Enter a valid EOL Date.';
-    else if (row.approvalDate && row.eolDate && row.eolDate < row.approvalDate) errors[key + '.eolDate'] = 'EOL Date cannot be earlier than Approval Date.';
     if ((row.approvalRemarks || '').length > 2000) errors[key + '.approvalRemarks'] = 'Use 2,000 characters or fewer.';
-    if ((row.eolRemarks || '').length > 2000) errors[key + '.eolRemarks'] = 'Use 2,000 characters or fewer.';
   });
   form.processes.forEach((row, index) => {
     if (!row.name.trim() || row.name.trim().length > 150) errors['processes.' + index + '.name'] = 'Enter a process name with up to 150 characters.';

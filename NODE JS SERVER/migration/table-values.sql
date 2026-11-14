@@ -59,6 +59,13 @@ BEGIN
   DELETE FROM @rules WHERE tableName=@table AND constraintName=@constraint;
 END;
 
+-- These Product fields are not used by the company.
+IF COL_LENGTH(N'dbo.Products',N'color') IS NOT NULL ALTER TABLE dbo.Products DROP COLUMN color;
+IF COL_LENGTH(N'dbo.Products',N'thickness') IS NOT NULL ALTER TABLE dbo.Products DROP COLUMN thickness;
+IF COL_LENGTH(N'dbo.Products',N'planType') IS NOT NULL ALTER TABLE dbo.Products DROP COLUMN planType;
+IF COL_LENGTH(N'dbo.ProductCustomerApprovals',N'eolDate') IS NOT NULL ALTER TABLE dbo.ProductCustomerApprovals DROP COLUMN eolDate;
+IF COL_LENGTH(N'dbo.ProductCustomerApprovals',N'eolRemarks') IS NOT NULL ALTER TABLE dbo.ProductCustomerApprovals DROP COLUMN eolRemarks;
+
 -- Copy existing generated codes/numbers before replacing their expressions.
 DECLARE @computed TABLE (objectId INT,columnId INT,tableName SYSNAME,columnName SYSNAME,typeName SYSNAME,maxLength SMALLINT,collationName SYSNAME);
 INSERT INTO @computed(objectId,columnId,tableName,columnName,typeName,maxLength,collationName)
@@ -141,11 +148,8 @@ INSERT INTO @optionalColumns(tableName,columnName) VALUES
   (N'Products',N'unitCost'),
   (N'Products',N'model'),
   (N'Products',N'category'),
-  (N'Products',N'planType'),
-  (N'Products',N'color'),
   (N'Products',N'divisor'),
   (N'Products',N'remarks'),
-  (N'Products',N'thickness'),
   (N'Products',N'weight'),
   (N'Products',N'productHeaderId'),
   (N'Products',N'tagColor'),
@@ -260,9 +264,7 @@ INSERT INTO @optionalColumns(tableName,columnName) VALUES
   (N'SupplyInventory',N'expiryDate'),
   (N'SupplyInventory',N'mfgDate'),
   (N'ProductCustomerApprovals',N'approvalDate'),
-  (N'ProductCustomerApprovals',N'eolDate'),
   (N'ProductCustomerApprovals',N'approvalRemarks'),
-  (N'ProductCustomerApprovals',N'eolRemarks'),
   (N'ProductInventorySchedules',N'scheduleDate'),
   (N'ProductInventorySchedules',N'month');
 DECLARE @precision TINYINT,@scale TINYINT;

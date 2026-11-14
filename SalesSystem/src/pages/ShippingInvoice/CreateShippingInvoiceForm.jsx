@@ -33,8 +33,8 @@ export default function CreateShippingInvoiceForm({
   }
   return <Modal title="New shipping invoice" subtitle="Choose an existing invoice and enter its shipping details." onClose={onClose} busy={busy}>
     <form onSubmit={submit}><div className="modal-body"><ErrorNotice message={error} /><fieldset disabled={busy} className="form-grid">
-      <Field label="Invoice *" wide><select required value={form.invoiceId} onChange={event => chooseInvoice(event.target.value)}><option value="">Select an invoice</option>{eligible.map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.number} · {invoice.customerName} · {money(invoice.total, invoice.currency)}</option>)}</select></Field>
-      {selected && <div className="document-summary span-2"><div><span>Customer</span><strong>{selected.customerName}</strong></div><div><span>Invoice total</span><strong>{money(selected.total, selected.currency)}</strong></div></div>}
+      <Field label="Invoice *" wide><select required value={form.invoiceId} onChange={event => chooseInvoice(event.target.value)}><option value="">Select an invoice</option>{eligible.map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.number} · {invoice.customerName} · {money(invoice.total, invoice.currency, invoice.decimalInTotalPrice ?? 2)}</option>)}</select></Field>
+      {selected && <div className="document-summary span-2"><div><span>Customer</span><strong>{selected.customerName}</strong></div><div><span>Invoice total</span><strong>{money(selected.total, selected.currency, selected.decimalInTotalPrice ?? 2)}</strong></div></div>}
       {!eligible.length && <div className="notice span-2">No eligible invoices. Create an invoice first. Each invoice can have one shipping invoice.</div>}
       <Field label="Shipping date *"><input type="date" required min={dateInput(selected?.invoiceDate) || undefined} value={form.shippingDate} onChange={event => set('shippingDate', event.target.value)} /></Field>
       <Field label="Carrier"><input maxLength={150} value={form.carrier} onChange={event => set('carrier', event.target.value)} /></Field>

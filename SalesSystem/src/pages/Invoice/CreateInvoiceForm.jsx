@@ -61,8 +61,8 @@ export default function CreateInvoiceForm({
   }
   return <Modal title={'New sales invoice'} subtitle={'Create an invoice from a confirmed sales order.'} onClose={onClose} busy={busy}>
     <form onSubmit={submit}><div className="modal-body"><ErrorNotice message={error} /><fieldset disabled={busy} className="form-grid">
-      <Field label="Sales order *" wide><select required value={form.orderId} onChange={e => chooseOrder(e.target.value)}><option value="">Select a confirmed order</option>{eligible.map(order => <option key={order.id} value={order.id}>{order.number} · {order.customerName} · {money(order.total, order.currency)}</option>)}</select></Field>
-      {selected && <div className="document-summary span-2"><div><span>Customer</span><strong>{selected.customerName}</strong></div><div><span>Order total</span><strong>{money(selected.total, selected.currency)}</strong></div></div>}
+      <Field label="Sales order *" wide><select required value={form.orderId} onChange={e => chooseOrder(e.target.value)}><option value="">Select a confirmed order</option>{eligible.map(order => <option key={order.id} value={order.id}>{order.number} · {order.customerName} · {money(order.total, order.currency, order.decimalInTotalPrice ?? 2)}</option>)}</select></Field>
+      {selected && <div className="document-summary span-2"><div><span>Customer</span><strong>{selected.customerName}</strong></div><div><span>Order total</span><strong>{money(selected.total, selected.currency, selected.decimalInTotalPrice ?? 2)}</strong></div></div>}
       {!eligible.length && <div className="notice span-2">No eligible orders. Create and confirm a sales order first. Each order can have one invoice and one full delivery receipt.</div>}
       {<>
         <Field label="Invoice date *"><input type="date" required value={form.invoiceDate} onChange={e => set('invoiceDate', e.target.value)} /></Field>

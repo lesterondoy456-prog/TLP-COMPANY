@@ -24,7 +24,7 @@ npm start
 
 `npm start` serves `dist` with Vite preview on the same port. The React plugin is configured in `vite.config.js`. Development and preview both proxy `/api`, `/Uploads`, and `/socket.io` with `changeOrigin: true` to `API_PROXY_TARGET`, which defaults to `http://localhost:5188`. Docker runs the built Vite app in its own Node container and sets the target to `http://nodejs-server:5188`.
 
-The upload and Socket.IO entries forward requests only; the backend has no upload-storage or Socket.IO service yet. Allowed frontend URLs are configured in the backend `.env` as `FRONTEND_ORIGINS`.
+The Socket.IO proxy connects to the authenticated realtime service in the backend. Saves refresh the relevant views in the background without reloading the page or closing drafts. `/Uploads` is reserved; uploaded files are not stored by this backend.
 
 ## Accounts and API
 
@@ -39,11 +39,13 @@ Form validation is organized in `src/helper/validation.js` and runs before fetch
 Each sidebar item has a named page under `src/pages`. Its forms live inside that page folder or beside the page file. `src/components` contains shared layout and UI. API calls use the full `/api/sales/...` endpoint in the page; `src/api.js` handles HTTP credentials, JSON and errors without adding a hidden URL prefix.
 
 1. Add a customer and product. Product has Basic Info, Customer, Inventory Sched, and Link Supplies tabs.
-2. Create and confirm a Sales Order.
-3. Create its Invoice and record payments.
+2. Create a Sales Order with customer/Bill To, dates, document currency, conversion rate, terms, shipment and VAT above its product lines. Customer VAT settings are selected initially and can be overridden for the order. Add optional line/header discounts and confirm when ready.
+3. Create its Invoice and record payments. The Invoice monitor shows one row per SI; expand a row to see its items.
 4. Create its Delivery Receipt when sufficient finished-product stock is available.
 5. Create a Shipping Invoice from an existing invoice; this does not deduct stock again.
 
-Each order supports one full invoice and one full delivery receipt. Prices retain six decimal places; document totals use two. Documents retain their product currency, and mixed-currency order lines are rejected. Sales In-charge selects an active Sales account by ID. This app contains Sales navigation and SalesUserLogin only.
+Each order supports one full invoice and one full delivery receipt. Product prices retain six decimal places in a common source currency. Rate converts those prices to the selected document currency. The Bill To customer's decimal settings determine totals, up to six places; invoice payments retain that precision. Available currencies, terms and VAT codes come from Configuration. The customer VAT selection defaults onto the order and remains editable. Sales In-charge selects an active Sales account by ID. This app contains Sales navigation and SalesUserLogin only, without Branch selection.
+
+The Product monitor includes descriptions, units, pricing, approvals and remarks. Product Color, Thickness, Plan Type, EOL Date and EOL Remarks are omitted; Tag Color remains distinct. Inventory schedules display fixed Monthly or Quarterly reference rows and are not saved as schedule records. The desktop sidebar can collapse to navigation icons and remembers the preference; mobile navigation uses a drawer.
 
 SQL, migrations, and the backend's local `.env` remain in `NODE JS SERVER`. See its README for backend startup and Docker commands.

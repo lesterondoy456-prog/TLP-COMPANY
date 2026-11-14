@@ -26,10 +26,15 @@ test('product links preserve six-place material quantities without creating fini
   invalid({ ...product(), linkedSupplies: [{ suppliesId: 10, quantity: 1, unit: 'kg' }, { suppliesId: 10, quantity: 2, unit: 'kg' }] });
 });
 
-test('product customer approvals validate identity and date order while retaining nullable dates', () => {
-  const result = validateProduct({ ...product(), customerApprovals: [{ customerId: 20, approvalDate: '', eolDate: null, approvalRemarks: ' Test ' }] });
-  assert.deepEqual(result.customerApprovals, [{ customerId: 20, approvalDate: null, eolDate: null, approvalRemarks: 'Test', eolRemarks: null }]);
-  invalid({ ...product(), customerApprovals: [{ customerId: 20, approvalDate: '2026-11-13', eolDate: '2026-11-12' }] });
+test('product approvals retain customer, approval date and remarks while ignoring retired fields', () => {
+  const result = validateProduct({ ...product(), planType: 'Old plan', color: 'Old color', thickness: -100, tagColor: '#3366ff', customerApprovals: [{ customerId: 20, approvalDate: '', eolDate: 'not-a-date', approvalRemarks: ' Test ', eolRemarks: 'Old remarks' }] });
+  assert.deepEqual(result.customerApprovals, [{ customerId: 20, approvalDate: null, approvalRemarks: 'Test' }]);
+  for (const key of ['planType', 'color', 'thickness']) assert.equal(Object.hasOwn(result, key), false);
+  assert.equal(result.tagColor, '#3366ff');
+  const staleCurrent = { ...result, planType: 'Old plan', color: 'Old color', thickness: 1, customerApprovals: [{ ...result.customerApprovals[0], eolDate: '2026-01-01', eolRemarks: 'Old remarks' }] };
+  const edited = validateProduct({ revision: '2' }, staleCurrent);
+  for (const key of ['planType', 'color', 'thickness']) assert.equal(Object.hasOwn(edited, key), false);
+  assert.deepEqual(edited.customerApprovals, result.customerApprovals);
   invalid({ ...product(), customerApprovals: [{ customerId: 20, approvalDate: '2026-02-30' }] });
   invalid({ ...product(), customerApprovals: [{ customerId: 20 }, { customerId: 20 }] });
 });

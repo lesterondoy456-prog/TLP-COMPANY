@@ -192,16 +192,10 @@ IF COL_LENGTH(N'dbo.Products', N'model') IS NULL
   ALTER TABLE dbo.Products ADD model NVARCHAR(150) NULL;
 IF COL_LENGTH(N'dbo.Products', N'category') IS NULL
   ALTER TABLE dbo.Products ADD category NVARCHAR(100) NULL;
-IF COL_LENGTH(N'dbo.Products', N'planType') IS NULL
-  ALTER TABLE dbo.Products ADD planType NVARCHAR(100) NULL;
-IF COL_LENGTH(N'dbo.Products', N'color') IS NULL
-  ALTER TABLE dbo.Products ADD color NVARCHAR(80) NULL;
 IF COL_LENGTH(N'dbo.Products', N'divisor') IS NULL
   ALTER TABLE dbo.Products ADD divisor DECIMAL(18,6) NULL;
 IF COL_LENGTH(N'dbo.Products', N'remarks') IS NULL
   ALTER TABLE dbo.Products ADD remarks NVARCHAR(2000) NULL;
-IF COL_LENGTH(N'dbo.Products', N'thickness') IS NULL
-  ALTER TABLE dbo.Products ADD thickness DECIMAL(18,6) NULL;
 IF COL_LENGTH(N'dbo.Products', N'weight') IS NULL
   ALTER TABLE dbo.Products ADD weight DECIMAL(18,6) NULL;
 IF COL_LENGTH(N'dbo.Products', N'productHeaderId') IS NULL
@@ -229,9 +223,7 @@ BEGIN
     position INT NOT NULL,
     customerId INT NOT NULL REFERENCES dbo.Customers(id),
     approvalDate DATE NULL,
-    eolDate DATE NULL,
     approvalRemarks NVARCHAR(2000) NULL,
-    eolRemarks NVARCHAR(2000) NULL,
     CONSTRAINT PK_ProductCustomerApprovals PRIMARY KEY(productId,position),
     CONSTRAINT UQ_ProductCustomerApprovals_Customer UNIQUE(productId,customerId)
   );

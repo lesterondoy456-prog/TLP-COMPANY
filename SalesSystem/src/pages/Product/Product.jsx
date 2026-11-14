@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { api, money, unitMoney, dateLabel } from '../../api.js';
+import { api, unitMoney, dateLabel } from '../../api.js';
 import { Icon } from '../../components/Icons.jsx';
-import { Avatar, Badge, roleLabel } from '../../components/UI.jsx';
+import { Badge } from '../../components/UI.jsx';
 import RecordsCard, { PageHeading } from '../../components/RecordsCard.jsx';
 import CreateProductForm from './CreateProductForm.jsx';
 import ConfirmDelete from '../../components/ConfirmDelete.jsx';
 const count = value => new Intl.NumberFormat('en-PH', {
-  maximumFractionDigits: 3
+  maximumFractionDigits: 6
 }).format(Number(value) || 0);
 export default function ProductPage({
   data,
@@ -50,10 +50,32 @@ export default function ProductPage({
       type: 'new'
     })} />
     {overview}
-    <RecordsCard title="Product" label="Products" icon="box" addLabel="New product" rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<><><th>Product</th><th>Unit</th><th className="numeric">Selling price</th><th className="numeric">Stock on hand</th><th>Status</th></><th className="actions-heading">Actions</th></>} renderRow={row => <><><td><div className="entity-cell"><span className="entity-icon product"><Icon name="box" size={18} /></span><div><strong>{row.name}</strong><small>{row.sku}</small></div></div></td><td>{row.unit}</td><td className="numeric">{(row.price == null ? '—' : unitMoney(row.price, row.currency))}</td><td className={'numeric ' + (Number(row.stock) === 0 ? 'danger-text' : '')}>{count(row.stock)}</td><td><Badge value={row.isActive ? 'active' : 'inactive'}>{row.isActive ? 'Active' : 'Inactive'}</Badge></td></><td><div className="row-actions"><button className="text-button" disabled={busyRow === row.id} onClick={() => details(row, 'edit')}>{busyRow === row.id ? 'Opening?' : 'Edit'}</button><button className="text-button danger-text" onClick={() => setDialog({
-            type: 'delete',
-            record: row
-          })}>Delete</button></div></td></>} />
+    <div className="product-monitor"><RecordsCard title="Product" label="Products" icon="box" addLabel="New product" rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
+      <th className="product-code-column">Code</th><th className="product-description-column">Description</th>
+      <th className="product-model-column">Model / Item code</th><th className="product-model-column">Category / Platform</th>
+      <th className="product-small-column">Rev</th><th className="product-small-column">UOP</th><th className="product-small-column">UOP2</th>
+      <th className="product-number-column numeric">Qty per UOP2</th><th className="product-number-column numeric">MOQ</th><th className="product-number-column numeric">SPQ</th>
+      <th>VAT setting</th><th className="numeric">Unit cost</th><th className="numeric">Selling price</th><th className="product-small-column">Currency</th>
+      <th className="product-approvals-column">Customer approvals</th><th className="product-model-column">Process</th>
+      <th className="product-number-column numeric">Divisor</th><th className="product-number-column numeric">Weight</th>
+      <th className="product-model-column">Product header</th><th>Tag color</th><th>Inventory setup</th>
+      <th className="product-supplies-column">Linked supplies</th><th className="product-description-column">Remarks</th>
+      <th className="product-number-column numeric">Stock on hand</th><th className="product-number-column">Status</th><th className="product-actions-column actions-heading">Actions</th>
+    </>} renderRow={row => <>
+      <td className="product-code-column"><div className="entity-cell"><span className="entity-icon product"><Icon name="box" size={18} /></span><strong>{row.sku || '—'}</strong></div></td>
+      <td className="product-description-column">{row.description || (row.name !== row.sku ? row.name : null) || '—'}</td>
+      <td>{row.model || '—'}</td><td>{row.category || '—'}</td><td>{row.revision ?? '—'}</td><td>{row.unit || '—'}</td><td>{row.secondaryUnit || '—'}</td>
+      <td className="numeric">{row.quantityPerSecondaryUnit == null ? '—' : count(row.quantityPerSecondaryUnit)}</td><td className="numeric">{row.moq == null ? '—' : count(row.moq)}</td><td className="numeric">{row.spq == null ? '—' : count(row.spq)}</td>
+      <td>{row.vatMode === 'customer' ? 'Customer setting' : row.vatMode === 'inclusive' ? 'Inclusive' : row.vatMode === 'exclusive' ? 'Exclusive' : '—'}</td>
+      <td className="numeric">{row.unitCost == null ? '—' : row.currency ? unitMoney(row.unitCost, row.currency) : count(row.unitCost)}</td><td className="numeric product-price-cell">{row.price == null ? '—' : row.currency ? unitMoney(row.price, row.currency) : count(row.price)}</td><td>{row.currency || '—'}</td>
+      <td className="product-approvals-column">{row.customerApprovals?.length ? row.customerApprovals.map((approval, index) => <div className="product-related-block" key={approval.customerId ?? index}><strong>{approval.customerName || '—'}</strong><span>Approval date · {dateLabel(approval.approvalDate)}</span><p>{approval.approvalRemarks || '—'}</p></div>) : '—'}</td>
+      <td className="product-lines-cell">{(row.processes || []).map(process => process.name).filter(Boolean).join('\n') || '—'}</td>
+      <td className="numeric">{row.divisor == null ? '—' : count(row.divisor)}</td><td className="numeric">{row.weight == null ? '—' : count(row.weight)}</td>
+      <td><strong>{row.productHeaderCode || '—'}</strong>{row.productHeaderName && <small>{row.productHeaderName}</small>}</td><td>{row.tagColor || '—'}</td><td>{row.inventorySetup === 'monthly' ? 'Monthly' : row.inventorySetup === 'quarterly' ? 'Quarterly' : '—'}</td>
+      <td className="product-supplies-column">{row.linkedSupplies?.length ? row.linkedSupplies.map((supply, index) => <div className="product-related-block" key={supply.suppliesId ?? index}><strong>{supply.name || supply.code || '—'}</strong><span>{supply.quantity == null ? '—' : count(supply.quantity)} {supply.unit || ''}</span></div>) : '—'}</td>
+      <td className="product-lines-cell">{row.remarks || '—'}</td><td className={'numeric ' + (Number(row.stock) === 0 ? 'danger-text' : '')}>{row.stock == null ? '—' : count(row.stock)}</td><td><Badge value={row.isActive ? 'active' : 'inactive'}>{row.isActive ? 'Active' : 'Inactive'}</Badge></td>
+      <td className="product-actions-column"><div className="row-actions"><button className="text-button" disabled={busyRow === row.id} onClick={() => details(row, 'edit')}>{busyRow === row.id ? 'Opening…' : 'Edit'}</button><button className="text-button danger-text" onClick={() => setDialog({ type: 'delete', record: row })}>Delete</button></div></td>
+    </>} /></div>
     {['new', 'edit'].includes(dialog?.type) && <CreateProductForm record={dialog.record} onClose={() => setDialog(null)} onSaved={saved} />}
     {dialog?.type === 'delete' && <ConfirmDelete record={dialog.record} onDelete={() => api('/api/sales/products/' + dialog.record.id, {
       method: 'DELETE'
