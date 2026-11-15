@@ -5,6 +5,30 @@ import { Icon } from './Icons.jsx';
 
 export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigate, onProfile, notice, onNotice, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 900px)').matches);
+  const menuButton = useRef(null);
+  const closeControl = useRef(null);
+  function closeMenu() { setMenuOpen(false); }
+  useEffect(() => {
+    const breakpoint = window.matchMedia('(max-width: 900px)');
+    const change = () => { setMobile(breakpoint.matches); closeMenu(); };
+    breakpoint.addEventListener('change', change);
+    return () => breakpoint.removeEventListener('change', change);
+  }, []);
+  useEffect(() => {
+    if (!mobile || !menuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeControl.current?.focus();
+    closeControl.current?.closest('.sidebar')?.querySelector('.nav-item.active')?.scrollIntoView({ block: 'nearest' });
+    const escape = event => { if (event.key === 'Escape') { event.preventDefault(); closeMenu(); } };
+    window.addEventListener('keydown', escape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', escape);
+      if (window.matchMedia('(max-width: 900px)').matches && !document.querySelector('dialog[open]')) menuButton.current?.focus();
+    };
+  }, [mobile, menuOpen]);
   const [now, setNow] = useState(() => new Date());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('tti-purchasing-sidebar-collapsed') === 'true'; }
@@ -65,11 +89,11 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
     observer.observe(links);
     observer.observe(active);
     return () => observer.disconnect();
-  }, [tab, sidebarCollapsed, administrator]);
+  }, [tab, sidebarCollapsed, administrator, mobile]);
 
   function navigate(id) {
     onNavigate(id);
-    setMenuOpen(false);
+    closeMenu();
   }
 
   async function logout() {
@@ -85,8 +109,8 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
 
 
   return <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
-    {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
-    <aside id="purchasing-sidebar" className={'sidebar ' + (menuOpen ? 'open' : '')}>
+    {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => closeMenu()} />}
+    <aside inert={mobile && !menuOpen ? true : undefined} aria-hidden={mobile && !menuOpen ? true : undefined} id="purchasing-sidebar" className={'sidebar ' + (menuOpen ? 'open' : '')}>
       <div className="sidebar-header">
         <div className="brand">
           <div className="brand-mark">T</div>
@@ -96,6 +120,7 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
       <button className="sidebar-toggle" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="purchasing-sidebar" onClick={() => setSidebarCollapsed(current => !current)}>
         <Icon name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'} size={14} />
       </button>
+      <button ref={closeControl} className="sidebar-close" aria-label="Close sidebar" title="Close sidebar" onClick={closeMenu}><Icon name="x" size={20} /></button>
       <div className="sidebar-navigation" ref={navigationRef}>
         <div className="sidebar-active-indicator" ref={activeIndicator} aria-hidden="true" />
         <p className="nav-label">{app.label.toUpperCase()}</p>
@@ -120,7 +145,7 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
         <ThemeToggle />
       </div>
       <div className="sidebar-bottom">
-        <button className="account-button" aria-label={'Open profile: ' + (user.name || user.username)} title={'Open profile: ' + (user.name || user.username)} onClick={() => { onProfile(); setMenuOpen(false); }}>
+        <button className="account-button" aria-label={'Open profile: ' + (user.name || user.username)} title={'Open profile: ' + (user.name || user.username)} onClick={() => { onProfile(); closeMenu(); }}>
           <Avatar user={user} /><span><strong>{user.name || user.username}</strong><small>{roleLabel(user.role)}</small></span>
         </button>
         <button className="sidebar-signout" aria-label={logoutBusy ? 'Signing out' : 'Sign out'} title="Sign out" onClick={logout} disabled={logoutBusy}>
@@ -128,8 +153,8 @@ export default function Layout({ user, onLogout, app, tabs, page: tab, onNavigat
         </button>
       </div>
     </aside>
-    <div className="main-shell">
-      <button className="icon-button mobile-menu mobile-navigation-trigger" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="purchasing-sidebar" onClick={() => setMenuOpen(true)}>
+    <div className="main-shell" inert={mobile && menuOpen ? true : undefined}>
+      <button ref={menuButton} className="icon-button mobile-menu mobile-navigation-trigger" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="purchasing-sidebar" onClick={() => setMenuOpen(true)}>
         <Icon name="menu" />
       </button>
       <main className="workspace-content">

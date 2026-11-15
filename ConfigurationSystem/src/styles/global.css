@@ -677,6 +677,7 @@ button:focus-visible, a:focus-visible { outline-color: var(--focus-ring); }
 .sidebar-signout:hover:not(:disabled) { color: var(--accent); background: var(--accent-soft); }
 .main-shell { margin-left: 274px; transition: margin-left .26s cubic-bezier(.2,.8,.2,1); }
 .mobile-navigation-trigger { display: none; }
+@media (min-width: 901px) {
 .sidebar-collapsed .sidebar { width: 76px; padding-inline: 10px; }
 .sidebar-collapsed .sidebar-header { padding-inline: 0; }
 .sidebar-collapsed .sidebar .brand { justify-content: center; }
@@ -694,6 +695,7 @@ button:focus-visible, a:focus-visible { outline-color: var(--focus-ring); }
 .sidebar-collapsed .sidebar-bottom { flex-direction: column; gap: 8px; padding-top: 12px; }
 .sidebar-collapsed .account-button { justify-content: center; width: 40px; flex: none; padding: 5px; }
 .sidebar-collapsed .sidebar-signout { width: 40px; }
+}
 @keyframes sidebar-icon-enter { from { transform: scale(.85); } 60% { transform: scale(1.08); } to { transform: scale(1); } }
 @keyframes sidebar-label-enter { from { opacity: .35; transform: translateX(-4px); } to { opacity: 1; transform: translateX(0); } }
 @media (min-width: 901px) { .sidebar-collapsed .main-shell { margin-left: 104px; } }
@@ -757,3 +759,15 @@ button:focus-visible, a:focus-visible { outline-color: var(--focus-ring); }
   .workspace-content .table-footer > div { flex-wrap: wrap; gap: 8px; }
 }
 @media (max-width: 360px) { .mobile-record-fields { grid-template-columns: 1fr; } }
+
+/* Mobile navigation stays fully labeled; the desktop rail preference is retained. */
+.sidebar-close { display: none; }
+@media (max-width: 900px) {
+  .sidebar { top: calc(14px + env(safe-area-inset-top, 0px)); left: calc(14px + env(safe-area-inset-left, 0px)); bottom: auto; height: calc(100dvh - 28px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 28px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; visibility: hidden; transition: transform .26s cubic-bezier(.2,.8,.2,1), visibility 0s .26s; }
+  .sidebar.open { visibility: visible; transition-delay: 0s; }
+  .sidebar-header { padding-right: 42px; }
+  .sidebar-toggle { display: none; }
+  .sidebar-close { display: grid; place-items: center; position: absolute; top: 8px; right: 8px; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--sidebar-text); }
+  .sidebar-close:hover { color: var(--accent); background: var(--accent-soft); }
+  .sidebar-navigation { min-height: 44px; }
+}

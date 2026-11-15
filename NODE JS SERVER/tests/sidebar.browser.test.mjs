@@ -272,15 +272,17 @@ for (const { project, system, first, next, count } of projects) {
     await toggle('Collapse sidebar').click();
     await expect(sidebar).toHaveCSS('width', '76px');
 
-    // A narrow browser still uses the drawer/scrim, with its own visible toggle inside.
+    // The phone drawer stays fully named without changing the desktop preference.
     await page.setViewportSize({ width: 514, height: 900 });
     await expect(main).toHaveCSS('margin-left', '0px');
     await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
     await expect(sidebar).toHaveClass(/open/);
-    await expect(toggle('Expand sidebar')).toBeVisible();
-    await toggle('Expand sidebar').click();
     await expect(sidebar).toHaveCSS('width', '246px');
+    await expect(sidebar.getByRole('button', { name: 'Close sidebar', exact: true })).toBeVisible();
+    await expect(toggle('Expand sidebar')).toHaveCount(0);
+    await expect(toggle('Collapse sidebar')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBe('true');
     await assertFooterClock(page, false);
     await sidebar.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -300,15 +302,14 @@ for (const { project, system, first, next, count } of projects) {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
-    await toggle('Collapse sidebar').click();
-    await expect(sidebar).toHaveCSS('width', '76px');
+    await expect(sidebar).toHaveCSS('width', '246px');
     await expect(sidebar).toHaveCSS('transition-duration', '0s');
     await expect(main).toHaveCSS('transition-duration', '0s');
     assert.ok(await indicator.evaluate(element => getComputedStyle(element).transitionDuration.split(',').every(value => parseFloat(value) === 0)), 'Reduced motion disables the active indicator transition.');
     await expect(main).toHaveCSS('margin-left', '0px');
-    await assertFooterClock(page, true);
+    await assertFooterClock(page, false);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'The mobile page must not gain horizontal overflow.');
-    await page.screenshot({ path: fileURLToPath(new URL(`../.qa/screenshots/${system}-sidebar-icons-mobile.png`, import.meta.url)), fullPage: false });
+    await page.screenshot({ path: fileURLToPath(new URL(`../.qa/screenshots/${system}-sidebar-drawer-mobile.png`, import.meta.url)), fullPage: false });
     await page.getByRole('button', { name: 'Close navigation', exact: true }).click({ position: { x: 300, y: 100 } });
     await expect(sidebar).not.toHaveClass(/open/);
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
