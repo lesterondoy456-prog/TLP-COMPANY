@@ -3,7 +3,7 @@ import { Icon } from './Icons.jsx';
 import { Empty, LoadingSkeleton } from './UI.jsx';
 
 export function PageHeading({ title, description, addLabel, loading, onAdd }) {
-  return <div className="page-heading"><div><span className="eyebrow">SALES WORKSPACE</span><h1>{title}</h1><p>{description}</p></div><button className="button primary" disabled={loading} onClick={onAdd}><span className="plus">+</span>{addLabel}</button></div>;
+  return <div className="page-heading"><div><span className="eyebrow">SALES</span><h1>{title}</h1><p>{description}</p></div><button className="button primary" disabled={loading} onClick={onAdd}><span className="plus">+</span>{addLabel}</button></div>;
 }
 
 function tableCells(children) {
