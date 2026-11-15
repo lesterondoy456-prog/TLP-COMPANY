@@ -9,7 +9,7 @@ const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const backend = path.join(workspace, 'NODE JS SERVER');
 const systems = { SalesSystem: 5189, WarehouseSystem: 5190, PurchasingSystem: 5191, ConfigurationSystem: 5192 };
 const sidebarPages = {
-  SalesSystem: ['Customer', 'Product', 'SalesOrder', 'Invoice', 'DeliveryReceipt', 'ShippingInvoice', 'SalesUserLogin'],
+  SalesSystem: ['Customer', 'Product', 'Inventory', 'SalesOrder', 'Invoice', 'DeliveryReceipt', 'ShippingInvoice', 'SalesUserLogin'],
   PurchasingSystem: ['PRMonitoring', 'POMonitoring', 'Supplier', 'Supplies', 'ReceivingReceipt', 'PurchasingUserLogin'],
   WarehouseSystem: ['SuppliesStock', 'WarehouseUserLogin'],
   ConfigurationSystem: ['ATC', 'AuditTrail', 'Bank', 'Country', 'Currency', 'CustomerCategory', 'PaymentTerm', 'ProductCategory', 'SuppliesCategory', 'UnitOfProduct', 'VAT', 'Warehouse', 'WarehouseLocation', 'ConfigurationUserLogin'],

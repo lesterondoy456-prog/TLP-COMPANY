@@ -12,7 +12,7 @@ const roleLabels = { admin: 'Administrator', saleshead: 'Sales Head', sales: 'Sa
 
 async function workspace(t, actorRole) {
   const accounts = structuredClone(baseAccounts);
-  const actor = accounts.find(account => account.role === actorRole);
+  let actor = accounts.find(account => account.role === actorRole);
   const writes = [];
   const browser = await mockBrowser(t, async ({ method, pathname, body }) => {
     if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: actor } };
@@ -21,6 +21,11 @@ async function workspace(t, actorRole) {
       return actorRole === 'sales' ? { status: 403, json: { message: 'No account access.' } } : { json: { records: accounts } };
     }
     if (method === 'GET' && ['/api/customers', '/api/products', '/api/sales-orders', '/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices'].includes(pathname)) return { json: { records: [] } };
+    if (method === 'PUT' && pathname === '/api/auth/profile') {
+      writes.push({ method, pathname, body });
+      actor = { ...actor, ...body };
+      return { json: { user: actor } };
+    }
     if (method === 'POST' && pathname === '/api/users') {
       writes.push({ method, pathname, body });
       const { password, ...profile } = body;
@@ -44,16 +49,35 @@ async function workspace(t, actorRole) {
   return { ...browser, actor, writes, accounts };
 }
 
-async function profileRole(page, actor, label) {
+async function assertUsernameLocked(page, dialog, username) {
+  const input = dialog.getByRole('textbox', { name: /^Username/ });
+  await expect(input).toHaveValue(username);
+  await expect(input).toHaveAttribute('readonly', '');
+  await expect(input).toBeEnabled();
+  await expect(input).not.toBeEditable();
+  await input.focus();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_renamed');
+  await expect(input).toHaveValue(username);
+  await expect(dialog.getByText('Username cannot be changed.', { exact: true })).toBeVisible();
+}
+
+async function profileRole(page, actor, label, save = false) {
   await page.getByRole('button', { name: new RegExp(actor.name) }).click();
   const profile = page.getByRole('dialog', { name: 'My profile', exact: true });
+  await assertUsernameLocked(page, profile, actor.username);
   await expect(profile.getByLabel('Role', { exact: true })).toHaveValue(label);
   await expect(profile.getByLabel('Role', { exact: true })).toBeDisabled();
-  await profile.getByRole('button', { name: 'Cancel', exact: true }).click();
+  if (save) {
+    await profile.getByLabel('Full name *', { exact: true }).fill('Updated Sales Profile');
+    await profile.getByRole('button', { name: 'Save profile', exact: true }).click();
+    await expect(profile).toHaveCount(0);
+  } else await profile.getByRole('button', { name: 'Cancel', exact: true }).click();
 }
 
 async function fillNewAccount(dialog, suffix) {
   await dialog.getByLabel('Full name *', { exact: true }).fill('Mock New ' + suffix);
+  await expect(dialog.getByRole('textbox', { name: /^Username/ })).toBeEditable();
   await dialog.getByLabel(/^Username \*/).fill('mock_new_' + suffix);
   await dialog.getByLabel(/^Password \*/).fill('Mock12');
 }
@@ -84,11 +108,13 @@ test('admin can create all three account roles and edit existing accounts', { ti
     await expect(page.getByRole('button', { name: 'Refresh records', exact: true })).toBeEnabled();
     assert.equal(writes.at(-1).method, 'POST');
     assert.equal(writes.at(-1).body.role, role);
+    assert.equal(writes.at(-1).body.username, 'mock_new_' + role);
     assert.equal(writes.at(-1).body.isActive, true, 'New accounts must start active.');
     assert.equal(writes.at(-1).body.password, 'Mock12', 'Exactly six characters must be accepted for new accounts.');
   }
   await page.getByRole('row').filter({ hasText: 'Mock Sales User' }).getByRole('button', { name: 'Edit', exact: true }).click();
   const edit = page.getByRole('dialog');
+  await assertUsernameLocked(page, edit, 'mock_sales');
   const active = edit.getByRole('checkbox', { name: 'Account is active', exact: true });
   await expect(active).toBeChecked();
   await active.uncheck();
@@ -101,9 +127,11 @@ test('admin can create all three account roles and edit existing accounts', { ti
   assert.equal(writes.at(-1).pathname, '/api/users/3');
   assert.equal(writes.at(-1).body.role, 'saleshead');
   assert.equal(writes.at(-1).body.isActive, false, 'Existing accounts can be made inactive.');
+  assert.equal(Object.hasOwn(writes.at(-1).body, 'username'), false, 'Account updates omit the immutable username.');
   assert.equal(Object.hasOwn(writes.at(-1).body, 'password'), false, 'Editing a profile must preserve a blank optional password.');
   await page.getByRole('row').filter({ hasText: 'Edited Sales User' }).getByRole('button', { name: 'Edit', exact: true }).click();
   const reset = page.getByRole('dialog');
+  await assertUsernameLocked(page, reset, 'mock_sales');
   await expect(reset.getByRole('checkbox', { name: 'Account is active', exact: true })).not.toBeChecked();
   await reset.getByRole('checkbox', { name: 'Account is active', exact: true }).check();
   await reset.getByLabel(/^New password \(optional\)/).fill('Mock12');
@@ -113,6 +141,7 @@ test('admin can create all three account roles and edit existing accounts', { ti
   assert.equal(writes.at(-1).method, 'PUT');
   assert.equal(writes.at(-1).body.isActive, true);
   assert.equal(writes.at(-1).body.password, 'Mock12', 'Exactly six characters must be accepted when resetting passwords.');
+  assert.equal(Object.hasOwn(writes.at(-1).body, 'username'), false);
   assertSafe();
 });
 
@@ -153,8 +182,12 @@ test('Sales Head sees Sales accounts and creates only Sales without edit control
 test('Sales has its profile role and no account-management navigation or reads', { timeout: 60_000 }, async t => {
   const { page, actor, apiRequests, writes, assertSafe } = await workspace(t, 'sales');
   await expect(page.getByRole('button', { name: 'SalesUserLogin', exact: true })).toHaveCount(0);
-  await profileRole(page, actor, 'Sales');
+  await profileRole(page, actor, 'Sales', true);
   assert.equal(apiRequests.some(call => call.pathname === '/api/users'), false);
-  assert.deepEqual(writes, []);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].pathname, '/api/auth/profile');
+  assert.equal(writes[0].body.name, 'Updated Sales Profile');
+  assert.equal(Object.hasOwn(writes[0].body, 'username'), false, 'My profile saves editable fields without submitting username.');
+  assert.equal(Object.hasOwn(writes[0].body, 'role'), false);
   assertSafe();
 });

@@ -36,9 +36,9 @@ function fixture(overrides = {}) {
   const guard = router.stack.find(layer => !layer.route).handle;
   return {
     calls,
-    login: (system, input = {}, secure = false) => invokeRoute(router, 'POST', '/:system/auth/login', {
+    login: (system, input = {}, secure = false, forwardedProto) => invokeRoute(router, 'POST', '/:system/auth/login', {
       params: { system }, body: { username: ' Mock_Admin ', password, ...input },
-      is: type => type === 'application/json', secure, app: { locals: { env: { SESSION_SECRET: secret } } },
+      is: type => type === 'application/json', secure, get: name => name.toLowerCase() === 'x-forwarded-proto' ? forwardedProto : undefined, app: { locals: { env: { SESSION_SECRET: secret } } },
     }),
     async session(system, cookie, envSecret = secret) {
       const res = { locals: {}, statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
@@ -47,7 +47,7 @@ function fixture(overrides = {}) {
       await guard(req, res, () => { accepted = true; });
       return { accepted, res, user: res.locals.user, scopedUser: req[system + 'User'] };
     },
-    logout: system => invokeRoute(router, 'POST', '/:system/auth/logout', { params: { system }, secure: true }),
+    logout: (system, secure = true, forwardedProto) => invokeRoute(router, 'POST', '/:system/auth/logout', { params: { system }, secure, get: name => name.toLowerCase() === 'x-forwarded-proto' ? forwardedProto : undefined }),
   };
 }
 
@@ -100,6 +100,22 @@ test('remembered login and logout use the correct system cookie, expiry and secu
     assert.equal(payload.exp - payload.iat, 7 * 86400);
     const logout = await api.logout(system);
     assert.equal(logout.headers['Set-Cookie'], `tti_${system}_session=; Path=/api/${system}; HttpOnly; SameSite=Lax; Max-Age=0; Secure`);
+    assert.equal(logout.body.success, true);
+  }
+});
+
+test('HTTPS proxy login and logout cookies are Secure while plain LAN HTTP remains usable', async () => {
+  const api = fixture();
+  for (const system of systems) for (const forwardedProto of ['https', ' HTTPS ', 'https, http', 'http', 'http, https', undefined]) {
+    const secure = typeof forwardedProto === 'string' && forwardedProto.split(',')[0].trim().toLowerCase() === 'https';
+    const login = await api.login(system, { remember: true }, false, forwardedProto);
+    const cookie = login.headers['Set-Cookie'];
+    assert.equal(cookie.includes('; Secure'), secure, system + ': ' + forwardedProto);
+    assert.ok(cookie.includes(`Path=/api/${system}; HttpOnly; SameSite=Lax`));
+    assert.ok(cookie.endsWith('; Max-Age=604800'));
+    assert.equal((await api.session(system, cookie)).accepted, true);
+    const logout = await api.logout(system, false, forwardedProto);
+    assert.equal(logout.headers['Set-Cookie'], `tti_${system}_session=; Path=/api/${system}; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`);
     assert.equal(logout.body.success, true);
   }
 });

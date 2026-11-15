@@ -245,7 +245,7 @@ export function validateSalesRequest(path, options = {}) {
   }
   if (route === '/auth/profile' || /^\/users(?:\/\d+)?$/.test(route)) {
     text(input, 'name', 150, true);
-    username(input);
+    if (method === 'POST' && route === '/users') username(input);
     text(input, 'cpnumber', 30);
     email(input);
     photo(input);

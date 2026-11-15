@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
+    allowedHosts: ["configurationtti.infotechsystemsolution.com"],
     port: 5192,
     proxy: {
       "/api": {

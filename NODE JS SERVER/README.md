@@ -53,7 +53,26 @@ docker compose restart
 docker compose down
 ```
 
-`docker compose down` stops the five app containers; it does not delete the SQL database. Start them again with `docker compose up -d`.
+`docker compose down` stops the five app containers and both public tunnels; it does not delete the SQL database. Start them again with `docker compose up -d`.
+
+## Public access
+
+| System | Public address | Docker tunnel | Origin |
+| --- | --- | --- | --- |
+| Sales | https://salestti.infotechsystemsolution.com | `sales-tunnel` | `sales-system:5189` |
+| Configuration | https://configurationtti.infotechsystemsolution.com | `configuration-tunnel` | `configuration-system:5192` |
+
+Each hostname uses a dedicated Cloudflare Tunnel running in Docker with automatic restart. Keep this computer, Docker and SQL Server running for public access. Each hostname allows only its own API namespace; other systems' API paths return 404. All four apps remain accessible through their LAN ports.
+
+The private `config.yml` and `tunnel.json` for each tunnel live in `%USERPROFILE%\.cloudflared\tti-sales` and `%USERPROFILE%\.cloudflared\tti-configuration`, outside this repository. Compose mounts only the matching folder, read-only. Keep a private backup of both folders when moving to another computer; do not commit tunnel credentials. Existing Cloudflare tunnels and Windows services are independent of these services.
+
+```powershell
+docker compose logs --tail 50 sales-tunnel configuration-tunnel
+docker compose stop sales-tunnel configuration-tunnel
+docker compose up -d sales-tunnel configuration-tunnel
+```
+
+The Sales ingress allows `/api/sales`; Configuration allows `/api/configuration`. Both block other `/api` namespaces and forward their app and Socket.IO connection to the corresponding Vite proxy. Public HTTPS sessions use Secure, HttpOnly cookies; direct LAN HTTP remains supported. On a different installation without these tunnel files, start only the five application services with `docker compose up -d nodejs-server sales-system warehouse-system purchasing-system configuration-system`.
 
 ## Local development
 
@@ -123,7 +142,7 @@ Purchasing receipt changes refresh Warehouse inventory and receiving movements, 
 
 The local `.env` contains only `PORT`, `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `SESSION_SECRET`. `PORT` is the local Node API port; `DB_SERVER` is `localhost` and `DB_NAME` is `TTICompany`. The SQL login authenticates the backend to SQL Server; it is separate from department user accounts. `SESSION_SECRET` signs JWTs. Docker overrides the SQL hostname to `host.docker.internal` and uses its fixed API port. The `.env` file is excluded from Git and Docker images; keep a private backup when moving the application to another computer.
 
-The initial administrator is named Lester. Add your mobile number, email, and profile photo through each app's own profile form. Administrators manage accounts in that app's UserLogin screen. Sales retains the following account permissions:
+The initial administrator is named Lester. Add your mobile number, email, and profile photo through each app's own profile form. A username is chosen during account creation and cannot be changed afterward, including by administrators. Profile and account updates retain it, and the API rejects attempts to replace it. Administrators manage accounts in that app's UserLogin screen. Sales retains the following account permissions:
 
 | Role | Account permissions |
 | --- | --- |
@@ -137,7 +156,7 @@ Purchasing users work in Purchasing; Warehouse users view inventory; Configurati
 
 ## Sales workflow
 
-The **Sales** menu contains **Customer**, **Product**, **Sales Order**, **Invoice**, **Delivery Receipt**, and **Shipping Invoice**. Admin and Sales Head account actions are available in **SalesUserLogin** according to their roles.
+The **Sales** menu contains **Customer**, **Product**, **Inventory**, **Sales Order**, **Invoice**, **Delivery Receipt**, and **Shipping Invoice**. Admin and Sales Head account actions are available in **SalesUserLogin** according to their roles.
 
 1. Add customers in **Customer**.
 2. Add products and prices in **Product**. Its four CAS tabs are Basic Info, Customer, Inventory Sched, and Link Supplies. Monthly and Quarterly schedules are read-only reference rows; only the selected setup is saved. Product Color, Thickness, Plan Type, and customer EOL fields are omitted. Tag Color remains a separate field. Opening stock is not an Add Product input.
@@ -151,6 +170,8 @@ Each order supports one full invoice and one full delivery receipt; each invoice
 Product prices retain six decimal places in their source currency. An order's products must use one common source currency; its Rate converts those prices to the selected document currency (`source price × Rate`). The same currency requires Rate 1. Header VAT applies to the whole order. Line discounts are applied first, followed by a proportional allocation of any header discount; inclusive VAT is extracted, and exclusive VAT is added. The Bill To customer's decimal settings are saved with the order, and totals use its selected zero-to-six decimal precision. Invoice balances and payments retain up to six places. Saved source prices, converted prices, discounts, VAT and totals are ordinary database values. Configuration supplies the available currencies, terms and VAT codes; an empty configuration does not produce fabricated choices. A VAT code needs an explicit configured rate, including zero when appropriate. Legacy orders retain their existing values and two-decimal fallback.
 
 Finished-product stock is separate from supplies stock. Purchasing receives supplies/raw materials; it does not convert them into finished products. Production, stock adjustment, issuance, and returns are outside this scope. A delivery requires sufficient existing finished-product stock.
+
+**Inventory** is a read-only product stock monitor available to Admin, Sales Head and Sales accounts. It displays product code, description, UOP, current stock, stock status, category and product status, with search and filters. It reads the existing Product records and refreshes through the same realtime updates, including successful deliveries. Phone layouts use the existing record cards. Quantities remain per product and UOP; totals across different units are not combined, and the page creates no inventory records or transactions.
 
 ## Purchasing and Warehouse
 
@@ -167,6 +188,8 @@ PR and PO monitoring show posted downstream quantities and remaining balances. D
 ## Configuration
 
 The independent ConfigurationSystem contains ATC, Audit Trail, Bank, Country, Currency, Customer Category, Payment Term, Product Category, Supplies Category, Unit of Product, VAT, Warehouse, and Warehouse Location. Only administrators can change these masters. Deactivation retains referenced records and their history. Audit Trail is read-only and records application mutations without storing passwords or photos.
+
+On 15 November 2026, the existing 91 reference records belonging to TTI Laguna Philippines Inc. were copied from CAS through the Configuration API. Other companies and blank placeholder records were excluded. TTI has no Bank records in CAS, so Bank remains empty. The import preserves source values, lets TTI assign its own row IDs, and records the creates in this application's audit trail. CAS transactions, accounts and audit history were not copied. Startup does not repeat this import; private source exports are excluded from Git.
 
 The observed CAS inputs and limitations are recorded in `docs/cas-purchasing-reference.json`. Blank CAS forms were inspected without saving or posting transactions. Sales retains its existing full-order invoice/delivery relationships described above; CAS printing, unposting, production, and finished-goods allocation are not implemented by the new purchasing workflow.
 

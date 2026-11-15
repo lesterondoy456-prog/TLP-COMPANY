@@ -40,7 +40,7 @@ export default function Profile({ user, onClose, onSaved }) {
         <fieldset className="form-grid" disabled={busy}>
           <PhotoField value={form.photo} name={form.name} onChange={value => set('photo', value)} />
           <Field label="Full name *"><input name="name" required maxLength={150} autoComplete="name" value={form.name} onChange={event => set('name', event.target.value)} /></Field>
-          <Field label="Username *" hint="Use letters, numbers, underscores, dots, or hyphens."><input name="username" required minLength={3} maxLength={80} autoComplete="username" value={form.username} onChange={event => set('username', event.target.value)} /></Field>
+          <Field label="Username" hint="Username cannot be changed."><input name="username" readOnly autoComplete="username" value={user.username || ''} /></Field>
           <Field label="Mobile number"><input name="cpnumber" type="tel" maxLength={30} autoComplete="tel" value={form.cpnumber} onChange={event => set('cpnumber', event.target.value)} /></Field>
           <Field label="Email"><input name="email" type="email" maxLength={254} autoComplete="email" value={form.email} onChange={event => set('email', event.target.value)} /></Field>
           <Field label="Role" wide><input value={roleLabel(user.role)} disabled /></Field>

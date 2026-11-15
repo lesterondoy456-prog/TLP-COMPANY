@@ -114,14 +114,17 @@ export function validateConfiguration(metadata, input, current) {
 
 export function validateAccountForm(input, { existing = false, profile = false } = {}) {
   const body = {};
-  for (const [key, label, max] of [['name', 'Full name', 150], ['username', 'Username', 80], ['cpnumber', 'Mobile number', 30], ['email', 'Email', 254], ['photo', 'Photo', 750000]]) {
+  for (const [key, label, max] of [['name', 'Full name', 150], ['cpnumber', 'Mobile number', 30], ['email', 'Email', 254], ['photo', 'Photo', 750000]]) {
     const value = input[key] ?? '';
     if (typeof value !== 'string' || value.trim().length > max || value.includes('\0')) invalid(key, `${label} must contain at most ${max} characters.`);
-    body[key] = ['name', 'username'].includes(key) ? value.trim() : value.trim() || null;
+    body[key] = key === 'name' ? value.trim() : value.trim() || null;
   }
   if (!body.name) invalid('name', 'Full name is required.');
-  body.username = body.username.toLowerCase();
-  if (!/^[a-z0-9._-]{3,80}$/.test(body.username)) invalid('username', 'Username must contain 3-80 letters, numbers, dots, underscores or hyphens.');
+  if (!existing && !profile) {
+    if (typeof input.username !== 'string') invalid('username', 'Username is required.');
+    body.username = input.username.trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,80}$/.test(body.username)) invalid('username', 'Username must contain 3-80 letters, numbers, dots, underscores or hyphens.');
+  }
   if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) invalid('email', 'Enter a valid email address.');
   if (body.photo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(body.photo)) {
     let url;

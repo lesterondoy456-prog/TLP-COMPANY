@@ -21,9 +21,10 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
     setBusy(true);
     setError('');
     const body = {
-      name: form.name.trim(), username: form.username.trim(), cpnumber: (form.cpnumber || '').trim() || null,
+      name: form.name.trim(), cpnumber: (form.cpnumber || '').trim() || null,
       email: (form.email || '').trim() || null, photo: form.photo || null, role: form.role, isActive: record ? form.isActive : true,
     };
+    if (!record) body.username = form.username.trim();
     if (form.password) body.password = form.password;
     try {
       const result = record
@@ -44,7 +45,7 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
         <fieldset className="form-grid" disabled={busy}>
           <PhotoField value={form.photo} name={form.name} onChange={value => set('photo', value)} />
           <Field label="Full name *"><input required maxLength={150} autoComplete="name" value={form.name} onChange={event => set('name', event.target.value)} /></Field>
-          <Field label="Username *" hint="Use letters, numbers, underscores, dots, or hyphens."><input required minLength={3} maxLength={80} autoComplete="off" value={form.username} onChange={event => set('username', event.target.value)} /></Field>
+          <Field label={record ? 'Username' : 'Username *'} hint={record ? 'Username cannot be changed.' : 'Use letters, numbers, underscores, dots, or hyphens.'}><input readOnly={Boolean(record)} required={!record} minLength={3} maxLength={80} autoComplete="off" value={record ? record.username : form.username} onChange={record ? undefined : event => set('username', event.target.value)} /></Field>
           <Field label="Mobile number"><input type="tel" maxLength={30} value={form.cpnumber || ''} onChange={event => set('cpnumber', event.target.value)} /></Field>
           <Field label="Email"><input type="email" maxLength={254} value={form.email || ''} onChange={event => set('email', event.target.value)} /></Field>
           <Field label="Role *"><select required value={form.role} onChange={event => set('role', event.target.value)}><option value={APP.workerRole}>{APP.workerLabel}</option><option value="admin">Administrator</option></select></Field>

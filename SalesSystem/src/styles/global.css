@@ -696,12 +696,12 @@ button:focus-visible, a:focus-visible { outline-color: var(--focus-ring); }
 /* Customer monitoring keeps full details inside one horizontally scrollable table. */
 .customer-monitor { min-width: 0; max-width: 100%; }
 .customer-monitor .table-scroll { max-width: 100%; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--accent) var(--surface-muted); }
-.customer-monitor .records-table { min-width: 3400px; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.customer-monitor .records-table { min-width: 3700px; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
 .customer-monitor .records-table th { width: 140px; white-space: normal; line-height: 1.5; }
 .customer-monitor .records-table td { vertical-align: top; white-space: normal; overflow-wrap: anywhere; line-height: 1.6; background: var(--surface); border-right: 1px solid var(--line); padding: 16px; }
 .customer-monitor .records-table tbody tr:hover td { background: var(--surface-hover); }
 .customer-monitor .records-table .customer-name-column { width: 220px; position: sticky; left: 0; z-index: 2; box-shadow: 1px 0 var(--line); }
-.customer-monitor .records-table .customer-address-column { width: 340px; }
+.customer-monitor .records-table .customer-address-column { width: 300px; }
 .customer-monitor .records-table .customer-email-column { width: 220px; }
 .customer-monitor .records-table .customer-notes-column { width: 280px; white-space: pre-line; }
 .customer-monitor .records-table .customer-number-column, .customer-monitor .records-table .customer-status-column { width: 100px; }
@@ -710,7 +710,6 @@ button:focus-visible, a:focus-visible { outline-color: var(--focus-ring); }
 .customer-monitor .entity-icon { flex-shrink: 0; }
 .customer-monitor .entity-cell { align-items: flex-start; }
 .customer-monitor .entity-cell > div { min-width: 0; }
-.customer-address-block + .customer-address-block { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line); }
 .customer-address-label { display: block; margin-bottom: 5px; color: var(--accent); font-size: 10px; font-weight: 650; }
 .customer-address-block p { margin: 0; white-space: pre-line; }
 .customer-address-block p + p { margin-top: 8px; }

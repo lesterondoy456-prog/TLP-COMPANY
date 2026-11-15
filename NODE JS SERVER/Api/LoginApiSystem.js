@@ -126,7 +126,8 @@ router.post('/:system/auth/login', async (req, res) => {
   const signingKey = createHmac('sha256', secret).update(`tti-session:${system}`).digest();
   const signature = createHmac('sha256', signingKey).update(value).digest('base64url');
   const token = `${value}.${signature}`;
-  res.setHeader('Set-Cookie', `${definition.cookie}=${token}; Path=${definition.path}; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}${input.remember === true ? `; Max-Age=${lifetime}` : ''}`);
+  const secureCookie = req.secure || String(req.get?.('X-Forwarded-Proto') || '').split(',')[0].trim().toLowerCase() === 'https';
+  res.setHeader('Set-Cookie', `${definition.cookie}=${token}; Path=${definition.path}; HttpOnly; SameSite=Lax${secureCookie ? '; Secure' : ''}${input.remember === true ? `; Max-Age=${lifetime}` : ''}`);
   res.json({
     user: account
   });
@@ -140,7 +141,8 @@ router.post('/:system/auth/logout', (req, res) => {
     throw error;
   }
   const definition = AUTH_SYSTEMS[system];
-  res.setHeader('Set-Cookie', `${definition.cookie}=; Path=${definition.path}; HttpOnly; SameSite=Lax; Max-Age=0${req.secure ? '; Secure' : ''}`);
+  const secureCookie = req.secure || String(req.get?.('X-Forwarded-Proto') || '').split(',')[0].trim().toLowerCase() === 'https';
+  res.setHeader('Set-Cookie', `${definition.cookie}=; Path=${definition.path}; HttpOnly; SameSite=Lax; Max-Age=0${secureCookie ? '; Secure' : ''}`);
   res.json({
     success: true
   });
@@ -389,6 +391,11 @@ router.put('/:system/users/:id', async (req, res) => {
       error.status = 404;
       throw error;
     }
+    if (Object.hasOwn(input, 'username') && (typeof input.username !== 'string' || input.username.trim() !== current.username)) {
+      const error = new Error('Username cannot be changed after account creation.');
+      error.status = 400;
+      throw error;
+    }
     if (id === storedActor.id && (!isActive || role !== 'admin')) {
       const error = new Error('Keep your own administrator account active with the admin role.');
       error.status = 400;
@@ -402,9 +409,9 @@ router.put('/:system/users/:id', async (req, res) => {
         throw error;
       }
     }
-    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), typeof input.cpnumber === 'string' ? input.cpnumber.trim() || null : null).input('email', sql.NVarChar(sql.MAX), typeof input.email === 'string' ? input.email.trim() || null : null).input('photo', sql.NVarChar(sql.MAX), typeof input.photo === 'string' ? input.photo.trim() || null : null).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
+    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('cpnumber', sql.NVarChar(sql.MAX), typeof input.cpnumber === 'string' ? input.cpnumber.trim() || null : null).input('email', sql.NVarChar(sql.MAX), typeof input.email === 'string' ? input.email.trim() || null : null).input('photo', sql.NVarChar(sql.MAX), typeof input.photo === 'string' ? input.photo.trim() || null : null).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
     if (passwordHash) query.input('passwordHash', sql.VarChar(sql.MAX), passwordHash);
-    await query.input('id', sql.Int, id).query(`UPDATE dbo.${definition.table} SET name=@name,username=@username,cpnumber=@cpnumber,email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME()${passwordHash ? ',passwordHash=@passwordHash' : ''} WHERE id=@id`);
+    await query.input('id', sql.Int, id).query(`UPDATE dbo.${definition.table} SET name=@name,cpnumber=@cpnumber,email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME()${passwordHash ? ',passwordHash=@passwordHash' : ''} WHERE id=@id`);
     await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,'users','update',@recordId,SYSUTCDATETIME())");
     return id;
   });
@@ -448,10 +455,15 @@ router.put('/:system/auth/profile', async (req, res) => {
       error.status = 401;
       throw error;
     }
+    if (Object.hasOwn(input, 'username') && (typeof input.username !== 'string' || input.username.trim() !== storedActor.username)) {
+      const error = new Error('Username cannot be changed after account creation.');
+      error.status = 400;
+      throw error;
+    }
     const role = storedActor.role;
     const isActive = storedActor.isActive;
-    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('username', sql.NVarChar(sql.MAX), String(input.username ?? '').trim().toLowerCase()).input('cpnumber', sql.NVarChar(sql.MAX), typeof input.cpnumber === 'string' ? input.cpnumber.trim() || null : null).input('email', sql.NVarChar(sql.MAX), typeof input.email === 'string' ? input.email.trim() || null : null).input('photo', sql.NVarChar(sql.MAX), typeof input.photo === 'string' ? input.photo.trim() || null : null).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
-    await query.input('id', sql.Int, id).query(`UPDATE dbo.${definition.table} SET name=@name,username=@username,cpnumber=@cpnumber,email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    const query = request(scope).input('name', sql.NVarChar(sql.MAX), String(input.name ?? '').trim()).input('cpnumber', sql.NVarChar(sql.MAX), typeof input.cpnumber === 'string' ? input.cpnumber.trim() || null : null).input('email', sql.NVarChar(sql.MAX), typeof input.email === 'string' ? input.email.trim() || null : null).input('photo', sql.NVarChar(sql.MAX), typeof input.photo === 'string' ? input.photo.trim() || null : null).input('role', sql.NVarChar(sql.MAX), role).input('isActive', sql.Bit, isActive);
+    await query.input('id', sql.Int, id).query(`UPDATE dbo.${definition.table} SET name=@name,cpnumber=@cpnumber,email=@email,photo=@photo,role=@role,isActive=@isActive,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
     await request(scope).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), storedActor.name).input('recordId', sql.NVarChar(sql.MAX), String(id)).input('system', sql.NVarChar(sql.MAX), system).query("INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,'users','profile',@recordId,SYSUTCDATETIME())");
     return id;
   });

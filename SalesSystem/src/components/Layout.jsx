@@ -65,7 +65,7 @@ export default function Layout({ user, page, pages, data, loaded, onPage, onProf
       <nav aria-label="Sales system">
         {pages.filter(item => item.id !== 'users').map(item => <button key={item.id} aria-label={item.title} title={item.title} className={'nav-item ' + (page === item.id ? 'active' : '')} aria-current={page === item.id ? 'page' : undefined} onClick={() => { onPage(item.id); setMenuOpen(false); }}>
           <Icon name={item.icon} size={19} /><span>{item.title}</span>
-          {loaded && <span className="nav-count" aria-hidden="true">{data[item.id].length.toLocaleString('en-PH')}</span>}
+          {loaded && <span className="nav-count" aria-hidden="true">{data[item.countKey || item.id].length.toLocaleString('en-PH')}</span>}
         </button>)}
       </nav>
       {canManageUsers && <><p className="nav-label administration">{isAdmin ? 'ADMINISTRATION' : 'TEAM'}</p><button aria-label="SalesUserLogin" title="SalesUserLogin" className={'nav-item ' + (page === 'users' ? 'active' : '')} aria-current={page === 'users' ? 'page' : undefined} onClick={() => { onPage('users'); setMenuOpen(false); }}><Icon name="shield" size={19} /><span>SalesUserLogin</span></button></>}

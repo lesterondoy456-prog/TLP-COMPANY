@@ -26,10 +26,11 @@ export default function CustomerPage({
     })} />
     {overview}
     <div className="customer-monitor">
-      <RecordsCard title="Customer" label="Customers" icon="users" addLabel="New customer" mobilePreview={['Short name', 'Contact person', 'Address']} rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
+      <RecordsCard title="Customer" label="Customers" icon="users" addLabel="New customer" mobilePreview={['Short name', 'Contact person', 'Sales address', 'DR address']} rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
         <th className="customer-name-column">Name</th>
         <th>Short name</th><th>Business style</th>
-        <th className="customer-address-column">Address</th>
+        <th className="customer-address-column">Sales address</th>
+        <th className="customer-address-column">DR address</th>
         <th>TIN</th><th>Contact person</th><th>Phone</th><th>Fax</th>
         <th>Country of origin</th><th>Country</th><th className="customer-email-column">Email</th>
         <th>Payment term</th><th>Category</th>
@@ -38,13 +39,16 @@ export default function CustomerPage({
         <th className="customer-notes-column">Remarks</th><th className="customer-status-column">Status</th>
         <th className="customer-actions-column actions-heading">Actions</th>
       </>} renderRow={row => {
-        const officeRoles = [row.salesAddressType === 'office' && 'Sales', row.drAddressType === 'office' && 'DR'].filter(Boolean).join(' / ');
-        const deliveryRoles = [row.salesAddressType === 'delivery' && 'Sales', row.drAddressType === 'delivery' && 'DR'].filter(Boolean).join(' / ');
         const deliveryAddresses = (row.deliveryAddresses || []).filter(address => typeof address === 'string' && address.trim());
         return <>
           <td className="customer-name-column"><div className="entity-cell"><span className="entity-icon"><Icon name="users" size={18} /></span><div><strong>{row.name || '—'}</strong></div></div></td>
           <td>{row.shortName || '—'}</td><td>{row.businessStyle || '—'}</td>
-          <td className="customer-address-column"><div className="customer-address-block"><span className="customer-address-label">{officeRoles ? officeRoles + ' · ' : ''}Office address</span><p>{row.address || '—'}</p></div>{(deliveryRoles || deliveryAddresses.length > 0) && <div className="customer-address-block"><span className="customer-address-label">{deliveryRoles ? deliveryRoles + ' · ' : ''}Delivery address</span>{deliveryAddresses.length ? deliveryAddresses.map((address, index) => <p key={index}>{address}</p>) : <p>—</p>}</div>}</td>
+          {[row.salesAddressType, row.drAddressType].map((type, index) => <td className="customer-address-column" key={index}>
+            {type === 'office' || type === 'delivery' ? <div className="customer-address-block">
+              <span className="customer-address-label">{type === 'office' ? 'Office address' : 'Delivery address'}</span>
+              {type === 'office' ? <p>{row.address || '—'}</p> : deliveryAddresses.length ? deliveryAddresses.map((address, addressIndex) => <p key={addressIndex}>{address}</p>) : <p>—</p>}
+            </div> : '—'}
+          </td>)}
           <td>{row.tin || '—'}</td><td>{row.contactPerson || '—'}</td><td>{row.cpnumber || '—'}</td><td>{row.faxNo || '—'}</td>
           <td>{row.countryOfOrigin || '—'}</td><td>{row.country || '—'}</td><td className="customer-email-column">{row.email || '—'}</td>
           <td>{row.paymentTerm || '—'}</td><td>{row.category || '—'}</td>

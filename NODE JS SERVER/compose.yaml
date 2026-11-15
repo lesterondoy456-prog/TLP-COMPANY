@@ -26,6 +26,18 @@ services:
     depends_on:
       nodejs-server:
         condition: service_healthy
+  sales-tunnel:
+    image: cloudflare/cloudflared:2026.10.6
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      - type: bind
+        source: ${USERPROFILE}/.cloudflared/tti-sales
+        target: /etc/cloudflared
+        read_only: true
+    depends_on:
+      sales-system:
+        condition: service_healthy
   warehouse-system:
     image: tti-company-warehouse-system:local
     build:
@@ -61,4 +73,16 @@ services:
       API_PROXY_TARGET: http://nodejs-server:5188
     depends_on:
       nodejs-server:
+        condition: service_healthy
+  configuration-tunnel:
+    image: cloudflare/cloudflared:2026.10.6
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      - type: bind
+        source: ${USERPROFILE}/.cloudflared/tti-configuration
+        target: /etc/cloudflared
+        read_only: true
+    depends_on:
+      configuration-system:
         condition: service_healthy

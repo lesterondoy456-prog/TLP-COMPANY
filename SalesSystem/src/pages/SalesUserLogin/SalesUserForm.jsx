@@ -11,6 +11,7 @@ export default function SalesUserForm({ record, profile = false, actorRole = 'sa
   const [form, setForm] = useState({ name: '', username: '', cpnumber: '', email: '', photo: '', role: 'sales', isActive: true, ...record, password: '' });
   const { busy, error, save } = useSave(onSaved);
   const canAssignRoles = actorRole === 'admin';
+  const existing = profile || Boolean(record);
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
   function submit(event) {
     event.preventDefault();
@@ -18,7 +19,8 @@ export default function SalesUserForm({ record, profile = false, actorRole = 'sa
       save(() => Promise.reject(new Error('You do not have permission to manage this user account.')));
       return;
     }
-    const body = trimFields({ name: form.name, username: form.username, cpnumber: form.cpnumber, email: form.email, photo: form.photo });
+    const body = trimFields({ name: form.name, cpnumber: form.cpnumber, email: form.email, photo: form.photo });
+    if (!existing) body.username = form.username.trim();
     for (const key of ['cpnumber', 'email', 'photo']) if (!body[key]) body[key] = null;
     if (!profile) { body.role = canAssignRoles ? form.role : 'sales'; body.isActive = record ? form.isActive : true; if (form.password) body.password = form.password; }
     save(() => api(profile ? '/api/sales/auth/profile' : record ? '/api/sales/users/' + record.id : '/api/sales/users', { method: profile || record ? 'PUT' : 'POST', body }));
@@ -27,7 +29,7 @@ export default function SalesUserForm({ record, profile = false, actorRole = 'sa
     <form onSubmit={submit}><div className="modal-body"><ErrorNotice message={error} /><fieldset disabled={busy} className="form-grid">
       <PhotoField value={form.photo} name={form.name} onChange={value => set('photo', value)} />
       <Field label="Full name *"><input required maxLength={150} value={form.name} onChange={e => set('name', e.target.value)} autoComplete="name" /></Field>
-      <Field label="Username *" hint="Use letters, numbers, underscores, dots, or hyphens."><input required maxLength={80} minLength={3} value={form.username} onChange={e => set('username', e.target.value)} autoComplete="off" /></Field>
+      <Field label={existing ? 'Username' : 'Username *'} hint={existing ? 'Username cannot be changed.' : 'Use letters, numbers, underscores, dots, or hyphens.'}><input readOnly={existing} required={!existing} maxLength={80} minLength={3} value={existing ? record?.username || '' : form.username} onChange={existing ? undefined : e => set('username', e.target.value)} autoComplete="off" /></Field>
       <Field label="Mobile number"><input type="tel" maxLength={30} value={form.cpnumber || ''} onChange={e => set('cpnumber', e.target.value)} autoComplete="tel" /></Field>
       <Field label="Email"><input type="email" maxLength={254} value={form.email || ''} onChange={e => set('email', e.target.value)} autoComplete="email" /></Field>
       {profile ? <Field label="Role" wide><input value={roleLabel(form.role)} disabled /></Field> : <>

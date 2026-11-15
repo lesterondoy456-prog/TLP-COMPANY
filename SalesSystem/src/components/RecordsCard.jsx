@@ -3,7 +3,7 @@ import { Icon } from './Icons.jsx';
 import { Empty, LoadingSkeleton } from './UI.jsx';
 
 export function PageHeading({ title, description, addLabel, loading, onAdd }) {
-  return <div className="page-heading"><div><span className="eyebrow">SALES</span><h1>{title}</h1><p>{description}</p></div><button className="button primary" disabled={loading} onClick={onAdd}><span className="plus">+</span>{addLabel}</button></div>;
+  return <div className="page-heading"><div><h1>{title}</h1><p>{description}</p></div>{addLabel && onAdd && <button className="button primary" disabled={loading} onClick={onAdd}><span className="plus">+</span>{addLabel}</button>}</div>;
 }
 
 function tableCells(children) {
@@ -26,7 +26,7 @@ export function MobileRecordCard({ title, titleLabel, fields, status, actions, p
   </article>;
 }
 
-export default function RecordsCard({ title, label, icon, addLabel, rows, loading, loaded, onRefresh, headers, renderRow, mobilePreview }) {
+export default function RecordsCard({ title, label, icon, addLabel, rows, loading, loaded, onRefresh, headers, renderRow, mobilePreview, emptyTitle, emptyDetail }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const table = useRef(null);
@@ -51,7 +51,7 @@ export default function RecordsCard({ title, label, icon, addLabel, rows, loadin
   }, [loading, loaded, visible.length]);
   return <section className="records-card" aria-label={title} aria-busy={loading && !loaded}>
     <div className="records-toolbar"><div className="records-title"><h2>{label}</h2>{loaded && <span>{rows.length}</span>}</div><div className="records-tools"><label className="search-input"><Icon name="search" size={18} /><input type="search" aria-label={'Search ' + label.toLowerCase()} placeholder={'Search ' + label.toLowerCase() + '…'} value={query} onChange={event => { setQuery(event.target.value); setPage(1); }} /></label><button className={'icon-button refresh-button ' + (loading ? 'spinning' : '')} title="Refresh records" aria-label="Refresh records" onClick={onRefresh} disabled={loading}><Icon name="refresh" size={18} /></button></div></div>
-    {loading && !loaded ? <LoadingSkeleton label={'Loading your ' + label.toLowerCase()} /> : !visible.length ? <Empty icon={icon} title={query ? 'No matching records' : 'Your ' + label.toLowerCase() + ' start here'} detail={query ? 'Try another name, code, or document number.' : 'Select “' + addLabel + '” to add your first record.'} /> : <>
+    {loading && !loaded ? <LoadingSkeleton label={'Loading your ' + label.toLowerCase()} /> : !visible.length ? <Empty icon={icon} title={query ? 'No matching records' : emptyTitle || 'Your ' + label.toLowerCase() + ' start here'} detail={query ? 'Try another name, code, or document number.' : emptyDetail || 'Select “' + addLabel + '” to add your first record.'} /> : <>
       {overflow && <p className="table-scroll-hint"><Icon name="arrowRight" size={14} />Scroll sideways to see all columns.</p>}
       <div className="table-scroll records-desktop-table" ref={table} tabIndex={0} role="region" aria-label={label + ' table'}><table className="records-table"><thead><tr>{headers}</tr></thead><tbody>{rendered.map(row => <tr key={row.id}>{row.cells}</tr>)}</tbody></table></div>
       <div className="record-mobile-list">{rendered.map(row => <MobileRecordCard key={row.id} titleLabel={columns[0]?.props.children} title={row.cells[0]?.props.children} status={statusIndex >= 0 ? row.cells[statusIndex]?.props.children : null} actions={actionIndex >= 0 ? row.cells[actionIndex]?.props.children : null} preview={mobilePreview} fields={row.cells.flatMap((cell, index) => index === 0 || index === statusIndex || index === actionIndex ? [] : [{ label: columns[index]?.props.children || 'Details', value: cell.props.children }])} />)}</div>

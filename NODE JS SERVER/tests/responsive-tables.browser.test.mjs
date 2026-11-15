@@ -97,6 +97,17 @@ for (const specification of specifications) {
         if (system !== 'warehouse') await expect(card.locator('.badge').filter({ visible: true }).first()).toHaveText(system === 'purchasing' ? 'Not Yet Posted' : 'Active');
         assert.ok(await card.locator('dl').first().locator('dt').count(), 'Card values keep visible field labels.');
         await assertReadable(card.getByText(specification.reading, { exact: true }).filter({ visible: true }).first(), specification.card.split(' > ').at(-1));
+        if (system === 'sales') {
+          const salesAddress = card.locator('dt').filter({ hasText: /^Sales address$/ }).locator('..').locator('dd');
+          const drAddress = card.locator('dt').filter({ hasText: /^DR address$/ }).locator('..').locator('dd');
+          await expect(card.locator('dt').filter({ hasText: /^Address$/ })).toHaveCount(0);
+          await expect(salesAddress.locator('.customer-address-label')).toHaveText('Office address');
+          await expect(salesAddress.locator('p')).toHaveText(customers[0].address);
+          await expect(drAddress.locator('.customer-address-label')).toHaveText('Delivery address');
+          await expect(drAddress.locator('p')).toHaveText(customers[0].deliveryAddresses);
+          await assertReadable(salesAddress.locator('p'), specification.card.split(' > ').at(-1));
+          await assertReadable(drAddress.locator('p'), specification.card.split(' > ').at(-1));
+        }
         for (const name of specification.actions) {
           const action = card.getByRole('button', { name, exact: true });
           await expect(action).toBeVisible();

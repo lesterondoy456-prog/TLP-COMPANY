@@ -102,7 +102,7 @@ test('own-system administrators create permitted accounts while workers cannot m
       { match: /INSERT INTO dbo\.AuditTrail/ },
       { match: /WHERE id=@id$/, rows: [{ ...target, isActive: false }] },
     ]);
-    const updated = await invokeRoute(loadRouterWithDatabase('login', edit.database), 'PUT', '/:system/users/:id', requestFor(admin, { ...body(system), password: '', isActive: false }, target.id));
+    const updated = await invokeRoute(loadRouterWithDatabase('login', edit.database), 'PUT', '/:system/users/:id', requestFor(admin, { ...body(system), username: target.username, password: '', isActive: false }, target.id));
     assert.equal(updated.body.record.isActive, false);
     assert.equal(edit.counters.commits, 1);
     edit.done();
@@ -132,7 +132,7 @@ test('administrators cannot deactivate or demote themselves and last-admin check
       { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [admin] },
       { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [admin] },
     ]);
-    await assert.rejects(invokeRoute(loadRouterWithDatabase('login', self.database), 'PUT', '/:system/users/:id', requestFor(admin, { ...input, password: '' }, admin.id)), error => error.status === 400);
+    await assert.rejects(invokeRoute(loadRouterWithDatabase('login', self.database), 'PUT', '/:system/users/:id', requestFor(admin, { ...input, username: admin.username, password: '' }, admin.id)), error => error.status === 400);
     assert.equal(self.calls.some(call => /^UPDATE|^INSERT/.test(call.statement)), false);
     assert.equal(self.counters.rollbacks, 1);
     self.done();
@@ -142,7 +142,7 @@ test('administrators cannot deactivate or demote themselves and last-admin check
     { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [actor('admin', 'sales', 9)] },
     { match: /COUNT\(\*\).*WITH \(UPDLOCK,HOLDLOCK\).*role='admin' AND isActive=1$/, rows: [{ total: 1 }] },
   ]);
-  await assert.rejects(invokeRoute(loadRouterWithDatabase('login', last.database), 'PUT', '/:system/users/:id', requestFor(admin, { ...body('sales'), password: '' })), error => error.status === 409);
+  await assert.rejects(invokeRoute(loadRouterWithDatabase('login', last.database), 'PUT', '/:system/users/:id', requestFor(admin, { ...body('sales'), username: admin.username, password: '' })), error => error.status === 409);
   assert.equal(last.calls.some(call => /^UPDATE|^INSERT/.test(call.statement)), false);
   last.done();
 });
@@ -156,10 +156,107 @@ test('own profile ignores forged privileges and uses the fresh stored role for e
       { match: /INSERT INTO dbo\.AuditTrail/, inspect: ({ inputs }) => assert.equal(inputs.system, system) },
       { match: /WHERE id=@id$/, rows: [{ ...stored, name: 'Edited Profile' }] },
     ]);
-    const result = await invokeRoute(loadRouterWithDatabase('login', stage.database), 'PUT', '/:system/auth/profile', requestFor(stale, { ...body('admin'), id: 999, isActive: false }));
+    const result = await invokeRoute(loadRouterWithDatabase('login', stage.database), 'PUT', '/:system/auth/profile', requestFor(stale, { ...body('admin'), username: stored.username, id: 999, isActive: false }));
     assert.equal(result.body.user.role, system);
     assert.equal(result.body.user.isActive, true);
     assert.equal(result.body.user.id, stored.id);
+    assert.equal(stage.counters.commits, 1);
+    stage.done();
+  }
+});
+
+test('profile updates cannot rename any role in any system, including a case-only username change', async () => {
+  for (const system of ['sales', 'purchasing', 'warehouse', 'configuration']) {
+    const roles = system === 'sales' ? ['admin', 'saleshead', 'sales'] : ['admin', system];
+    for (const role of roles) for (const username of ['renamed_user', 'IMMUTABLE_USER', '', null, 123]) {
+      const stored = { ...actor(role, system), username: 'immutable_user' };
+      const stage = stagedDatabase([{ match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [stored] }]);
+      await assert.rejects(invokeRoute(loadRouterWithDatabase('login', stage.database), 'PUT', '/:system/auth/profile', requestFor(stored, { name: 'Edited profile', username })), error => error.status === 400 && /Username cannot be changed/.test(error.message));
+      assert.equal(stage.calls.some(call => /^UPDATE|^INSERT|^DELETE/.test(call.statement)), false);
+      assert.equal(stage.counters.commits, 0);
+      assert.equal(stage.counters.rollbacks, 1);
+      stage.done();
+    }
+  }
+});
+
+test('administrators cannot rename another account or their own account in any system', async () => {
+  for (const system of ['sales', 'purchasing', 'warehouse', 'configuration']) for (const own of [false, true]) {
+    const admin = actor('admin', system);
+    const target = own ? admin : { ...actor(system, system, 9), username: 'permanent_target' };
+    for (const username of ['different_name', target.username.toUpperCase(), null]) {
+      const stage = stagedDatabase([
+        { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [admin] },
+        { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [target] },
+      ]);
+      await assert.rejects(invokeRoute(loadRouterWithDatabase('login', stage.database), 'PUT', '/:system/users/:id', requestFor(admin, { ...body(target.role), username, password: '' }, target.id)), error => error.status === 400 && /Username cannot be changed/.test(error.message));
+      assert.equal(stage.calls.some(call => /^UPDATE|^INSERT|^DELETE/.test(call.statement)), false);
+      assert.equal(stage.counters.commits, 0);
+      assert.equal(stage.counters.rollbacks, 1);
+      stage.done();
+    }
+  }
+});
+
+test('omitted and identical usernames preserve the stored literal while other profile fields update', async () => {
+  for (const system of ['sales', 'purchasing', 'warehouse', 'configuration']) for (const supplied of [undefined, 'Permanent_User', ' Permanent_User ']) {
+    const stored = { ...actor(system, system), username: 'Permanent_User' };
+    const profile = { name: 'Edited profile', cpnumber: '09123456789', email: 'edited@example.test', photo: null, role: 'admin', isActive: false, ...(supplied === undefined ? {} : { username: supplied }) };
+    const resultRecord = { ...stored, name: profile.name, cpnumber: profile.cpnumber, email: profile.email, photo: null };
+    const stage = stagedDatabase([
+      { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [stored] },
+      { match: new RegExp(`UPDATE dbo\\.${tableFor(system)} SET`), inspect: ({ inputs, statement, inTransaction }) => {
+        assert.equal(inTransaction, true);
+        assert.equal(inputs.name, profile.name);
+        assert.equal(inputs.cpnumber, profile.cpnumber);
+        assert.equal(inputs.email, profile.email);
+        assert.equal(inputs.photo, null);
+        assert.equal(inputs.role, stored.role);
+        assert.equal(inputs.isActive, true);
+        assert.equal(Object.hasOwn(inputs, 'username'), false);
+        assert.doesNotMatch(statement, /\busername\s*=/i);
+      } },
+      { match: /INSERT INTO dbo\.AuditTrail/, inspect: ({ inputs }) => { assert.equal(inputs.userId, stored.id); assert.equal(inputs.userName, stored.name); assert.equal(inputs.recordId, String(stored.id)); } },
+      { match: /WHERE id=@id$/, rows: [resultRecord] },
+    ]);
+    const result = await invokeRoute(loadRouterWithDatabase('login', stage.database), 'PUT', '/:system/auth/profile', requestFor(stored, profile));
+    assert.equal(result.body.user.username, 'Permanent_User');
+    assert.equal(result.body.user.name, profile.name);
+    assert.equal(stage.counters.commits, 1);
+    stage.done();
+  }
+});
+
+test('account edits preserve usernames when omitted or unchanged and retain password, role, status and audit updates', async () => {
+  for (const system of ['sales', 'purchasing', 'warehouse', 'configuration']) for (const supplied of [undefined, 'Permanent_Target']) {
+    const admin = actor('admin', system);
+    const target = { ...actor(system, system, 9), username: 'Permanent_Target' };
+    const input = { ...body(system), name: 'Edited account', password: supplied === undefined ? 'New-Pass123' : '', isActive: false };
+    delete input.username;
+    if (supplied !== undefined) input.username = supplied;
+    const stage = stagedDatabase([
+      { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [admin] },
+      { match: /WITH \(UPDLOCK,HOLDLOCK\) WHERE id=@id$/, rows: [target] },
+      { match: new RegExp(`UPDATE dbo\\.${tableFor(system)} SET`), inspect: ({ inputs, statement, inTransaction }) => {
+        assert.equal(inTransaction, true);
+        assert.equal(inputs.id, target.id);
+        assert.equal(inputs.name, input.name);
+        assert.equal(inputs.role, input.role);
+        assert.equal(inputs.isActive, false);
+        assert.equal(inputs.cpnumber, null);
+        assert.equal(inputs.email, input.email);
+        assert.equal(Object.hasOwn(inputs, 'username'), false);
+        assert.doesNotMatch(statement, /\busername\s*=/i);
+        if (input.password) { assert.match(inputs.passwordHash, /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/); assert.match(statement, /passwordHash=@passwordHash/); }
+        else { assert.equal(Object.hasOwn(inputs, 'passwordHash'), false); assert.doesNotMatch(statement, /passwordHash/); }
+      } },
+      { match: /INSERT INTO dbo\.AuditTrail/, inspect: ({ inputs }) => { assert.equal(inputs.userId, admin.id); assert.equal(inputs.recordId, String(target.id)); assert.equal(inputs.system, system); } },
+      { match: /WHERE id=@id$/, rows: [{ ...target, name: input.name, isActive: false }] },
+    ]);
+    const result = await invokeRoute(loadRouterWithDatabase('login', stage.database), 'PUT', '/:system/users/:id', requestFor(admin, input));
+    assert.equal(result.body.record.username, target.username);
+    assert.equal(result.body.record.name, input.name);
+    assert.equal(result.body.record.isActive, false);
     assert.equal(stage.counters.commits, 1);
     stage.done();
   }

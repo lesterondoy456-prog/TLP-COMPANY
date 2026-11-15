@@ -38,7 +38,7 @@ export default function UserAccountForm({ record, onClose, onSaved }) {
         <fieldset className="form-grid" disabled={busy}>
           <PhotoField value={form.photo} name={form.name} onChange={value => set('photo', value)} />
           <Field label="Full name *"><input name="name" required maxLength={150} autoComplete="name" value={form.name} onChange={event => set('name', event.target.value)} /></Field>
-          <Field label="Username *" hint="Use letters, numbers, underscores, dots, or hyphens."><input name="username" required minLength={3} maxLength={80} autoComplete="off" value={form.username} onChange={event => set('username', event.target.value)} /></Field>
+          <Field label={record ? 'Username' : 'Username *'} hint={record ? 'Username cannot be changed.' : 'Use letters, numbers, underscores, dots, or hyphens.'}><input name="username" readOnly={Boolean(record)} required={!record} minLength={3} maxLength={80} autoComplete="off" value={record ? record.username : form.username} onChange={record ? undefined : event => set('username', event.target.value)} /></Field>
           <Field label="Mobile number"><input name="cpnumber" type="tel" maxLength={30} value={form.cpnumber || ''} onChange={event => set('cpnumber', event.target.value)} /></Field>
           <Field label="Email"><input name="email" type="email" maxLength={254} value={form.email || ''} onChange={event => set('email', event.target.value)} /></Field>
           <Field label="Role *"><select name="role" value={form.role} onChange={event => set('role', event.target.value)}><option value={APP.workerRole}>{APP.workerLabel}</option><option value="admin">Administrator</option></select></Field>

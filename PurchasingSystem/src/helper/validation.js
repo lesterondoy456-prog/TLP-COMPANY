@@ -165,11 +165,12 @@ export function validateReceiving(form) {
 export function validateAccount(form, { creating = false } = {}) {
   const errors = {};
   for (const [key, maximum] of Object.entries({ name: 150, username: 80, cpnumber: 30, email: 254, photo: 750000 })) {
+    if (key === 'username' && !creating) continue;
     const value = String(form[key] || '').trim();
     if (['name', 'username'].includes(key) && !value) errors[key] = key === 'name' ? 'Full name is required.' : 'Username is required.';
     else if (value.length > maximum || value.includes('\0')) errors[key] = key + ' exceeds its supported length.';
   }
-  if (form.username && !/^[a-z0-9._-]{3,80}$/i.test(form.username.trim())) errors.username = 'Username must contain 3-80 letters, numbers, dots, underscores or hyphens.';
+  if (creating && form.username && !/^[a-z0-9._-]{3,80}$/i.test(form.username.trim())) errors.username = 'Username must contain 3-80 letters, numbers, dots, underscores or hyphens.';
   if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errors.email = 'Enter a valid email address.';
   if (Object.hasOwn(form, 'role') && !['admin', 'purchasing'].includes(form.role)) errors.role = 'Choose Administrator or Purchasing.';
   if (creating || form.password) {

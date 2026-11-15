@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
@@ -80,7 +81,7 @@ test('named Invoice, Shipping Invoice and Delivery Receipt pages save and view m
   assertSafe();
 });
 
-test('Customer monitoring shows CAS details with one labeled address column and contained mobile scrolling', { timeout: 60_000 }, async t => {
+test('Customer monitoring shows CAS details with separate selected Sales and DR addresses on desktop and phone cards', { timeout: 60_000 }, async t => {
   const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true };
   const customer = {
     id: 2, code: 'C-LEGACY-HIDDEN', name: 'Aster Packaging Corporation', shortName: 'Aster', businessStyle: 'Manufacturing and trading',
@@ -97,47 +98,68 @@ test('Customer monitoring shows CAS details with one labeled address column and 
     salesAddressType: 'delivery', drAddressType: 'office', decimalInPrice: null, decimalInTotalPrice: null, vatInclusive: null, lastSalesDate: null,
   };
   const officeOnly = { id: 4, name: 'Office Only Customer', address: 'Main office, Santa Rosa, Laguna', deliveryAddresses: [], salesAddressType: 'office', drAddressType: 'office', isActive: true };
+  const reverse = { ...customer, id: 5, name: 'Reversed Address Customer', salesAddressType: 'delivery', drAddressType: 'office' };
+  const missingDelivery = { id: 6, name: 'Missing Delivery Customer', address: 'Existing office must not be used for delivery', deliveryAddresses: [], salesAddressType: 'delivery', drAddressType: 'delivery', isActive: true };
+  const unselected = { id: 7, name: 'Unselected Address Customer', address: 'Office is not selected', deliveryAddresses: ['Delivery is not selected'], salesAddressType: null, isActive: true };
   const { page, origin, screenshot, apiRequests, assertSafe } = await mockBrowser(t, async ({ method, pathname }) => {
     if (method !== 'GET') throw new Error('Customer monitoring checks must never save records.');
     if (pathname === '/api/auth/session') return { json: { user: actor } };
-    if (pathname === '/api/customers') return { json: { records: [customer, empty, officeOnly] } };
+    if (pathname === '/api/customers') return { json: { records: [customer, empty, officeOnly, reverse, missingDelivery, unselected] } };
     if (['/api/products', '/api/sales-orders', '/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [actor] : [] } };
   }, { project: 'SalesSystem', viewport: { width: 1440, height: 1000 }, screenshotName: 'customer-monitor-last.png' });
   await page.goto(origin);
   await expect(page.getByRole('heading', { name: 'Customer', level: 1, exact: true })).toBeVisible();
   const table = page.locator('.customer-monitor .records-table');
-  const headers = ['Name', 'Short name', 'Business style', 'Address', 'TIN', 'Contact person', 'Phone', 'Fax', 'Country of origin', 'Country', 'Email', 'Payment term', 'Category', 'Price decimals', 'Total decimals', 'VAT mode', 'VAT code', 'Tax code', 'Last sales date', 'Remarks', 'Status', 'Actions'];
+  const headers = ['Name', 'Short name', 'Business style', 'Sales address', 'DR address', 'TIN', 'Contact person', 'Phone', 'Fax', 'Country of origin', 'Country', 'Email', 'Payment term', 'Category', 'Price decimals', 'Total decimals', 'VAT mode', 'VAT code', 'Tax code', 'Last sales date', 'Remarks', 'Status', 'Actions'];
   await expect(table.getByRole('columnheader')).toHaveText(headers);
-  await expect(table.getByRole('columnheader', { name: 'Address', exact: true })).toHaveCount(1);
+  await expect(table.getByRole('columnheader', { name: 'Address', exact: true })).toHaveCount(0);
   const row = table.getByRole('row').filter({ hasText: customer.name });
   const cells = row.locator('td');
-  for (const [index, value] of [[0, customer.name], [1, customer.shortName], [2, customer.businessStyle], [4, customer.tin], [5, customer.contactPerson], [6, customer.cpnumber], [7, customer.faxNo], [8, customer.countryOfOrigin], [9, customer.country], [10, customer.email], [11, customer.paymentTerm], [12, customer.category], [13, '0'], [14, '4'], [15, 'Exclusive'], [16, 'VS'], [17, 'WC010'], [20, 'Active']]) {
+  for (const [index, value] of [[0, customer.name], [1, customer.shortName], [2, customer.businessStyle], [5, customer.tin], [6, customer.contactPerson], [7, customer.cpnumber], [8, customer.faxNo], [9, customer.countryOfOrigin], [10, customer.country], [11, customer.email], [12, customer.paymentTerm], [13, customer.category], [14, '0'], [15, '4'], [16, 'Exclusive'], [17, 'VS'], [18, 'WC010'], [21, 'Active']]) {
     await expect(cells.nth(index)).toHaveText(value);
   }
-  await expect(cells.nth(18)).toHaveText(new Intl.DateTimeFormat('en-PH', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date('2026-11-13T00:00:00Z')));
-  await expect(cells.nth(19)).toHaveText(customer.remarks);
-  const address = cells.nth(3);
-  await expect(address.locator('.customer-address-label')).toHaveText(['Sales · Office address', 'DR · Delivery address']);
-  await expect(address.locator('p')).toHaveText([customer.address, ...customer.deliveryAddresses]);
+  await expect(cells.nth(19)).toHaveText(new Intl.DateTimeFormat('en-PH', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date('2026-11-13T00:00:00Z')));
+  await expect(cells.nth(20)).toHaveText(customer.remarks);
+  for (const [record, expected] of [
+    [customer, [['Office address', [customer.address]], ['Delivery address', customer.deliveryAddresses]]],
+    [reverse, [['Delivery address', customer.deliveryAddresses], ['Office address', [customer.address]]]],
+    [empty, [['Delivery address', ['—']], ['Office address', ['—']]]],
+    [officeOnly, [['Office address', [officeOnly.address]], ['Office address', [officeOnly.address]]]],
+    [missingDelivery, [['Delivery address', ['—']], ['Delivery address', ['—']]]],
+    [unselected, [[null, []], [null, []]]],
+  ]) {
+    const addresses = table.getByRole('row').filter({ hasText: record.name }).locator('.customer-address-column');
+    await expect(addresses).toHaveCount(2);
+    for (const [index, [caption, values]] of expected.entries()) {
+      if (caption) {
+        await expect(addresses.nth(index).locator('.customer-address-label')).toHaveText(caption);
+        await expect(addresses.nth(index).locator('p')).toHaveText(values);
+      } else {
+        await expect(addresses.nth(index)).toHaveText('—');
+        await expect(addresses.nth(index).locator('.customer-address-label')).toHaveCount(0);
+      }
+    }
+  }
+  await expect(table.getByRole('row').filter({ hasText: missingDelivery.name })).not.toContainText(missingDelivery.address);
+  await expect(table.getByRole('row').filter({ hasText: unselected.name })).not.toContainText(unselected.address);
+  await expect(table.getByRole('row').filter({ hasText: unselected.name })).not.toContainText(unselected.deliveryAddresses[0]);
   await expect(page.getByText('C-LEGACY-HIDDEN', { exact: true })).toHaveCount(0);
   await expect(row.locator('.entity-cell small')).toHaveCount(0);
   const emptyCells = table.getByRole('row').filter({ hasText: empty.name }).locator('td');
-  for (const index of [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]) await expect(emptyCells.nth(index)).toHaveText('—');
-  await expect(emptyCells.nth(3).locator('.customer-address-label')).toHaveText(['DR · Office address', 'Sales · Delivery address']);
-  await expect(emptyCells.nth(3).locator('p')).toHaveText(['—', '—']);
-  await expect(emptyCells.nth(20)).toHaveText('Inactive');
-  const officeAddress = table.getByRole('row').filter({ hasText: officeOnly.name }).locator('.customer-address-column');
-  await expect(officeAddress.locator('.customer-address-label')).toHaveText(['Sales / DR · Office address']);
-  await expect(officeAddress.locator('p')).toHaveText([officeOnly.address]);
+  for (const index of [1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) await expect(emptyCells.nth(index)).toHaveText('—');
+  await expect(emptyCells.nth(21)).toHaveText('Inactive');
   const scroller = page.locator('.customer-monitor .table-scroll');
   assert.ok(await scroller.evaluate(element => element.scrollWidth > element.clientWidth));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await expect(cells.first()).toHaveCSS('position', 'sticky');
   await expect(cells.last()).toHaveCSS('position', 'sticky');
-  await screenshot('customer-monitor-dark-desktop.png');
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})));
+  });
+  await page.screenshot({ path: fileURLToPath(new URL('../.qa/screenshots/customer-monitor-dark-desktop.png', import.meta.url)), fullPage: false });
   await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await screenshot('customer-monitor-light-desktop.png');
+  await page.screenshot({ path: fileURLToPath(new URL('../.qa/screenshots/customer-monitor-light-desktop.png', import.meta.url)), fullPage: false });
   await page.setViewportSize({ width: 375, height: 812 });
   await page.evaluate(async () => {
     await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})));
@@ -145,10 +167,16 @@ test('Customer monitoring shows CAS details with one labeled address column and 
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Only the Customer table may scroll sideways.');
   await expect(scroller).toBeHidden();
   const mobileCard = page.locator('.customer-monitor .record-mobile-card').filter({ hasText: customer.name });
-  const mobileAddress = mobileCard.locator('dt').filter({ hasText: /^Address$/ }).locator('..').locator('dd');
-  await mobileAddress.scrollIntoViewIfNeeded();
-  await expect(mobileAddress).toContainText(customer.address);
-  await expect(mobileAddress).toContainText(customer.deliveryAddresses[0]);
+  const mobileSales = mobileCard.locator('dt').filter({ hasText: /^Sales address$/ }).locator('..').locator('dd');
+  const mobileDr = mobileCard.locator('dt').filter({ hasText: /^DR address$/ }).locator('..').locator('dd');
+  await mobileSales.scrollIntoViewIfNeeded();
+  await expect(mobileSales.locator('.customer-address-label')).toHaveText('Office address');
+  await expect(mobileSales.locator('p')).toHaveText(customer.address);
+  await expect(mobileSales).not.toContainText(customer.deliveryAddresses[0]);
+  await mobileDr.scrollIntoViewIfNeeded();
+  await expect(mobileDr.locator('.customer-address-label')).toHaveText('Delivery address');
+  await expect(mobileDr.locator('p')).toHaveText(customer.deliveryAddresses);
+  await expect(mobileDr).not.toContainText(customer.address);
   await screenshot('customer-monitor-address-mobile.png');
   await mobileCard.locator('.record-mobile-details > summary').click();
   await expect(mobileCard.getByText(customer.tin, { exact: true })).toBeVisible();

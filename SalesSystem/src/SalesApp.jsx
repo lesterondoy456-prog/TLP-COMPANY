@@ -7,6 +7,7 @@ import SalesOverview from './components/SalesOverview.jsx';
 import { Icon } from './components/Icons.jsx';
 import CustomerPage from './pages/Customer/Customer.jsx';
 import ProductPage from './pages/Product/Product.jsx';
+import InventoryPage from './pages/Inventory/Inventory.jsx';
 import SalesOrderPage from './pages/SalesOrder/SalesOrder.jsx';
 import InvoicePage from './pages/Invoice/Invoice.jsx';
 import DeliveryReceiptPage from './pages/DeliveryReceipt/DeliveryReceipt.jsx';
@@ -70,6 +71,7 @@ export default function SalesApp({ user, onUser, onLogout }) {
       {notice && <div className="toast" role="status"><Icon name="check" size={18} />{notice}<button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><Icon name="x" size={16} /></button></div>}
       {page === 'customers' && <CustomerPage {...props} />}
       {page === 'products' && <ProductPage {...props} />}
+      {page === 'inventory' && <InventoryPage {...props} />}
       {page === 'sales-orders' && <SalesOrderPage {...props} />}
       {page === 'sales-invoices' && <InvoicePage {...props} />}
       {page === 'delivery-receipts' && <DeliveryReceiptPage {...props} />}

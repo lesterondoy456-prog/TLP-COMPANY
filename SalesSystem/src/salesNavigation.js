@@ -10,6 +10,12 @@ export const SALES_PAGES = [
     "icon": "box"
   },
   {
+    "id": "inventory",
+    "title": "Inventory",
+    "icon": "grid",
+    "countKey": "products"
+  },
+  {
     "id": "sales-orders",
     "title": "Sales Order",
     "icon": "bag"

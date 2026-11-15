@@ -12,6 +12,19 @@ const systems = [
 ];
 const password = 'Mock12';
 
+async function assertUsernameLocked(page, dialog, username) {
+  const input = dialog.getByRole('textbox', { name: /^Username/ });
+  await expect(input).toHaveValue(username);
+  await expect(input).toHaveAttribute('readonly', '');
+  await expect(input).toBeEnabled();
+  await expect(input).not.toBeEditable();
+  await input.focus();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_renamed');
+  await expect(input).toHaveValue(username);
+  await expect(dialog.getByText('Username cannot be changed.', { exact: true })).toBeVisible();
+}
+
 for (const settings of systems) {
   test(`${settings.project} authenticates and manages only its own account roles`, { timeout: 60_000 }, async t => {
     const accounts = [
@@ -76,6 +89,7 @@ for (const settings of systems) {
       const select = dialog.getByRole('combobox', { name: 'Role *', exact: true });
       assert.deepEqual(await select.locator('option').evaluateAll(options => options.map(option => option.value).sort()), ['admin', settings.system].sort());
       await dialog.getByLabel('Full name *', { exact: true }).fill('New ' + role);
+      await expect(dialog.getByRole('textbox', { name: /^Username/ })).toBeEditable();
       await dialog.getByLabel(/^Username \*/).fill('new_' + role);
       await select.selectOption(role);
       if (role === 'admin') {
@@ -89,12 +103,14 @@ for (const settings of systems) {
       await dialog.getByRole('button', { name: 'Save user', exact: true }).click();
       await expect(dialog).toHaveCount(0);
       assert.equal(writes.at(-1).body.role, role);
+      assert.equal(writes.at(-1).body.username, 'new_' + role, 'New accounts keep their chosen username.');
       assert.equal(writes.at(-1).body.isActive, true, 'New accounts must start active.');
       assert.equal(writes.at(-1).body.password, password, 'Exactly six characters must be accepted for new accounts.');
       for (const key of ['cpnumber', 'email', 'photo']) assert.equal(writes.at(-1).body[key], null, 'Blank optional account fields must submit NULL.');
     }
     await page.getByRole('row').filter({ hasText: 'Mock Local Worker' }).getByRole('button', { name: 'Edit', exact: true }).click();
     const edit = page.getByRole('dialog');
+    await assertUsernameLocked(page, edit, 'local_worker');
     const active = edit.getByRole('checkbox', { name: 'Account is active', exact: true });
     await expect(active).toBeChecked();
     await active.uncheck();
@@ -104,10 +120,12 @@ for (const settings of systems) {
     assert.equal(writes.at(-1).method, 'PUT');
     assert.equal(writes.at(-1).body.role, settings.system);
     assert.equal(writes.at(-1).body.isActive, false, 'Existing accounts can be made inactive.');
+    assert.equal(Object.hasOwn(writes.at(-1).body, 'username'), false, 'Account updates omit the immutable username.');
     assert.equal(Object.hasOwn(writes.at(-1).body, 'password'), false);
 
     await page.getByRole('row').filter({ hasText: 'Edited Local Worker' }).getByRole('button', { name: 'Edit', exact: true }).click();
     const reset = page.getByRole('dialog');
+    await assertUsernameLocked(page, reset, 'local_worker');
     await expect(reset.getByRole('checkbox', { name: 'Account is active', exact: true })).not.toBeChecked();
     await reset.getByRole('checkbox', { name: 'Account is active', exact: true }).check();
     await reset.getByLabel(/^New password \(optional\)/).fill(password);
@@ -116,6 +134,7 @@ for (const settings of systems) {
     assert.equal(writes.at(-1).method, 'PUT');
     assert.equal(writes.at(-1).body.isActive, true);
     assert.equal(writes.at(-1).body.password, password, 'Exactly six characters must be accepted when resetting passwords.');
+    assert.equal(Object.hasOwn(writes.at(-1).body, 'username'), false);
 
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(signIn).toBeVisible();
@@ -124,12 +143,16 @@ for (const settings of systems) {
     await expect(page.getByRole('button', { name: settings.manager, exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: /Edited Local Worker/ }).click();
     const profile = page.getByRole('dialog', { name: 'My profile', exact: true });
+    await assertUsernameLocked(page, profile, 'local_worker');
     await expect(profile.getByLabel('Role', { exact: true })).toHaveValue(settings.label);
     await expect(profile.getByLabel('Role', { exact: true })).toBeDisabled();
+    await profile.getByLabel('Full name *', { exact: true }).fill('Updated Worker Profile');
     await profile.getByRole('button', { name: 'Save profile', exact: true }).click();
     await expect(profile).toHaveCount(0);
     for (const key of ['cpnumber', 'email', 'photo']) assert.equal(writes.at(-1).body[key], null, 'Blank optional profile fields must submit NULL.');
     assert.equal(Object.hasOwn(writes.at(-1).body, 'role'), false);
+    assert.equal(Object.hasOwn(writes.at(-1).body, 'username'), false, 'Profile updates omit the immutable username.');
+    assert.equal(writes.at(-1).body.name, 'Updated Worker Profile', 'Other profile details remain editable.');
     assert.equal(apiRequests.slice(workerStart).some(call => call.pathname === '/api/users'), false, 'Workers must not load the account manager.');
     assert.equal(writes.length, 5);
     assert.ok(apiRequests.every(call => call.system === settings.system && call.requestPathname.startsWith(`/api/${settings.system}/`)));

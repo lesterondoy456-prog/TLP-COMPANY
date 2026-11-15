@@ -7,7 +7,7 @@ import { mockBrowser } from './helpers/mock-browser.mjs';
 import { loadApi } from './helpers/load-api.mjs';
 
 const projects = [
-  { project: 'SalesSystem', system: 'sales', first: 'Customer', next: 'Product', count: 7 },
+  { project: 'SalesSystem', system: 'sales', first: 'Customer', next: 'Product', count: 8 },
   { project: 'PurchasingSystem', system: 'purchasing', first: 'PR Monitoring', next: 'PO Monitoring', count: 6 },
   { project: 'WarehouseSystem', system: 'warehouse', first: 'Supplies Stock', next: 'WarehouseUserLogin', count: 2 },
   { project: 'ConfigurationSystem', system: 'configuration', first: 'ATC', next: 'Bank', count: 14 },
