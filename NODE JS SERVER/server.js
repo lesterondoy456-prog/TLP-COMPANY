@@ -133,6 +133,7 @@ function createApp(env = process.env, options = {}) {
     res.once('finish', () => publishChanges(state, req, res, alreadyPosted));
     next();
   });
+  app.all(['/api/:system/auth/profile', '/api/:system/users', '/api/:system/users/:id'], express.json({ limit: Infinity }));
   app.use(express.json({ limit: MAX_BODY }));
   app.get('/', (req, res) => res.json({ name: 'TTI Laguna Philippines Inc. API', systems: ['sales', 'purchasing', 'warehouse', 'configuration'] }));
   app.get('/api/health', async (req, res) => {
@@ -168,7 +169,7 @@ function createApp(env = process.env, options = {}) {
   app.use((req, res) => res.status(404).json({ message: 'This endpoint was not found.' }));
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
-    if (error.type === 'entity.too.large') return res.status(413).json({ message: 'This request is too large. Keep photos below 550 KB.' });
+    if (error.type === 'entity.too.large') return res.status(413).json({ message: 'This request is too large.' });
     if (error.type === 'entity.parse.failed') return res.status(400).json({ message: 'Send a valid JSON object.' });
     if (Number.isInteger(error.status) && error.status >= 400 && error.status <= 599) return res.status(error.status).json({ message: error.message });
     const number = error.number || error.originalError?.number || error.originalError?.info?.number || error.precedingErrors?.find(item => item.number)?.number;

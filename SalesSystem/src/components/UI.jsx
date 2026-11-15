@@ -44,14 +44,14 @@ export function PhotoField({ value, onChange, name }) {
   function load(event) {
     const file = event.target.files?.[0]; setError('');
     if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('Choose a JPG, PNG, or WebP image.'); event.target.value = ''; return; }
-    if (file.size > 250 * 1024) { setError('Choose a photo smaller than 250 KB.'); event.target.value = ''; return; }
+    const issue = validatePhotoFile(file);
+    if (issue) { setError(issue); event.target.value = ''; return; }
     const reader = new FileReader();
     reader.onload = () => onChange(String(reader.result));
     reader.onerror = () => setError('This photo could not be read. Please choose another image.');
     reader.readAsDataURL(file);
   }
-  return <div className="photo-field span-2"><Avatar large user={{ name, photo: value }} /><div><strong>Profile photo</strong><p>JPG, PNG, or WebP · up to 250 KB</p><div className="photo-actions"><button type="button" className="button secondary small" onClick={() => fileRef.current.click()}>Choose photo</button>{value && <button type="button" className="text-button" onClick={() => { onChange(''); if (fileRef.current) fileRef.current.value = ''; }}>Remove</button>}</div><input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Profile photo" className="sr-only" onChange={load} />{error && <small className="error-text" role="alert">{error}</small>}</div></div>;
+  return <div className="photo-field span-2"><Avatar large user={{ name, photo: value }} /><div><strong>Profile photo</strong><p>JPG, PNG, or WebP</p><div className="photo-actions"><button type="button" className="button secondary small" onClick={() => fileRef.current.click()}>Choose photo</button>{value && <button type="button" className="text-button" onClick={() => { onChange(''); if (fileRef.current) fileRef.current.value = ''; }}>Remove</button>}</div><input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Profile photo" className="sr-only" onChange={load} />{error && <small className="error-text" role="alert">{error}</small>}</div></div>;
 }
 
 

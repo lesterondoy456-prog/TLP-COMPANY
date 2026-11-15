@@ -114,11 +114,14 @@ export function validateConfiguration(metadata, input, current) {
 
 export function validateAccountForm(input, { existing = false, profile = false } = {}) {
   const body = {};
-  for (const [key, label, max] of [['name', 'Full name', 150], ['cpnumber', 'Mobile number', 30], ['email', 'Email', 254], ['photo', 'Photo', 750000]]) {
+  for (const [key, label, max] of [['name', 'Full name', 150], ['cpnumber', 'Mobile number', 30], ['email', 'Email', 254]]) {
     const value = input[key] ?? '';
     if (typeof value !== 'string' || value.trim().length > max || value.includes('\0')) invalid(key, `${label} must contain at most ${max} characters.`);
     body[key] = key === 'name' ? value.trim() : value.trim() || null;
   }
+  const photoValue = input.photo ?? '';
+  if (typeof photoValue !== 'string' || photoValue.includes('\0')) invalid('photo', 'Photo must be an image upload or an HTTPS image URL.');
+  body.photo = photoValue.trim() || null;
   if (!body.name) invalid('name', 'Full name is required.');
   if (!existing && !profile) {
     if (typeof input.username !== 'string') invalid('username', 'Username is required.');
@@ -126,7 +129,7 @@ export function validateAccountForm(input, { existing = false, profile = false }
     if (!/^[a-z0-9._-]{3,80}$/.test(body.username)) invalid('username', 'Username must contain 3-80 letters, numbers, dots, underscores or hyphens.');
   }
   if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) invalid('email', 'Enter a valid email address.');
-  if (body.photo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(body.photo)) {
+  if (body.photo && !isPhotoDataUrl(body.photo)) {
     let url;
     try { url = new URL(body.photo); } catch { invalid('photo', 'Photo must be an image upload or an HTTPS image URL.'); }
     if (url.protocol !== 'https:' || url.username || url.password) invalid('photo', 'Photo must be an image upload or an HTTPS image URL.');
@@ -153,6 +156,13 @@ export function validateLoginForm(input) {
 
 export function validatePhotoFile(file) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) invalid('photo', 'Choose a JPG, PNG, or WebP image.');
-  if (file.size > 250 * 1024) invalid('photo', 'Choose a photo smaller than 250 KB.');
   return file;
+}
+
+function isPhotoDataUrl(value) {
+  if (typeof value !== 'string') return false;
+  const separator = value.indexOf(',');
+  if (separator < 0 || !['data:image/png;base64', 'data:image/jpeg;base64', 'data:image/webp;base64'].includes(value.slice(0, separator))) return false;
+  const content = value.slice(separator + 1).replace(/={1,2}$/, '');
+  return content.length > 0 && !/[^A-Za-z0-9+/]/.test(content);
 }

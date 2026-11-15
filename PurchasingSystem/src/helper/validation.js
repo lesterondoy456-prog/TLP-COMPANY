@@ -164,7 +164,7 @@ export function validateReceiving(form) {
 
 export function validateAccount(form, { creating = false } = {}) {
   const errors = {};
-  for (const [key, maximum] of Object.entries({ name: 150, username: 80, cpnumber: 30, email: 254, photo: 750000 })) {
+  for (const [key, maximum] of Object.entries({ name: 150, username: 80, cpnumber: 30, email: 254 })) {
     if (key === 'username' && !creating) continue;
     const value = String(form[key] || '').trim();
     if (['name', 'username'].includes(key) && !value) errors[key] = key === 'name' ? 'Full name is required.' : 'Username is required.';
@@ -176,7 +176,8 @@ export function validateAccount(form, { creating = false } = {}) {
   if (creating || form.password) {
     if (typeof form.password !== 'string' || form.password.length < 6 || form.password.length > 128) errors.password = 'Password must contain 6-128 characters.';
   }
-  if (form.photo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(form.photo)) {
+  if (form.photo && (typeof form.photo !== 'string' || form.photo.includes('\0'))) errors.photo = 'Choose a PNG, JPEG or WebP photo, or a valid HTTPS image URL.';
+  if (form.photo && !isPhotoDataUrl(form.photo)) {
     try { const url = new URL(form.photo); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }
     catch { errors.photo = 'Choose a PNG, JPEG or WebP photo, or a valid HTTPS image URL.'; }
   }
@@ -206,6 +207,13 @@ export function receivingPostingIssue(record) {
 
 export function photoFileError(file) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return 'Choose a JPG, PNG, or WebP image.';
-  if (file.size > 250 * 1024) return 'Choose a photo smaller than 250 KB.';
   return '';
+}
+
+function isPhotoDataUrl(value) {
+  if (typeof value !== 'string') return false;
+  const separator = value.indexOf(',');
+  if (separator < 0 || !['data:image/png;base64', 'data:image/jpeg;base64', 'data:image/webp;base64'].includes(value.slice(0, separator))) return false;
+  const content = value.slice(separator + 1).replace(/={1,2}$/, '');
+  return content.length > 0 && !/[^A-Za-z0-9+/]/.test(content);
 }

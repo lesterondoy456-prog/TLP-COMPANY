@@ -49,9 +49,11 @@ function date(input, key) {
 }
 
 function photo(input) {
-  const value = text(input, 'photo', 750000);
+  const raw = input.photo ?? '';
+  if (typeof raw !== 'string' || raw.includes('\0')) throw new ApiError(400, 'Photo must be a PNG, JPEG or WebP upload, or an HTTPS image URL.');
+  const value = raw.trim();
   if (!value) return null;
-  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) return value;
+  if (isPhotoDataUrl(value)) return value;
   try { const url = new URL(value); if (url.protocol === 'https:' && !url.username && !url.password) return value; } catch { /* Invalid URL below. */ }
   throw new ApiError(400, 'Photo must be a PNG, JPEG or WebP upload, or an HTTPS image URL.');
 }
@@ -506,6 +508,13 @@ export function validateCustomerAssignment(form, record, options) {
 
 export function validatePhotoFile(file) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return 'Choose a JPG, PNG, or WebP image.';
-  if (file.size > 250 * 1024) return 'Choose a photo smaller than 250 KB.';
   return '';
+}
+
+function isPhotoDataUrl(value) {
+  if (typeof value !== 'string') return false;
+  const separator = value.indexOf(',');
+  if (separator < 0 || !['data:image/png;base64', 'data:image/jpeg;base64', 'data:image/webp;base64'].includes(value.slice(0, separator))) return false;
+  const content = value.slice(separator + 1).replace(/={1,2}$/, '');
+  return content.length > 0 && !/[^A-Za-z0-9+/]/.test(content);
 }

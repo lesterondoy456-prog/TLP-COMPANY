@@ -142,7 +142,7 @@ Purchasing receipt changes refresh Warehouse inventory and receiving movements, 
 
 The local `.env` contains only `PORT`, `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `SESSION_SECRET`. `PORT` is the local Node API port; `DB_SERVER` is `localhost` and `DB_NAME` is `TTICompany`. The SQL login authenticates the backend to SQL Server; it is separate from department user accounts. `SESSION_SECRET` signs JWTs. Docker overrides the SQL hostname to `host.docker.internal` and uses its fixed API port. The `.env` file is excluded from Git and Docker images; keep a private backup when moving the application to another computer.
 
-The initial administrator is named Lester. Add your mobile number, email, and profile photo through each app's own profile form. A username is chosen during account creation and cannot be changed afterward, including by administrators. Profile and account updates retain it, and the API rejects attempts to replace it. Administrators manage accounts in that app's UserLogin screen. Sales retains the following account permissions:
+The initial administrator is named Lester. Add your mobile number, email, and profile photo through each app's own profile form. Profile and account photos accept JPG, PNG and WebP without an application file-size cap. A username is chosen during account creation and cannot be changed afterward, including by administrators. Profile and account updates retain it, and the API rejects attempts to replace it. Administrators manage accounts in that app's UserLogin screen. Sales retains the following account permissions:
 
 | Role | Account permissions |
 | --- | --- |

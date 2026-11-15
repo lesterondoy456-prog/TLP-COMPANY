@@ -11,7 +11,7 @@ export function validateAccountForm(input, { create = false } = {}) {
   if (create && !/^[a-z0-9._-]{3,80}$/i.test(String(input.username || '').trim())) throw new Error('Username must contain 3–80 letters, numbers, dots, underscores or hyphens.');
   if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) throw new Error('Enter a valid email address.');
   if ((create || input.password) && (typeof input.password !== 'string' || input.password.length < 6 || input.password.length > 128)) throw new Error('Password must contain 6-128 characters.');
-  if (input.photo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(input.photo)) {
+  if (input.photo && !isPhotoDataUrl(input.photo)) {
     let imageUrl;
     try { imageUrl = new URL(input.photo); } catch { throw new Error('Choose a valid profile photo.'); }
     if (imageUrl.protocol !== 'https:' || imageUrl.username || imageUrl.password) throw new Error('Choose a valid profile photo.');
@@ -25,5 +25,12 @@ export function validateLoginForm(input) {
 
 export function validatePhotoFile(file) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose a JPG, PNG, or WebP image.');
-  if (file.size > 250 * 1024) throw new Error('Choose a photo smaller than 250 KB.');
+}
+
+function isPhotoDataUrl(value) {
+  if (typeof value !== 'string') return false;
+  const separator = value.indexOf(',');
+  if (separator < 0 || !['data:image/png;base64', 'data:image/jpeg;base64', 'data:image/webp;base64'].includes(value.slice(0, separator))) return false;
+  const content = value.slice(separator + 1).replace(/={1,2}$/, '');
+  return content.length > 0 && !/[^A-Za-z0-9+/]/.test(content);
 }

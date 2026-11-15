@@ -60,7 +60,7 @@ export function PhotoField({ value, onChange, name }) {
     reader.onerror = () => setError('This photo could not be read. Please choose another image.');
     reader.readAsDataURL(file);
   }
-  return <div className="photo-field span-2"><Avatar large user={{ name, photo: value }} /><div><strong>Profile photo</strong><p>JPG, PNG, or WebP · up to 250 KB</p><div className="photo-actions"><button type="button" className="button secondary small" onClick={() => fileRef.current.click()}>Choose photo</button>{value && <button type="button" className="text-button" onClick={() => { onChange(''); if (fileRef.current) fileRef.current.value = ''; }}>Remove</button>}</div><input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Profile photo" className="sr-only" onChange={load} />{error && <small className="error-text" role="alert">{error}</small>}</div></div>;
+  return <div className="photo-field span-2"><Avatar large user={{ name, photo: value }} /><div><strong>Profile photo</strong><p>JPG, PNG, or WebP</p><div className="photo-actions"><button type="button" className="button secondary small" onClick={() => fileRef.current.click()}>Choose photo</button>{value && <button type="button" className="text-button" onClick={() => { onChange(''); if (fileRef.current) fileRef.current.value = ''; }}>Remove</button>}</div><input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Profile photo" className="sr-only" onChange={load} />{error && <small className="error-text" role="alert">{error}</small>}</div></div>;
 }
 
 export function TableScroll({ children, label = 'Record columns', className = '' }) {
