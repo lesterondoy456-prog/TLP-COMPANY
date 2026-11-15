@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons.jsx';
 import { validatePhotoFile } from '../helper/validation.js';
 
@@ -59,4 +59,35 @@ export function LoadingSkeleton({ label = 'Loading records', rows = 5 }) {
     <div className="skeleton-heading" aria-hidden="true"><span className="skeleton-bar" /><span className="skeleton-bar" /></div>
     {Array.from({ length: rows }, (_, row) => <div className="skeleton-row" aria-hidden="true" key={row}>{Array.from({ length: 4 }, (_, cell) => <span className="skeleton-bar" key={cell} />)}</div>)}
   </div>;
+}
+
+export function TableScroll({ children, label = 'Record columns', className = '' }) {
+  const viewport = useRef(null);
+  const [overflow, setOverflow] = useState(false);
+  useEffect(() => {
+    const element = viewport.current;
+    const measure = () => setOverflow(element.scrollWidth > element.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+  return <div className={'responsive-table ' + className}>
+    <div ref={viewport} className="table-scroll" role="region" aria-label={label} tabIndex={overflow ? 0 : undefined}>{children}</div>
+    {overflow && <p className="table-scroll-hint">Scroll horizontally to view all columns.</p>}
+  </div>;
+}
+
+export function MobileRecordCards({ records, fields, title, status, actions, afterRecord, renderField, primaryCount = 2 }) {
+  return <div className="mobile-records">{records.map((record, index) => {
+    const cells = fields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{renderField ? renderField(record, field) : record[field.key] ?? '—'}</dd></div>);
+    return <article className="mobile-record-card" key={record.id ?? record.suppliesId ?? index}>
+      <header><h3 className="mobile-record-title">{title(record)}</h3>{status?.(record)}</header>
+      <dl className="mobile-record-fields">{cells.slice(0, primaryCount)}</dl>
+      {cells.length > primaryCount && <details className="mobile-record-details"><summary>More details</summary><dl className="mobile-record-fields">{cells.slice(primaryCount)}</dl></details>}
+      {actions && <div className="mobile-record-actions">{actions(record)}</div>}
+      {afterRecord?.(record)}
+    </article>;
+  })}</div>;
 }

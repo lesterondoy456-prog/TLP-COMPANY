@@ -26,7 +26,7 @@ export default function CustomerPage({
     })} />
     {overview}
     <div className="customer-monitor">
-      <RecordsCard title="Customer" label="Customers" icon="users" addLabel="New customer" rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
+      <RecordsCard title="Customer" label="Customers" icon="users" addLabel="New customer" mobilePreview={['Short name', 'Contact person', 'Address']} rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
         <th className="customer-name-column">Name</th>
         <th>Short name</th><th>Business style</th>
         <th className="customer-address-column">Address</th>

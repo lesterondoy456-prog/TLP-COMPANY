@@ -105,11 +105,15 @@ test('Invoice monitoring expands one SI inline, shows exact amounts and keeps ac
   await page.setViewportSize({ width: 390, height: 844 });
   await secondPanel.scrollIntoViewIfNeeded();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  assert.ok(await secondPanel.locator('.invoice-items-scroll').evaluate(element => element.scrollWidth > element.clientWidth));
+  await expect(secondPanel.locator('.invoice-items-scroll')).toBeHidden();
   assert.ok((await secondPanel.boundingBox()).width <= (await monitor.boundingBox()).width);
   await screenshot('invoice-monitor-mobile-expanded.png');
-  await secondPanel.locator('.invoice-items-scroll').evaluate(element => { element.scrollLeft = element.scrollWidth; });
-  await expect(secondPanel.getByRole('cell', { name: 'REF-A1', exact: true })).toBeVisible();
+  const mobileItem = secondPanel.locator('.invoice-mobile-items > .record-mobile-card');
+  await expect(mobileItem).toHaveCount(1);
+  await expect(mobileItem).toContainText('BIRCH-ONLY');
+  await expect(mobileItem.locator('dt').filter({ hasText: /^Selling price$/ }).locator('..').locator('dd')).toHaveText('₱55.00');
+  await mobileItem.locator('.record-mobile-details > summary').click();
+  await expect(mobileItem.getByText('REF-A1', { exact: true })).toBeVisible();
   assert.ok(apiRequests.every(request => request.method === 'GET')); assertSafe();
 });
 

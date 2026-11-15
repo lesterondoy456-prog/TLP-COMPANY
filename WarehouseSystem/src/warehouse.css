@@ -170,3 +170,24 @@
 @media (max-width: 600px) { .warehouse-overview { grid-template-columns: 1fr; gap: 12px; } .warehouse-overview > div { flex-direction: row; align-items: center; justify-content: space-between; padding: 14px; } .warehouse-overview span { min-height: auto; } .warehouse-overview strong { font-size: 25px; } }
 
 .warehouse-overview strong .skeleton-bar { width: 64px; height: 25px; }
+
+.warehouse-summary-table { min-width: 820px; }
+.warehouse-summary-table td:nth-child(2), .warehouse-summary-table td:nth-child(3) { min-width: 180px; max-width: 320px; white-space: normal; overflow-wrap: anywhere; }
+.warehouse-detail-table { min-width: 900px; }
+.warehouse-detail-table td { font-size: 12px; }
+.warehouse-detail-table th { font-size: 11px; }
+.warehouse-filters { min-width: 0; max-width: 100%; }
+.warehouse-filters > select { min-width: 0; font-size: 12px; }
+@media (max-width: 600px) {
+  .warehouse-filters { flex-wrap: wrap; }
+  .warehouse-filters > .search-input { min-width: 0; flex-basis: 100%; }
+  .warehouse-filters > select { font-size: 12px; }
+  .warehouse-workspace > .records-card > .mobile-records > .mobile-record-card > header > .mobile-record-title { display: block; }
+  .warehouse-details { margin: 16px -4px 0; padding: 16px 0 0; border-top: 1px solid var(--line); }
+  .warehouse-detail-heading { flex-wrap: wrap; align-items: flex-start; gap: 9px; }
+  .warehouse-detail-heading h3 { font-size: 14px; line-height: 1.5; }
+  .warehouse-detail-heading > span { font-size: 12px; overflow-wrap: anywhere; }
+  .warehouse-detail-heading .text-button { min-height: 36px; font-size: 12px; }
+  .warehouse-details > .mobile-records { padding: 0; margin-bottom: 20px; }
+  .warehouse-details .mobile-record-card { background: var(--surface); padding: 14px; }
+}

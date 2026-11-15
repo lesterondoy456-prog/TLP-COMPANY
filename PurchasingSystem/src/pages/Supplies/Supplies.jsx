@@ -1,3 +1,4 @@
+import ResponsiveRecords from '../../components/ResponsiveRecords.jsx';
 import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, dateLabel } from '../../api.js';
@@ -123,6 +124,15 @@ export default function Supplies({ user, onNotice }) {
     </div>;
   }
 
+  const columns = [
+    { key: 'name', label: 'Supplies', render: ({ record }) => <><strong>{record.name}</strong><small>{record.code}</small></> },
+    { key: 'description', label: 'Description', render: ({ record }) => record.description || '\u2014' },
+    { key: 'unit', label: 'UOM', render: ({ record }) => record.unit },
+    { key: 'minimum', label: 'Minimum Stock', numeric: true, render: ({ record }) => quantityLabel(record.minimumStock) },
+    { key: 'stock', label: 'Stock', numeric: true, render: ({ record }) => quantityLabel(record.stock) },
+    { key: 'status', label: 'Status', render: ({ record }) => <Badge value={master ? record.isActive ? 'active' : 'inactive' : record.status}>{master ? record.isActive ? 'Active' : 'Inactive' : statusLabel(record.status)}</Badge> },
+  ];
+
   return <section className="purchasing-workspace">
     <div className="page-heading"><div><span className="eyebrow">PURCHASING WORKSPACE</span><h1>{current.title}</h1><p>Maintain raw materials, supplier prices, units, and inventory schedules.</p></div><button className="button primary" disabled={loading || !loaded} onClick={() => setDialog({ type: 'new' })}><span className="plus" aria-hidden="true">+</span>{current.add}</button></div>
     <ErrorNotice message={error} />
@@ -133,13 +143,7 @@ export default function Supplies({ user, onNotice }) {
         {!master && <><label className="purchase-filter-date">From<input type="date" aria-label="Covered Date from" value={from} onChange={event => { setFrom(event.target.value); setPage(1); }} /></label><label className="purchase-filter-date">To<input type="date" aria-label="Covered Date to" value={to} min={from || undefined} onChange={event => { setTo(event.target.value); setPage(1); }} /></label></>}
         <button className={'icon-button refresh-button ' + (loading ? 'spinning' : '')} aria-label="Refresh purchasing records" title="Refresh records" disabled={loading} onClick={reload}><Icon name="refresh" size={18} /></button>
       </div></div>
-      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <div className="table-scroll"><table className="records-table purchasing-monitor-table"><thead><tr>
-        <><th>Supplies</th><th>Description</th><th>UOM</th><th className="numeric">Minimum Stock</th><th className="numeric">Stock</th></>
-        <th>Status</th><th className="actions-heading">Actions</th>
-      </tr></thead><tbody>{visible.map(({ record, item }, index) => <tr key={record.id + '-' + (item?.id ?? index)}>
-        <><td><strong>{record.name}</strong><small>{record.code}</small></td><td>{record.description || '—'}</td><td>{record.unit}</td><td className="numeric">{quantityLabel(record.minimumStock)}</td><td className="numeric">{quantityLabel(record.stock)}</td></>
-        <td><Badge value={master ? record.isActive ? 'active' : 'inactive' : record.status}>{master ? record.isActive ? 'Active' : 'Inactive' : statusLabel(record.status)}</Badge></td><td>{actions(record)}</td>
-      </tr>)}</tbody></table></div>}
+      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <ResponsiveRecords rows={visible} columns={columns} titleKey="name" primaryKeys={['unit', 'stock', 'minimum']} rowKey={({ record, item }, index) => record.id + '-' + (item?.id ?? index)} actions={({ record }) => actions(record)} label={current.title + ' records'} tableClassName="purchasing-monitor-table" />}
       <div className="table-footer"><span>{lines.length ? (safePage - 1) * 10 + 1 : 0}–{Math.min(safePage * 10, lines.length)} of {lines.length} {master ? 'records' : 'lines'}</span><div><button className="icon-button" aria-label="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" size={16} /></button><span>Page {safePage} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" size={16} /></button></div></div>
     </section>
     {dialog && ['new', 'edit'].includes(dialog.type) && <SuppliesForm record={dialog.record} options={options} user={user} onClose={close} onSaved={saved} />}

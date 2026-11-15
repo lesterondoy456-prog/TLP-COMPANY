@@ -1,3 +1,4 @@
+import ResponsiveRecords from '../../components/ResponsiveRecords.jsx';
 import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, dateLabel } from '../../api.js';
@@ -128,6 +129,24 @@ export default function PRMonitoring({ user, onNotice }) {
     </div>;
   }
 
+  const columns = [
+    { key: 'branch', label: 'Branch', render: () => 'TTI Laguna Philippines Inc.' },
+    { key: 'number', label: 'PR #', render: ({ record }) => <strong>{record.number}</strong> },
+    { key: 'date', label: 'PR Date', render: ({ record }) => dateLabel(record.prDate) },
+    { key: 'requestedBy', label: 'Request By', render: ({ record }) => record.requestedBy || '\u2014' },
+    { key: 'department', label: 'Dept', render: ({ record }) => record.requestedDept || '\u2014' },
+    { key: 'headerRemarks', label: 'Remarks Header', render: ({ record }) => record.remarks || '\u2014' },
+    { key: 'neededDate', label: 'Date Needed', render: ({ record, item }) => dateLabel(item.neededDate || record.neededDate) },
+    { key: 'quantity', label: 'Qty', numeric: true, render: ({ item }) => quantityLabel(item.quantity) },
+    { key: 'balance', label: 'Balance', numeric: true, render: ({ item }) => quantityLabel(item.balanceQuantity) },
+    { key: 'suppliesName', label: 'Supplies Name', render: ({ item }) => item.suppliesName },
+    { key: 'description', label: 'Supplies Description', render: ({ item }) => item.description || '\u2014' },
+    { key: 'remarks', label: 'Remarks', render: ({ item }) => item.remarks || '\u2014' },
+    { key: 'unit', label: 'UOM', render: ({ item }) => item.unit },
+    { key: 'orders', label: 'PO #', render: ({ item }) => item.orderNumbers || item.purchaseOrderNumbers || '\u2014' },
+    { key: 'status', label: 'Status', render: ({ record }) => <Badge value={master ? record.isActive ? 'active' : 'inactive' : record.status}>{master ? record.isActive ? 'Active' : 'Inactive' : statusLabel(record.status)}</Badge> },
+  ];
+
   return <section className="purchasing-workspace">
     <div className="page-heading"><div><span className="eyebrow">PURCHASING WORKSPACE</span><h1>{current.title}</h1><p>Prepare and post supplies requests. Posted balances are available for purchase orders.</p></div><button className="button primary" disabled={loading || !loaded} onClick={() => setDialog({ type: 'new' })}><span className="plus" aria-hidden="true">+</span>{current.add}</button></div>
     <ErrorNotice message={error} />
@@ -138,13 +157,7 @@ export default function PRMonitoring({ user, onNotice }) {
         {!master && <><label className="purchase-filter-date">From<input type="date" aria-label="Covered Date from" value={from} onChange={event => { setFrom(event.target.value); setPage(1); }} /></label><label className="purchase-filter-date">To<input type="date" aria-label="Covered Date to" value={to} min={from || undefined} onChange={event => { setTo(event.target.value); setPage(1); }} /></label></>}
         <button className={'icon-button refresh-button ' + (loading ? 'spinning' : '')} aria-label="Refresh purchasing records" title="Refresh records" disabled={loading} onClick={reload}><Icon name="refresh" size={18} /></button>
       </div></div>
-      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <div className="table-scroll"><table className="records-table purchasing-monitor-table"><thead><tr>
-        <><th>Branch</th><th>PR #</th><th>PR Date</th><th>Request By</th><th>Dept</th><th>Remarks Header</th><th>Date Needed</th><th className="numeric">Qty</th><th className="numeric">Balance</th><th>Supplies Name</th><th>Supplies Description</th><th>Remarks</th><th>UOM</th><th>PO #</th></>
-        <th>Status</th><th className="actions-heading">Actions</th>
-      </tr></thead><tbody>{visible.map(({ record, item }, index) => <tr key={record.id + '-' + (item?.id ?? index)}>
-        <><td>TTI Laguna Philippines Inc.</td><td><strong>{record.number}</strong></td><td>{dateLabel(record.prDate)}</td><td>{record.requestedBy || '—'}</td><td>{record.requestedDept || '—'}</td><td>{record.remarks || '—'}</td><td>{dateLabel(item.neededDate || record.neededDate)}</td><td className="numeric">{quantityLabel(item.quantity)}</td><td className="numeric">{quantityLabel(item.balanceQuantity)}</td><td>{item.suppliesName}</td><td>{item.description || '—'}</td><td>{item.remarks || '—'}</td><td>{item.unit}</td><td>{item.orderNumbers || item.purchaseOrderNumbers || '—'}</td></>
-        <td><Badge value={master ? record.isActive ? 'active' : 'inactive' : record.status}>{master ? record.isActive ? 'Active' : 'Inactive' : statusLabel(record.status)}</Badge></td><td>{actions(record)}</td>
-      </tr>)}</tbody></table></div>}
+      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <ResponsiveRecords rows={visible} columns={columns} titleKey="number" primaryKeys={['date', 'quantity', 'balance', 'unit']} subtitle={({ item }) => item.suppliesName} rowKey={({ record, item }, index) => record.id + '-' + (item?.id ?? index)} actions={({ record }) => actions(record)} label={current.title + ' records'} tableClassName="purchasing-monitor-table" />}
       <div className="table-footer"><span>{lines.length ? (safePage - 1) * 10 + 1 : 0}–{Math.min(safePage * 10, lines.length)} of {lines.length} {master ? 'records' : 'lines'}</span><div><button className="icon-button" aria-label="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" size={16} /></button><span>Page {safePage} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" size={16} /></button></div></div>
     </section>
     {dialog && ['new', 'edit'].includes(dialog.type) && <CreatePurchaseRequestForm record={dialog.record} options={options} user={user} onClose={close} onSaved={saved} />}

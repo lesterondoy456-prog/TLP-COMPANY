@@ -31,7 +31,7 @@ export default function SalesOrderPage({ data, user, loading, loaded, onReload, 
   return <>
     <PageHeading title="Sales Order" description="Monitor every order item, its amounts and expected delivery." addLabel="New sales order" loading={loading} onAdd={() => setDialog({ type: 'new' })} />
     {overview}
-    <div className="sales-order-monitor"><RecordsCard title="Sales Order" label="Sales order items" icon="bag" addLabel="New sales order" rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
+    <div className="sales-order-monitor"><RecordsCard title="Sales Order" label="Sales order items" icon="bag" addLabel="New sales order" mobilePreview={['Customer', 'Product code', 'Quantity', 'Amount']} rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
       <th>SO number</th><th>Customer</th><th>Prepared by</th><th>Order date</th><th>Ref no.</th><th>Product code</th><th>Description</th><th className="numeric">Source unit price</th><th className="numeric">Converted price</th><th className="numeric">Quantity</th><th className="numeric">Balance qty</th><th className="numeric">Gross amount</th><th className="numeric">Discount amount</th><th className="numeric">Net amount</th><th className="numeric">VAT amount</th><th className="numeric">Amount</th><th>Delivery date</th><th>Status</th><th>Documents</th><th className="actions-heading">Actions</th>
     </>} renderRow={row => {
       const item = row.item;

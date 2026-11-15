@@ -3,7 +3,7 @@ import { withConfigurationValidation } from '../../helper/validation.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api.js';
 import { Icon } from '../../components/Icons.jsx';
-import { LoadingSkeleton, Empty, ErrorNotice } from '../../components/UI.jsx';
+import { MobileRecordCards, TableScroll, LoadingSkeleton, Empty, ErrorNotice } from '../../components/UI.jsx';
 import '../../configuration.css';
 
 const display = (value, field) => {
@@ -55,7 +55,8 @@ export default function AuditTrail() {
         <label className="search-input"><Icon name="search" size={18} /><input type="search" aria-label="Search configuration records" placeholder="Search records…" value={query} onChange={event => { setQuery(event.target.value); setPage(1); }} /></label>
         <button className="icon-button" aria-label="Refresh configuration" disabled={loading} onClick={load}><Icon name="refresh" size={18} /></button>
       </div></div>
-      {loading && !hasLoaded.current ? <LoadingSkeleton /> : loading ? <div className="loading-state" role="status"><span className="spinner" />Loading records…</div> : !visible.length ? <Empty icon="grid" title={query ? 'No matching records' : 'No records yet'} detail="Recorded system changes will appear here." /> : <div className="table-scroll"><table className="records-table configuration-table"><thead><tr>{fields.map(field => <th key={field.key}>{field.label}</th>)}</tr></thead><tbody>{visible.map(record => <tr key={record.id}>{fields.map(field => <td key={field.key}>{display(record[field.key], field)}</td>)}</tr>)}</tbody></table></div>}
+      {loading && !hasLoaded.current ? <LoadingSkeleton /> : loading ? <div className="loading-state" role="status"><span className="spinner" />Loading records…</div> : !visible.length ? <Empty icon="grid" title={query ? 'No matching records' : 'No records yet'} detail="Recorded system changes will appear here." /> : <><TableScroll className="desktop-records" label="Configuration record columns"><table className="records-table configuration-table"><thead><tr>{fields.map(field => <th key={field.key}>{field.label}</th>)}</tr></thead><tbody>{visible.map(record => <tr key={record.id}>{fields.map(field => <td key={field.key}>{display(record[field.key], field)}</td>)}</tr>)}</tbody></table></TableScroll>
+        <MobileRecordCards records={visible} fields={fields} title={record => display(record[fields[0]?.key], fields[0] || {})} renderField={(record, field) => display(record[field.key], field)} /></>}
       <div className="table-footer"><span>{filtered.length} records - Most recent 1,000 changes</span><div><button className="icon-button" aria-label="Previous configuration page" disabled={safePage <= 1 || loading} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" size={16} /></button><span>Page {safePage} of {pages}</span><button className="icon-button" aria-label="Next configuration page" disabled={safePage >= pages || loading} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" size={16} /></button></div></div>
     </section>
   </div>;

@@ -1,0 +1,42 @@
+.responsive-records, .responsive-records .records-desktop { width: 100%; min-width: 0; max-width: 100%; }
+.responsive-records .table-scroll { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; }
+.responsive-records .table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.responsive-records .records-table { font-size: 12px; }
+.responsive-records .records-table th { font-size: 11px; }
+.responsive-records .records-table td > strong { font-size: 12px; }
+.responsive-records .records-table small { font-size: 11px; }
+.responsive-records .table-scroll-hint { margin: 0; padding: 10px 20px; border-top: 1px solid var(--line); color: var(--muted); background: var(--surface-muted); font-size: 11px; line-height: 1.5; }
+.responsive-records .records-mobile { display: none; }
+.responsive-records-empty { margin: 0; padding: 28px 20px !important; color: var(--muted); text-align: center; }
+@media (max-width: 600px) {
+  .responsive-records .records-desktop { display: none; }
+  .responsive-records .records-mobile { display: grid; gap: 12px; min-width: 0; padding: 12px; }
+  .responsive-records .record-card { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-raised); }
+  .responsive-records .record-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .responsive-records .record-card-identity { min-width: 0; flex: 1; }
+  .responsive-records .record-card-title-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; }
+  .responsive-records .record-card-title { margin: 0; color: var(--text-strong); font-size: 14px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; }
+  .responsive-records .record-card-title strong { font-size: inherit; }
+  .responsive-records .record-card-title small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 400; }
+  .responsive-records .record-card-subtitle { margin: 7px 0 0; color: var(--text); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+  .responsive-records .record-card-status { flex-shrink: 0; max-width: 45%; }
+  .responsive-records .record-card-status .badge { white-space: normal; overflow-wrap: anywhere; font-size: 11px; line-height: 1.5; padding: 4px 7px; }
+  .responsive-records .record-card-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 16px; margin: 15px 0 0; }
+  .responsive-records .record-card-fields > div { min-width: 0; }
+  .responsive-records .record-card-fields dt { margin-bottom: 5px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+  .responsive-records .record-card-fields dd { margin: 0; color: var(--text); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; white-space: normal; font-variant-numeric: tabular-nums; }
+  .responsive-records .record-card-fields small { display: block; color: var(--muted); font-size: 12px; }
+  .responsive-records .record-card-details { margin-top: 15px; border-top: 1px solid var(--line); }
+  .responsive-records .record-card-details > summary { width: fit-content; min-height: 42px; padding-top: 13px; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .responsive-records .record-card-details .record-card-fields { grid-template-columns: minmax(0, 1fr); margin-top: 8px; padding-bottom: 2px; }
+  .responsive-records .record-card-actions { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .responsive-records .record-card-actions .row-actions { justify-content: flex-start; flex-wrap: wrap; gap: 5px 14px; }
+  .responsive-records .record-card-actions .text-button { min-height: 38px; padding-block: 8px; font-size: 13px; white-space: normal; text-align: left; }
+  .responsive-records .record-card-title .entity-cell { align-items: flex-start; gap: 9px; }
+  .responsive-records .record-card-title .entity-cell > div { min-width: 0; }
+  .responsive-records .record-card-title .entity-cell strong { overflow-wrap: anywhere; }
+}
+@media print {
+  .responsive-records .records-desktop { display: block; }
+  .responsive-records .records-mobile, .responsive-records .table-scroll-hint { display: none; }
+}

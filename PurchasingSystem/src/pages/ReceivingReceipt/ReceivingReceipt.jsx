@@ -1,3 +1,4 @@
+import ResponsiveRecords from '../../components/ResponsiveRecords.jsx';
 import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, dateLabel } from '../../api.js';
@@ -131,6 +132,21 @@ export default function ReceivingReceipt({ user, onNotice }) {
     </div>;
   }
 
+  const columns = [
+    { key: 'branch', label: 'Branch', render: () => 'TTI Laguna Philippines Inc.' },
+    { key: 'number', label: 'SRR #', render: ({ record }) => <strong>{record.number}</strong> },
+    { key: 'date', label: 'SRR Date', render: ({ record }) => dateLabel(record.srrDate) },
+    { key: 'supplier', label: 'Supplier', render: ({ record }) => record.supplierName },
+    { key: 'order', label: 'PO Ref #', render: ({ record }) => record.purchaseOrderNumber },
+    { key: 'invoice', label: 'SI #', render: ({ record }) => record.invoiceNumber },
+    { key: 'suppliesName', label: 'Supplies Name', render: ({ item }) => item.suppliesName },
+    { key: 'unit', label: 'UOP', render: ({ item }) => item.unit },
+    { key: 'quantity', label: 'Qty', numeric: true, render: ({ item }) => quantityLabel(item.quantity) },
+    { key: 'allocated', label: 'Allocated Qty', numeric: true, render: ({ item }) => quantityLabel((item.allocations || []).reduce((sum, row) => sum + Number(row.quantity || 0), 0)) },
+    { key: 'amount', label: 'Amount', numeric: true, render: ({ record, item }) => currencyLabel(item.amount, record.currency, record.decimalInTotalPrice ?? 2) },
+    { key: 'status', label: 'Status', render: ({ record }) => <Badge value={master ? record.isActive ? 'active' : 'inactive' : record.status}>{master ? record.isActive ? 'Active' : 'Inactive' : statusLabel(record.status)}</Badge> },
+  ];
+
   return <section className="purchasing-workspace">
     <div className="page-heading"><div><span className="eyebrow">PURCHASING WORKSPACE</span><h1>{current.title}</h1><p>Receive posted PO supplies and post complete warehouse allocations to stock.</p></div><button className="button primary" disabled={loading || !loaded} onClick={() => setDialog({ type: 'new' })}><span className="plus" aria-hidden="true">+</span>{current.add}</button></div>
     <ErrorNotice message={error} />
@@ -141,13 +157,7 @@ export default function ReceivingReceipt({ user, onNotice }) {
         {!master && <><label className="purchase-filter-date">From<input type="date" aria-label="Covered Date from" value={from} onChange={event => { setFrom(event.target.value); setPage(1); }} /></label><label className="purchase-filter-date">To<input type="date" aria-label="Covered Date to" value={to} min={from || undefined} onChange={event => { setTo(event.target.value); setPage(1); }} /></label></>}
         <button className={'icon-button refresh-button ' + (loading ? 'spinning' : '')} aria-label="Refresh purchasing records" title="Refresh records" disabled={loading} onClick={reload}><Icon name="refresh" size={18} /></button>
       </div></div>
-      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <div className="table-scroll"><table className="records-table purchasing-monitor-table"><thead><tr>
-        <><th>Branch</th><th>SRR #</th><th>SRR Date</th><th>Supplier</th><th>PO Ref #</th><th>SI #</th><th>Supplies Name</th><th>UOP</th><th className="numeric">Qty</th><th className="numeric">Allocated Qty</th><th className="numeric">Amount</th></>
-        <th>Status</th><th className="actions-heading">Actions</th>
-      </tr></thead><tbody>{visible.map(({ record, item }, index) => <tr key={record.id + '-' + (item?.id ?? index)}>
-        <><td>TTI Laguna Philippines Inc.</td><td><strong>{record.number}</strong></td><td>{dateLabel(record.srrDate)}</td><td>{record.supplierName}</td><td>{record.purchaseOrderNumber}</td><td>{record.invoiceNumber}</td><td>{item.suppliesName}</td><td>{item.unit}</td><td className="numeric">{quantityLabel(item.quantity)}</td><td className="numeric">{quantityLabel((item.allocations || []).reduce((sum, row) => sum + Number(row.quantity || 0), 0))}</td><td className="numeric">{currencyLabel(item.amount, record.currency, record.decimalInTotalPrice ?? 2)}</td></>
-        <td><Badge value={master ? record.isActive ? 'active' : 'inactive' : record.status}>{master ? record.isActive ? 'Active' : 'Inactive' : statusLabel(record.status)}</Badge></td><td>{actions(record)}</td>
-      </tr>)}</tbody></table></div>}
+      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <ResponsiveRecords rows={visible} columns={columns} titleKey="number" primaryKeys={['supplier', 'quantity', 'allocated', 'amount']} subtitle={({ item }) => item.suppliesName} rowKey={({ record, item }, index) => record.id + '-' + (item?.id ?? index)} actions={({ record }) => actions(record)} label={current.title + ' records'} tableClassName="purchasing-monitor-table" />}
       <div className="table-footer"><span>{lines.length ? (safePage - 1) * 10 + 1 : 0}–{Math.min(safePage * 10, lines.length)} of {lines.length} {master ? 'records' : 'lines'}</span><div><button className="icon-button" aria-label="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" size={16} /></button><span>Page {safePage} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" size={16} /></button></div></div>
     </section>
     {dialog && ['new', 'edit'].includes(dialog.type) && <CreateReceivingReceiptForm record={dialog.record} options={options} user={user} orders={purchaseOrders} onClose={close} onSaved={saved} />}

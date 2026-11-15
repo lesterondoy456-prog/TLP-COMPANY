@@ -71,12 +71,12 @@ test('a mocked Purchasing receipt post updates the open Warehouse stock and expa
   const warehouse = await app.page.context().newPage();
   await warehouse.goto(warehouseOrigin);
   await expect.poll(() => app.realtimeClients('WarehouseSystem')).toBe(1);
-  await expect(warehouse.getByText('Realtime paper', { exact: true })).toBeVisible();
+  await expect(warehouse.getByText('Realtime paper', { exact: true }).filter({ visible: true })).toBeVisible();
   await warehouse.getByRole('button', { name: 'View stock', exact: true }).click();
-  await expect(warehouse.getByText('SRR-FIRST', { exact: true })).toBeVisible();
+  await expect(warehouse.getByText('SRR-FIRST', { exact: true }).filter({ visible: true })).toBeVisible();
   await warehouse.evaluate(() => { window.realtimePageSentinel = 'warehouse-open'; });
   await app.page.evaluate(async () => { const response = await fetch('/api/purchasing/receivings/1/post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); if (!response.ok) throw new Error('Mock post failed'); });
-  await expect(warehouse.getByText('SRR-REALTIME', { exact: true })).toBeVisible();
+  await expect(warehouse.getByText('SRR-REALTIME', { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(warehouse.getByRole('button', { name: 'Hide stock', exact: true })).toBeVisible();
   await expect(warehouse.locator('.warehouse-summary-table > tbody > tr').first().locator('td').nth(4)).toHaveText('5');
   assert.equal(await warehouse.evaluate(() => window.realtimePageSentinel), 'warehouse-open');

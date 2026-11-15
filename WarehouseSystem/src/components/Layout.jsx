@@ -117,7 +117,7 @@ export default function Layout({ user, onUser, onLogout, app, tabs, pages, Accou
         </nav>
       </div>
       <div className="sidebar-preferences">
-        <time className="sidebar-clock" dateTime={now.toISOString()} aria-label={'Philippine time: ' + date + ', ' + time} title={date + ' ? ' + time + ' PHT'}>
+        <time className="sidebar-clock" dateTime={now.toISOString()} aria-label={'Philippine time: ' + date + ', ' + time} title={date + ' · ' + time + ' PHT'}>
           <span className="sidebar-time">{time}</span>
           <span className="sidebar-time-compact">{compactTime}</span>
           <span className="sidebar-date">{date}</span>

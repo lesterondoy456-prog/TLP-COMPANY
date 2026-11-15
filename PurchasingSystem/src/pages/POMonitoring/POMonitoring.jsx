@@ -1,3 +1,4 @@
+import ResponsiveRecords from '../../components/ResponsiveRecords.jsx';
 import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, dateLabel } from '../../api.js';
@@ -131,6 +132,27 @@ export default function POMonitoring({ user, onNotice }) {
     </div>;
   }
 
+  const columns = [
+    { key: 'branch', label: 'Branch', render: () => 'TTI Laguna Philippines Inc.' },
+    { key: 'number', label: 'PO #', render: ({ record }) => <strong>{record.number}</strong> },
+    { key: 'supplier', label: 'Supplier', render: ({ record }) => record.supplierName },
+    { key: 'date', label: 'PO Date', render: ({ record }) => dateLabel(record.poDate) },
+    { key: 'deliveryDate', label: 'Delivery Date', render: ({ record }) => dateLabel(record.deliveryDate) },
+    { key: 'suppliesName', label: 'Supplies Name', render: ({ item }) => item.suppliesName },
+    { key: 'description', label: 'Description', render: ({ item }) => item.description || '\u2014' },
+    { key: 'unit', label: 'UOP', render: ({ item }) => item.unit },
+    { key: 'quantity', label: 'Qty', numeric: true, render: ({ item }) => quantityLabel(item.quantity) },
+    { key: 'balance', label: 'Bal', numeric: true, render: ({ item }) => quantityLabel(item.balanceQuantity) },
+    { key: 'price', label: 'Price', numeric: true, render: ({ item }) => quantityLabel(item.unitPrice) },
+    { key: 'currency', label: 'Curr', render: ({ record }) => record.currency },
+    { key: 'gross', label: 'Gross Amount', numeric: true, render: ({ item }) => quantityLabel(item.grossAmount) },
+    { key: 'discount', label: 'Disc Amount', numeric: true, render: ({ item }) => quantityLabel(item.discountAmount) },
+    { key: 'vat', label: 'VAT Amount', numeric: true, render: ({ item }) => quantityLabel(item.vatAmount) },
+    { key: 'amount', label: 'Amount', numeric: true, render: ({ item }) => quantityLabel(item.amount) },
+    { key: 'request', label: 'PR No.', render: ({ item }) => item.requestNumber },
+    { key: 'status', label: 'Status', render: ({ record }) => <Badge value={master ? record.isActive ? 'active' : 'inactive' : record.status}>{master ? record.isActive ? 'Active' : 'Inactive' : statusLabel(record.status)}</Badge> },
+  ];
+
   return <section className="purchasing-workspace">
     <div className="page-heading"><div><span className="eyebrow">PURCHASING WORKSPACE</span><h1>{current.title}</h1><p>Order supplies against posted PR lines and monitor outstanding quantities.</p></div><button className="button primary" disabled={loading || !loaded} onClick={() => setDialog({ type: 'new' })}><span className="plus" aria-hidden="true">+</span>{current.add}</button></div>
     <ErrorNotice message={error} />
@@ -141,13 +163,7 @@ export default function POMonitoring({ user, onNotice }) {
         {!master && <><label className="purchase-filter-date">From<input type="date" aria-label="Covered Date from" value={from} onChange={event => { setFrom(event.target.value); setPage(1); }} /></label><label className="purchase-filter-date">To<input type="date" aria-label="Covered Date to" value={to} min={from || undefined} onChange={event => { setTo(event.target.value); setPage(1); }} /></label></>}
         <button className={'icon-button refresh-button ' + (loading ? 'spinning' : '')} aria-label="Refresh purchasing records" title="Refresh records" disabled={loading} onClick={reload}><Icon name="refresh" size={18} /></button>
       </div></div>
-      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <div className="table-scroll"><table className="records-table purchasing-monitor-table"><thead><tr>
-        <><th>Branch</th><th>PO #</th><th>Supplier</th><th>PO Date</th><th>Delivery Date</th><th>Supplies Name</th><th>Description</th><th>UOP</th><th className="numeric">Qty</th><th className="numeric">Bal</th><th className="numeric">Price</th><th>Curr</th><th className="numeric">Gross Amount</th><th className="numeric">Disc Amount</th><th className="numeric">VAT Amount</th><th className="numeric">Amount</th><th>PR No.</th></>
-        <th>Status</th><th className="actions-heading">Actions</th>
-      </tr></thead><tbody>{visible.map(({ record, item }, index) => <tr key={record.id + '-' + (item?.id ?? index)}>
-        <><td>TTI Laguna Philippines Inc.</td><td><strong>{record.number}</strong></td><td>{record.supplierName}</td><td>{dateLabel(record.poDate)}</td><td>{dateLabel(record.deliveryDate)}</td><td>{item.suppliesName}</td><td>{item.description || '—'}</td><td>{item.unit}</td><td className="numeric">{quantityLabel(item.quantity)}</td><td className="numeric">{quantityLabel(item.balanceQuantity)}</td><td className="numeric">{quantityLabel(item.unitPrice)}</td><td>{record.currency}</td><td className="numeric">{quantityLabel(item.grossAmount)}</td><td className="numeric">{quantityLabel(item.discountAmount)}</td><td className="numeric">{quantityLabel(item.vatAmount)}</td><td className="numeric">{quantityLabel(item.amount)}</td><td>{item.requestNumber}</td></>
-        <td><Badge value={master ? record.isActive ? 'active' : 'inactive' : record.status}>{master ? record.isActive ? 'Active' : 'Inactive' : statusLabel(record.status)}</Badge></td><td>{actions(record)}</td>
-      </tr>)}</tbody></table></div>}
+      {loading && !loaded ? <LoadingSkeleton label="Loading purchasing records…" /> : !loaded ? <Empty icon="file" title="Records could not be loaded" detail="Use Refresh records to try again." /> : !visible.length ? <Empty icon={current.icon} title={query || status || from || to ? 'No matching records' : 'No records yet'} detail={query || status || from || to ? 'Try another search or filter.' : 'Select “' + current.add + '” to add a record.'} /> : <ResponsiveRecords rows={visible} columns={columns} titleKey="number" primaryKeys={['supplier', 'quantity', 'balance', 'amount']} subtitle={({ item }) => item.suppliesName} rowKey={({ record, item }, index) => record.id + '-' + (item?.id ?? index)} actions={({ record }) => actions(record)} label={current.title + ' records'} tableClassName="purchasing-monitor-table" />}
       <div className="table-footer"><span>{lines.length ? (safePage - 1) * 10 + 1 : 0}–{Math.min(safePage * 10, lines.length)} of {lines.length} {master ? 'records' : 'lines'}</span><div><button className="icon-button" aria-label="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" size={16} /></button><span>Page {safePage} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" size={16} /></button></div></div>
     </section>
     {dialog && ['new', 'edit'].includes(dialog.type) && <CreatePurchaseOrderForm record={dialog.record} options={options} user={user} requests={purchaseRequests} onClose={close} onSaved={saved} />}

@@ -50,7 +50,7 @@ export default function ProductPage({
       type: 'new'
     })} />
     {overview}
-    <div className="product-monitor"><RecordsCard title="Product" label="Products" icon="box" addLabel="New product" rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
+    <div className="product-monitor"><RecordsCard title="Product" label="Products" icon="box" addLabel="New product" mobilePreview={['Description', 'UOP', 'Selling price']} rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<>
       <th className="product-code-column">Code</th><th className="product-description-column">Description</th>
       <th className="product-model-column">Model / Item code</th><th className="product-model-column">Category / Platform</th>
       <th className="product-small-column">Rev</th><th className="product-small-column">UOP</th><th className="product-small-column">UOP2</th>

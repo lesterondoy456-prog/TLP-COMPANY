@@ -109,6 +109,8 @@ Customers use their table row ID for links; there is no separate generated custo
 
 All four apps have matte navy and light themes with blue navigation accents. Use the sun/moon button on the login page or above the profile at the bottom of the sidebar to switch; each app remembers the preference in the browser. The sidebar also shows live Philippine time and the date. Pages have no top header bar. Sidebar modules are direct buttons without expandable groups, and a blue highlight slides between selected tabs. Collapse the desktop sidebar to keep only its navigation icons and give the page more space; each app remembers this choice. Mobile navigation uses a floating menu button and drawer. Page changes use a short transition, initial record loads use animated skeletons, and new table rows fade into place. Realtime refreshes retain loaded records and open drafts. Reduced-motion browser preferences disable these animations. Printed documents remain white with dark text.
 
+At phone widths up to 600px, record lists show labeled cards with visible actions and a More details disclosure for the remaining fields. Invoice cards expand to show their own item cards. Tablet and desktop layouts retain complete tables with contained horizontal scrolling and an overflow hint where needed. Search, pagination and record selection are shared between the two layouts. The mobile menu button stays in the page flow so it cannot cover the page's action buttons while scrolling.
+
 ## Realtime updates
 
 Each signed-in frontend maintains its own Socket.IO connection. The existing JWT-protected API issues a short-lived, single-use connection ticket; sockets join only their authenticated system room. Tickets and connection state stay in memory, with no extra database records.
