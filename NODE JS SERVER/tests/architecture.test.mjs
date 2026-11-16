@@ -176,7 +176,7 @@ test('CommonJS Express entry mounts shared login before four business routers', 
 test('all SQL files are located under migration and database startup delegates to its runner', async () => {
   const rootFiles = await readdir(backend);
   assert.deepEqual(rootFiles.filter(filename => filename.endsWith('.sql')), []);
-  for (const filename of ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql']) await access(path.join(backend, 'migration', filename));
+  for (const filename of ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql']) await access(path.join(backend, 'migration', filename));
   await assert.rejects(access(path.join(backend, 'database.js')), error => error.code === 'ENOENT');
   const database = await readFile(path.join(backend, 'db.js'), 'utf8');
   assert.match(database, /require\(['"]\.\/migration\/run(?:\.js)?['"]\)/);

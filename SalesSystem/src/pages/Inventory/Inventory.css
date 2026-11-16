@@ -22,3 +22,55 @@
   .inventory-filters label { flex: 1; min-width: 120px; }
   .inventory-filters select { font-size: 14px; }
 }
+
+/* Product stock actions, manual movement review and recorded transaction details. */
+.inventory-page .records-table { min-width: 1220px; }
+.inventory-page .records-table .inventory-actions-column { position: sticky; right: 0; z-index: 1; min-width: 148px; background: var(--surface); }
+.inventory-page .records-table th.inventory-actions-column { z-index: 2; }
+.inventory-page .records-table tbody tr:hover .inventory-actions-column { background: var(--surface-hover); }
+.inventory-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.inventory-actions .icon-button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; color: var(--accent); background: var(--surface-raised); }
+.inventory-actions .icon-button:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.inventory-actions .inventory-stock-out { color: var(--warning); }
+.inventory-actions .icon-button:disabled { opacity: .45; }
+.inventory-product-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; margin: 0 0 23px; padding: 17px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-muted); }
+.inventory-product-summary > div { min-width: 0; }
+.inventory-product-summary .inventory-product-wide { grid-column: 1 / -1; }
+.inventory-product-summary dt { margin-bottom: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.inventory-product-summary dd { margin: 0; color: var(--text-strong); font-size: 15px; font-variant-numeric: tabular-nums; line-height: 1.6; overflow-wrap: anywhere; }
+.inventory-product-summary dd small { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; font-weight: 400; white-space: pre-line; }
+.inventory-product-summary .inventory-stock-preview dd { color: var(--accent); font-weight: 650; }
+.inventory-movement-fields .field { min-width: 0; }
+.inventory-movement-fields input, .inventory-movement-fields textarea { font-size: 13px; }
+.inventory-movement-fields:disabled input, .inventory-movement-fields:disabled textarea { opacity: 1; }
+.inventory-review { display: flex; align-items: flex-start; gap: 11px; margin-top: 22px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--accent-soft); color: var(--text); }
+.inventory-review > svg { flex-shrink: 0; color: var(--accent); }
+.inventory-review strong { font-size: 13px; line-height: 1.6; }
+.inventory-review p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.inventory-transactions { width: min(1220px, calc(100vw - 32px)); }
+.inventory-transactions .inventory-product-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.inventory-transactions .records-table { min-width: 2600px; font-size: 12px; }
+.inventory-transactions .records-table th { font-size: 11px; }
+.inventory-transactions .records-table td { vertical-align: top; font-size: 12px; }
+.inventory-transactions .records-table small { font-size: 11px; }
+.inventory-transactions .inventory-history-address, .inventory-transactions .inventory-history-reason { min-width: 250px; max-width: 330px; white-space: pre-line; overflow-wrap: anywhere; line-height: 1.6; }
+.inventory-direction-label { display: block; margin-bottom: 5px; color: var(--accent); font-size: 11px; font-weight: 650; }
+.inventory-history-retry { margin-bottom: 17px; }
+.inventory-history-updating { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) {
+  .inventory-actions { flex-wrap: wrap; justify-content: flex-start; gap: 9px; }
+  .inventory-actions .icon-button { width: 44px; height: 44px; }
+  .inventory-manual-modal, .inventory-transactions { width: calc(100vw - 20px); }
+  .inventory-product-summary { padding: 14px; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inventory-product-summary dd { font-size: 14px; }
+  .inventory-stock-preview { grid-column: 1 / -1; }
+  .inventory-movement-fields { grid-template-columns: 1fr; gap: 17px; }
+  .inventory-movement-fields input, .inventory-movement-fields textarea { font-size: 14px; }
+  .inventory-movement-footer { flex-wrap: wrap; }
+  .inventory-movement-footer .button { min-height: 42px; font-size: 12px; }
+  .inventory-transactions .modal-body { padding-inline: 15px; }
+  .inventory-transactions .record-mobile-card .badge { white-space: normal; line-height: 1.6; }
+  .inventory-transactions .record-mobile-fields > div { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .inventory-transactions .record-mobile-fields dd { font-size: 13px; white-space: pre-line; }
+  .inventory-transactions .record-mobile-title small { font-size: 12px; }
+}

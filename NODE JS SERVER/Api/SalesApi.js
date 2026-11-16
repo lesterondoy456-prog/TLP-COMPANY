@@ -467,10 +467,112 @@ router.delete('/products/:id', async (req, res) => {
   });
 });
 
+router.get('/products/:id/stock-movements', async (req, res) => {
+  const user = res.locals.user;
+  if (user?.system !== 'sales' || !user.isActive || !['admin', 'saleshead', 'sales'].includes(user.role)) { const error = new Error('Sign in to Sales to view stock transactions.'); error.status = 403; throw error; }
+  const productId = Number(req.params.id);
+  if (!Number.isSafeInteger(productId) || productId <= 0 || productId > 2147483647) { const error = new Error('Select a valid product.'); error.status = 400; throw error; }
+  const productResult = await request().input('productId', sql.Int, productId).query('SELECT id,sku,name,description,unit,CONVERT(varchar(60),stock) AS stock,isActive FROM dbo.Products WHERE id=@productId');
+  if (!productResult.recordset.length) { const error = new Error('The product could not be found.'); error.status = 404; throw error; }
+  const result = await request().input('productId', sql.Int, productId).query(`SELECT 'manual:' + CONVERT(varchar(20),m.id) AS id,m.id AS movementId,
+    CASE WHEN m.direction='in' THEN 'manual-in' ELSE 'manual-out' END AS type,m.direction,
+    CONVERT(varchar(60),m.quantity) AS quantity,m.unit,CONVERT(varchar(60),m.stockBefore) AS stockBefore,CONVERT(varchar(60),m.stockAfter) AS stockAfter,
+    CONVERT(varchar(10),m.movementDate,23) AS movementDate,m.sourceDestination,m.reference,m.reason,u.username AS createdByUsername,u.name AS createdByName,
+    CONVERT(varchar(33),m.createdAt,126)+'Z' AS createdAt,CAST(NULL AS int) AS deliveryReceiptId,CAST(NULL AS nvarchar(max)) AS deliveryReceiptNumber,
+    CAST(NULL AS int) AS orderId,CAST(NULL AS nvarchar(max)) AS orderNumber,CAST(NULL AS int) AS invoiceId,CAST(NULL AS nvarchar(max)) AS invoiceNumber,
+    CAST(NULL AS nvarchar(max)) AS customerName,CAST(NULL AS nvarchar(max)) AS address,CAST(NULL AS nvarchar(max)) AS receivedBy
+    FROM dbo.ProductStockMovements m JOIN dbo.SalesUserLogin u ON u.id=m.createdById WHERE m.productId=@productId
+    UNION ALL
+    SELECT 'delivery:' + CONVERT(varchar(20),d.id) + ':' + CONVERT(varchar(20),i.id) AS id,CAST(NULL AS int) AS movementId,
+    'delivery-out' AS type,'out' AS direction,CONVERT(varchar(60),i.quantity) AS quantity,i.unit,
+    CAST(NULL AS varchar(60)) AS stockBefore,CAST(NULL AS varchar(60)) AS stockAfter,CONVERT(varchar(10),d.deliveryDate,23) AS movementDate,
+    o.customerName AS sourceDestination,d.number AS reference,d.notes AS reason,u.username AS createdByUsername,u.name AS createdByName,
+    CONVERT(varchar(33),d.createdAt,126)+'Z' AS createdAt,d.id AS deliveryReceiptId,d.number AS deliveryReceiptNumber,
+    o.id AS orderId,o.number AS orderNumber,si.id AS invoiceId,si.number AS invoiceNumber,o.customerName,d.address,d.receivedBy
+    FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId JOIN dbo.DeliveryReceiptItems i ON i.deliveryReceiptId=d.id
+    JOIN dbo.SalesUserLogin u ON u.id=d.createdBy LEFT JOIN dbo.SalesInvoices si ON si.orderId=o.id
+    WHERE i.productId=@productId ORDER BY movementDate DESC,createdAt DESC,id DESC`);
+  res.json({ product: productResult.recordset[0], records: result.recordset });
+});
+
+router.post('/products/:id/stock-movements', async (req, res) => {
+  const user = res.locals.user;
+  if (user?.system !== 'sales' || !user.isActive || !['admin', 'saleshead', 'sales'].includes(user.role)) { const error = new Error('Sign in to Sales to record stock transactions.'); error.status = 403; throw error; }
+  if (!req.is('application/json')) { const error = new Error('Send this request as JSON.'); error.status = 415; throw error; }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') { const error = new Error('Send a valid JSON object.'); error.status = 400; throw error; }
+  const productId = Number(req.params.id);
+  if (!Number.isSafeInteger(productId) || productId <= 0 || productId > 2147483647) { const error = new Error('Select a valid product.'); error.status = 400; throw error; }
+  const input = req.body;
+  const requestKey = typeof input.requestKey === 'string' ? input.requestKey.trim().toLowerCase() : '';
+  if (!/^[a-f0-9]{32}$/.test(requestKey)) { const error = new Error('A valid stock transaction request key is required.'); error.status = 400; throw error; }
+  const direction = input.direction;
+  if (!['in', 'out'].includes(direction)) { const error = new Error('Choose Stock in or Stock out.'); error.status = 400; throw error; }
+  const quantityInput = typeof input.quantity === 'string' ? input.quantity.trim() : '';
+  if (!/^\d+(?:\.\d{1,3})?$/.test(quantityInput)) { const error = new Error('Enter a positive quantity with up to 3 decimal places.'); error.status = 400; throw error; }
+  const [quantityWhole, quantityFraction = ''] = quantityInput.split('.');
+  const quantityUnits = BigInt(quantityWhole) * 1000n + BigInt(quantityFraction.padEnd(3, '0'));
+  if (quantityUnits <= 0n || quantityUnits > 999999999999999999n) { const error = new Error('Quantity must be greater than zero and cannot exceed 999999999999999.999.'); error.status = 400; throw error; }
+  const quantity = `${quantityUnits / 1000n}.${(quantityUnits % 1000n).toString().padStart(3, '0')}`;
+  const movementDate = typeof input.movementDate === 'string' ? input.movementDate.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate) || movementDate.slice(0, 4) === '0000' || !Number.isFinite(new Date(movementDate + 'T00:00:00Z').getTime()) || new Date(movementDate + 'T00:00:00Z').toISOString().slice(0, 10) !== movementDate) { const error = new Error('Enter a valid movement date.'); error.status = 400; throw error; }
+  const sourceDestination = typeof input.sourceDestination === 'string' ? input.sourceDestination.trim() : '';
+  const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+  const reference = typeof input.reference === 'string' ? input.reference.trim() || null : null;
+  if (!sourceDestination || !reason) { const error = new Error('Enter the stock source or destination and the reason.'); error.status = 400; throw error; }
+  const saved = await transaction(async tx => {
+    const previous = await request(tx).input('requestKey', sql.VarChar(sql.MAX), requestKey).query(`SELECT id,productId,direction,CONVERT(varchar(60),quantity) AS quantity,
+      CONVERT(varchar(10),movementDate,23) AS movementDate,sourceDestination,reason,reference,createdById
+      FROM dbo.ProductStockMovements WITH (UPDLOCK,HOLDLOCK) WHERE requestKey=CAST(@requestKey AS varchar(32))`);
+    const actorResult = await request(tx).input('createdById', sql.Int, user.id).query('SELECT id,username,name,role,isActive FROM dbo.SalesUserLogin WITH (UPDLOCK,HOLDLOCK) WHERE id=@createdById');
+    const actor = actorResult.recordset[0];
+    if (!actor?.isActive || !['admin', 'saleshead', 'sales'].includes(actor.role)) { const error = new Error('Your Sales account is inactive or no longer has access.'); error.status = 403; throw error; }
+    if (previous.recordset.length) {
+      const current = previous.recordset[0];
+      if (current.productId !== productId || current.direction !== direction || current.quantity !== quantity || current.movementDate !== movementDate || current.sourceDestination !== sourceDestination || current.reason !== reason || current.reference !== reference || current.createdById !== actor.id) { const error = new Error('This request key is already used by a different stock transaction.'); error.status = 409; throw error; }
+      return { id: current.id, replayed: true };
+    }
+    const productResult = await request(tx).input('productId', sql.Int, productId).query('SELECT id,sku,name,description,unit,CONVERT(varchar(60),stock) AS stock,isActive FROM dbo.Products WITH (UPDLOCK,HOLDLOCK) WHERE id=@productId');
+    const product = productResult.recordset[0];
+    if (!product) { const error = new Error('The product could not be found.'); error.status = 404; throw error; }
+    if (!product.isActive) { const error = new Error('Stock transactions require an active product.'); error.status = 409; throw error; }
+    const unit = typeof product.unit === 'string' ? product.unit.trim() : '';
+    if (!unit) { const error = new Error('Set the product UOP before recording stock transactions.'); error.status = 409; throw error; }
+    const stockInput = typeof product.stock === 'string' ? product.stock.trim() : '';
+    if (!/^\d+(?:\.\d{1,3})?$/.test(stockInput)) { const error = new Error('Stock on hand is not set or is invalid. Review the product before recording a stock transaction.'); error.status = 409; throw error; }
+    const [stockWhole, stockFraction = ''] = stockInput.split('.');
+    const stockUnits = BigInt(stockWhole) * 1000n + BigInt(stockFraction.padEnd(3, '0'));
+    const nextUnits = direction === 'in' ? stockUnits + quantityUnits : stockUnits - quantityUnits;
+    if (nextUnits < 0n) { const error = new Error('Insufficient finished-product stock for this stock out.'); error.status = 409; throw error; }
+    if (stockUnits > 999999999999999999n || nextUnits > 999999999999999999n) { const error = new Error('This stock transaction exceeds the product stock limit.'); error.status = 409; throw error; }
+    const stockBefore = `${stockUnits / 1000n}.${(stockUnits % 1000n).toString().padStart(3, '0')}`;
+    const stockAfter = `${nextUnits / 1000n}.${(nextUnits % 1000n).toString().padStart(3, '0')}`;
+    await request(tx).input('productId', sql.Int, productId).input('stockAfter', sql.VarChar(sql.MAX), stockAfter).query('UPDATE dbo.Products SET stock=CAST(@stockAfter AS DECIMAL(18,3)),updatedAt=SYSUTCDATETIME() WHERE id=@productId');
+    const result = await request(tx).input('requestKey', sql.VarChar(sql.MAX), requestKey).input('productId', sql.Int, productId).input('direction', sql.NVarChar(sql.MAX), direction)
+      .input('quantity', sql.VarChar(sql.MAX), quantity).input('unit', sql.NVarChar(sql.MAX), unit).input('stockBefore', sql.VarChar(sql.MAX), stockBefore).input('stockAfter', sql.VarChar(sql.MAX), stockAfter)
+      .input('movementDate', sql.VarChar(sql.MAX), movementDate).input('sourceDestination', sql.NVarChar(sql.MAX), sourceDestination).input('reason', sql.NVarChar(sql.MAX), reason)
+      .input('reference', sql.NVarChar(sql.MAX), reference).input('createdById', sql.Int, actor.id).query(`INSERT INTO dbo.ProductStockMovements
+      (requestKey,productId,direction,quantity,unit,stockBefore,stockAfter,movementDate,sourceDestination,reason,reference,createdById,createdAt)
+      OUTPUT INSERTED.id VALUES(@requestKey,@productId,@direction,@quantity,@unit,@stockBefore,@stockAfter,@movementDate,@sourceDestination,@reason,@reference,@createdById,SYSUTCDATETIME())`);
+    await request(tx).input('userId', sql.Int, actor.id).input('userName', sql.NVarChar(sql.MAX), actor.name).input('system', sql.NVarChar(sql.MAX), 'sales').input('module', sql.NVarChar(sql.MAX), 'inventory').input('action', sql.NVarChar(sql.MAX), 'manual-' + direction).input('recordId', sql.NVarChar(sql.MAX), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
+    return { id: result.recordset[0].id, replayed: false };
+  });
+  const productResult = await request().input('productId', sql.Int, productId).query('SELECT id,sku,name,description,unit,CONVERT(varchar(60),stock) AS stock,isActive FROM dbo.Products WHERE id=@productId');
+  const result = await request().input('movementId', sql.Int, saved.id).query(`SELECT 'manual:' + CONVERT(varchar(20),m.id) AS id,m.id AS movementId,
+    CASE WHEN m.direction='in' THEN 'manual-in' ELSE 'manual-out' END AS type,m.direction,
+    CONVERT(varchar(60),m.quantity) AS quantity,m.unit,CONVERT(varchar(60),m.stockBefore) AS stockBefore,CONVERT(varchar(60),m.stockAfter) AS stockAfter,
+    CONVERT(varchar(10),m.movementDate,23) AS movementDate,m.sourceDestination,m.reference,m.reason,u.username AS createdByUsername,u.name AS createdByName,
+    CONVERT(varchar(33),m.createdAt,126)+'Z' AS createdAt,CAST(NULL AS int) AS deliveryReceiptId,CAST(NULL AS nvarchar(max)) AS deliveryReceiptNumber,
+    CAST(NULL AS int) AS orderId,CAST(NULL AS nvarchar(max)) AS orderNumber,CAST(NULL AS int) AS invoiceId,CAST(NULL AS nvarchar(max)) AS invoiceNumber,
+    CAST(NULL AS nvarchar(max)) AS customerName,CAST(NULL AS nvarchar(max)) AS address,CAST(NULL AS nvarchar(max)) AS receivedBy
+    FROM dbo.ProductStockMovements m JOIN dbo.SalesUserLogin u ON u.id=m.createdById WHERE m.id=@movementId`);
+  res.status(saved.replayed ? 200 : 201).json({ record: result.recordset[0], product: productResult.recordset[0], replayed: saved.replayed });
+});
+
+
 // Product master with customer approvals, inventory setup and linked supplies.
 router.get('/products', async (req, res) => {
   const recordsQuery = request();
-  const recordsResult = await recordsQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+  const recordsResult = await recordsQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,CONVERT(varchar(60),p.stock) AS stock,p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
     FROM dbo.Products p
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId  ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses  ORDER BY productId,position;
@@ -511,7 +613,7 @@ router.get('/products/:id', async (req, res) => {
   const id = parsedId;
   const recordQuery = request();
   recordQuery.input('id', sql.Int, id);
-  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,CONVERT(varchar(60),p.stock) AS stock,p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
     FROM dbo.Products p
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
@@ -585,7 +687,7 @@ router.post('/products', async (req, res) => {
     if (id) {
       const currentQuery = request(scope);
       currentQuery.input('id', sql.Int, id);
-      const currentResult = await currentQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+      const currentResult = await currentQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,CONVERT(varchar(60),p.stock) AS stock,p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
     FROM dbo.Products p WITH (UPDLOCK,HOLDLOCK)
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
@@ -759,9 +861,9 @@ SELECT a.productId,a.customerId,c.name AS customerName,CONVERT(varchar(10),a.app
       }
     }
     if (current && product.unit !== current.unit) {
-      const result = await request(scope).input('id', sql.Int, current.id).query('SELECT TOP(1) id FROM dbo.SalesOrderItems WHERE productId=@id');
+      const result = await request(scope).input('id', sql.Int, current.id).query('SELECT TOP(1) id FROM dbo.SalesOrderItems WHERE productId=@id UNION ALL SELECT TOP(1) id FROM dbo.ProductStockMovements WHERE productId=@id');
       if (Number(current.stock) > 0 || result.recordset.length) {
-        const error = new Error('UOP cannot change after finished-product stock or sales history exists.');
+        const error = new Error('UOP cannot change after finished-product stock, stock movements or sales history exist.');
         error.status = 409;
         throw error;
       }
@@ -824,10 +926,11 @@ SELECT a.productId,a.customerId,c.name AS customerName,CONVERT(varchar(10),a.app
     const req = request(scope);
     for (const fieldName of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "remarks", "tagColor"]) req.input(fieldName, sql.NVarChar(sql.MAX), product[fieldName]);
     for (const fieldName of PRODUCT_QUANTITIES) req.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
-    req.input('price', sql.VarChar(sql.MAX), product.price === null ? null : String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
+    req.input('price', sql.VarChar(sql.MAX), product.price === null ? null : String(product.price)).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
+    if (!id) req.input('stock', sql.Decimal(18, 3), 0);
     let saved = id;
     if (id) {
-      await req.input('id', sql.Int, id).query(`UPDATE dbo.Products SET [sku]=@sku,[name]=@name,[description]=@description,[unit]=@unit,[revision]=@revision,[secondaryUnit]=@secondaryUnit,[currency]=@currency,[model]=@model,[category]=@category,[remarks]=@remarks,[tagColor]=@tagColor,[quantityPerSecondaryUnit]=@quantityPerSecondaryUnit,[moq]=@moq,[spq]=@spq,[unitCost]=@unitCost,[divisor]=@divisor,[weight]=@weight,[price]=@price,[stock]=@stock,[isActive]=@isActive,[vatMode]=@vatMode,[productHeaderId]=@productHeaderId,[inventorySetup]=@inventorySetup,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.Products SET [sku]=@sku,[name]=@name,[description]=@description,[unit]=@unit,[revision]=@revision,[secondaryUnit]=@secondaryUnit,[currency]=@currency,[model]=@model,[category]=@category,[remarks]=@remarks,[tagColor]=@tagColor,[quantityPerSecondaryUnit]=@quantityPerSecondaryUnit,[moq]=@moq,[spq]=@spq,[unitCost]=@unitCost,[divisor]=@divisor,[weight]=@weight,[price]=@price,[isActive]=@isActive,[vatMode]=@vatMode,[productHeaderId]=@productHeaderId,[inventorySetup]=@inventorySetup,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
     } else {
       const result = await req.query(`INSERT INTO dbo.Products([sku],[name],[description],[unit],[revision],[secondaryUnit],[currency],[model],[category],[remarks],[tagColor],[quantityPerSecondaryUnit],[moq],[spq],[unitCost],[divisor],[weight],[price],[stock],[isActive],[vatMode],[productHeaderId],[inventorySetup],createdAt,updatedAt) OUTPUT INSERTED.id VALUES(@sku,@name,@description,@unit,@revision,@secondaryUnit,@currency,@model,@category,@remarks,@tagColor,@quantityPerSecondaryUnit,@moq,@spq,@unitCost,@divisor,@weight,@price,@stock,@isActive,@vatMode,@productHeaderId,@inventorySetup,SYSUTCDATETIME(),SYSUTCDATETIME())`);
       saved = result.recordset[0].id;
@@ -855,7 +958,7 @@ SELECT a.productId,a.customerId,c.name AS customerName,CONVERT(varchar(10),a.app
   });
   const recordQuery = request();
   recordQuery.input('id', sql.Int, savedId);
-  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,CONVERT(varchar(60),p.stock) AS stock,p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
     FROM dbo.Products p
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
@@ -916,7 +1019,7 @@ router.put('/products/:id', async (req, res) => {
     if (id) {
       const currentQuery = request(scope);
       currentQuery.input('id', sql.Int, id);
-      const currentResult = await currentQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+      const currentResult = await currentQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,CONVERT(varchar(60),p.stock) AS stock,p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
     FROM dbo.Products p WITH (UPDLOCK,HOLDLOCK)
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
@@ -1091,9 +1194,9 @@ SELECT a.productId,a.customerId,c.name AS customerName,CONVERT(varchar(10),a.app
       }
     }
     if (current && product.unit !== current.unit) {
-      const result = await request(scope).input('id', sql.Int, current.id).query('SELECT TOP(1) id FROM dbo.SalesOrderItems WHERE productId=@id');
+      const result = await request(scope).input('id', sql.Int, current.id).query('SELECT TOP(1) id FROM dbo.SalesOrderItems WHERE productId=@id UNION ALL SELECT TOP(1) id FROM dbo.ProductStockMovements WHERE productId=@id');
       if (Number(current.stock) > 0 || result.recordset.length) {
-        const error = new Error('UOP cannot change after finished-product stock or sales history exists.');
+        const error = new Error('UOP cannot change after finished-product stock, stock movements or sales history exist.');
         error.status = 409;
         throw error;
       }
@@ -1156,10 +1259,11 @@ SELECT a.productId,a.customerId,c.name AS customerName,CONVERT(varchar(10),a.app
     const req = request(scope);
     for (const fieldName of ["sku", "name", "description", "unit", "revision", "secondaryUnit", "currency", "model", "category", "remarks", "tagColor"]) req.input(fieldName, sql.NVarChar(sql.MAX), product[fieldName]);
     for (const fieldName of PRODUCT_QUANTITIES) req.input(fieldName, sql.Decimal(18, 6), product[fieldName]);
-    req.input('price', sql.VarChar(sql.MAX), product.price === null ? null : String(product.price)).input('stock', sql.Decimal(18, 3), product.stock).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
+    req.input('price', sql.VarChar(sql.MAX), product.price === null ? null : String(product.price)).input('isActive', sql.Bit, product.isActive).input('vatMode', sql.NVarChar(sql.MAX), product.vatMode).input('productHeaderId', sql.Int, product.productHeaderId).input('inventorySetup', sql.NVarChar(sql.MAX), product.inventorySetup);
+    if (!id) req.input('stock', sql.Decimal(18, 3), 0);
     let saved = id;
     if (id) {
-      await req.input('id', sql.Int, id).query(`UPDATE dbo.Products SET [sku]=@sku,[name]=@name,[description]=@description,[unit]=@unit,[revision]=@revision,[secondaryUnit]=@secondaryUnit,[currency]=@currency,[model]=@model,[category]=@category,[remarks]=@remarks,[tagColor]=@tagColor,[quantityPerSecondaryUnit]=@quantityPerSecondaryUnit,[moq]=@moq,[spq]=@spq,[unitCost]=@unitCost,[divisor]=@divisor,[weight]=@weight,[price]=@price,[stock]=@stock,[isActive]=@isActive,[vatMode]=@vatMode,[productHeaderId]=@productHeaderId,[inventorySetup]=@inventorySetup,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+      await req.input('id', sql.Int, id).query(`UPDATE dbo.Products SET [sku]=@sku,[name]=@name,[description]=@description,[unit]=@unit,[revision]=@revision,[secondaryUnit]=@secondaryUnit,[currency]=@currency,[model]=@model,[category]=@category,[remarks]=@remarks,[tagColor]=@tagColor,[quantityPerSecondaryUnit]=@quantityPerSecondaryUnit,[moq]=@moq,[spq]=@spq,[unitCost]=@unitCost,[divisor]=@divisor,[weight]=@weight,[price]=@price,[isActive]=@isActive,[vatMode]=@vatMode,[productHeaderId]=@productHeaderId,[inventorySetup]=@inventorySetup,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
     } else {
       const result = await req.query(`INSERT INTO dbo.Products([sku],[name],[description],[unit],[revision],[secondaryUnit],[currency],[model],[category],[remarks],[tagColor],[quantityPerSecondaryUnit],[moq],[spq],[unitCost],[divisor],[weight],[price],[stock],[isActive],[vatMode],[productHeaderId],[inventorySetup],createdAt,updatedAt) OUTPUT INSERTED.id VALUES(@sku,@name,@description,@unit,@revision,@secondaryUnit,@currency,@model,@category,@remarks,@tagColor,@quantityPerSecondaryUnit,@moq,@spq,@unitCost,@divisor,@weight,@price,@stock,@isActive,@vatMode,@productHeaderId,@inventorySetup,SYSUTCDATETIME(),SYSUTCDATETIME())`);
       saved = result.recordset[0].id;
@@ -1187,7 +1291,7 @@ SELECT a.productId,a.customerId,c.name AS customerName,CONVERT(varchar(10),a.app
   });
   const recordQuery = request();
   recordQuery.input('id', sql.Int, savedId);
-  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,p.[stock],p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
+  const recordResult = await recordQuery.query(`SELECT p.id,p.[sku],p.[name],p.[description],p.[unit],p.[revision],p.[secondaryUnit],p.[currency],p.[model],p.[category],p.[remarks],p.[tagColor],p.[quantityPerSecondaryUnit],p.[moq],p.[spq],p.[unitCost],p.[divisor],p.[weight],CONVERT(varchar(60),p.price) AS price,CONVERT(varchar(60),p.stock) AS stock,p.[isActive],p.[vatMode],p.[productHeaderId],p.[inventorySetup],h.sku AS productHeaderCode,h.name AS productHeaderName
     FROM dbo.Products p
     LEFT JOIN dbo.Products h ON h.id=p.productHeaderId WHERE p.id=@id ORDER BY p.id DESC;
     SELECT productId,name FROM dbo.ProductProcesses WHERE productId=@id ORDER BY productId,position;
@@ -1243,13 +1347,18 @@ router.get('/sales-orders', async (req, res) => {
   CONVERT(varchar(60),o.total) AS total,o.notes,o.status,o.createdBy,COALESCE(o.preparedByName,creator.name) AS preparedByName,
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o LEFT JOIN dbo.SalesUserLogin creator ON creator.id=o.createdBy ORDER BY o.id DESC`);
-  const itemResult = await request().query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  const itemResult = await request().query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems ORDER BY orderId,id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped ORDER BY orderId,id`);
   const records = new Map(result.recordset.map(row => [row.id, { ...row, items: [] }]));
   for (const item of itemResult.recordset) records.get(item.orderId)?.items.push(item);
   res.json({ records: [...records.values()] });
@@ -1268,13 +1377,18 @@ router.get('/sales-orders/:id', async (req, res) => {
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o LEFT JOIN dbo.SalesUserLogin creator ON creator.id=o.createdBy WHERE o.id=@id`);
   if (!recordResult.recordset.length) { const error = new Error('Sales order could not be found.'); error.status = 404; throw error; }
-  const recordItems = await request().input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  const recordItems = await request().input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
   res.json({ record: { ...recordResult.recordset[0], items: recordItems.recordset } });
 });
 router.post('/sales-orders', async (req, res) => {
@@ -1368,13 +1482,18 @@ router.post('/sales-orders', async (req, res) => {
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin creator ON creator.id=o.createdBy WHERE o.id=@id`);
       if (!currentResult.recordset.length) { const error = new Error('Sales order could not be found.'); error.status = 404; throw error; }
-      const currentItems = await request(tx).input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+      const currentItems = await request(tx).input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
       current = { ...currentResult.recordset[0], items: currentItems.recordset };
       if (current.invoiced || current.delivered) { const error = new Error('This order is already linked to an invoice or delivery receipt and cannot be edited.'); error.status = 409; throw error; }
     }
@@ -1548,13 +1667,18 @@ router.post('/sales-orders', async (req, res) => {
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o LEFT JOIN dbo.SalesUserLogin creator ON creator.id=o.createdBy WHERE o.id=@id`);
   if (!recordResult.recordset.length) { const error = new Error('Sales order could not be found.'); error.status = 404; throw error; }
-  const recordItems = await request().input('id', sql.Int, savedId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  const recordItems = await request().input('id', sql.Int, savedId).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
   res.status(201).json({ record: { ...recordResult.recordset[0], items: recordItems.recordset } });
 });
 router.put('/sales-orders/:id', async (req, res) => {
@@ -1649,13 +1773,18 @@ router.put('/sales-orders/:id', async (req, res) => {
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin creator ON creator.id=o.createdBy WHERE o.id=@id`);
       if (!currentResult.recordset.length) { const error = new Error('Sales order could not be found.'); error.status = 404; throw error; }
-      const currentItems = await request(tx).input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+      const currentItems = await request(tx).input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
       current = { ...currentResult.recordset[0], items: currentItems.recordset };
       if (current.invoiced || current.delivered) { const error = new Error('This order is already linked to an invoice or delivery receipt and cannot be edited.'); error.status = 409; throw error; }
     }
@@ -1829,15 +1958,182 @@ router.put('/sales-orders/:id', async (req, res) => {
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
   CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o LEFT JOIN dbo.SalesUserLogin creator ON creator.id=o.createdBy WHERE o.id=@id`);
   if (!recordResult.recordset.length) { const error = new Error('Sales order could not be found.'); error.status = 404; throw error; }
-  const recordItems = await request().input('id', sql.Int, savedId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  const recordItems = await request().input('id', sql.Int, savedId).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
   res.status(200).json({ record: { ...recordResult.recordset[0], items: recordItems.recordset } });
 });
+router.patch('/sales-orders/:id/quantities', async (req, res) => {
+  const user = res.locals.user;
+  if (user?.system !== 'sales' || !user.isActive || !['admin', 'saleshead', 'sales'].includes(user.role)) { const error = new Error('Sign in to Sales to update order quantities.'); error.status = 403; throw error; }
+  if (!req.is('application/json')) { const error = new Error('Send this request as JSON.'); error.status = 415; throw error; }
+  if (!req.body || Array.isArray(req.body) || typeof req.body !== 'object') { const error = new Error('Send a valid JSON object.'); error.status = 400; throw error; }
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) { const error = new Error('Select a valid sales order.'); error.status = 400; throw error; }
+  const input = req.body;
+  if (Object.keys(input).some(key => key !== 'items') || !Array.isArray(input.items) || !input.items.length || input.items.length > 100) { const error = new Error('Only existing order item quantities can be changed after invoicing.'); error.status = 400; throw error; }
+  const requested = input.items.map(item => {
+    if (!item || Array.isArray(item) || typeof item !== 'object' || Object.keys(item).some(key => !['id', 'quantity'].includes(key))) { const error = new Error('Only item id and quantity can be changed after invoicing.'); error.status = 400; throw error; }
+    const itemId = Number(item.id);
+    if (!Number.isSafeInteger(itemId) || itemId <= 0 || itemId > 2147483647 || typeof item.quantity !== 'string' || !/^\d+(?:\.\d{1,3})?$/.test(item.quantity.trim())) { const error = new Error('Enter a valid existing item and quantity with up to 3 decimal places.'); error.status = 400; throw error; }
+    const [whole, fraction = ''] = item.quantity.trim().split('.');
+    const units = BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0'));
+    if (units <= 0n || units > 1000000000n) { const error = new Error('Order quantities must be greater than zero and at most 1,000,000.'); error.status = 400; throw error; }
+    return { id: itemId, quantity: `${units / 1000n}.${(units % 1000n).toString().padStart(3, '0')}`, units };
+  });
+  if (new Set(requested.map(item => item.id)).size !== requested.length) { const error = new Error('Each existing order item must appear exactly once.'); error.status = 400; throw error; }
+  await transaction(async tx => {
+    const result = await request(tx).input('id', sql.Int, id).query(`SELECT o.id,o.number,o.customerId,o.customerName,o.customerAddress,o.billToCustomerId,o.billToName,o.billToAddress,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
+  o.currency,o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,
+  CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,
+  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),o.total) AS total,o.notes,o.status,o.createdBy,COALESCE(o.preparedByName,creator.name) AS preparedByName,
+  CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.SalesUserLogin creator ON creator.id=o.createdBy WHERE o.id=@id`);
+    const order = result.recordset[0];
+    if (!order) { const error = new Error('Sales order could not be found.'); error.status = 404; throw error; }
+    if (!order.invoiced) { const error = new Error('Use the regular sales order form until an invoice exists.'); error.status = 409; throw error; }
+    const lineResult = await request(tx).input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
+  CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
+  CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
+  CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi WITH (UPDLOCK,HOLDLOCK)
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
+    const currentItems = lineResult.recordset;
+    if (requested.length !== currentItems.length || currentItems.some(item => !requested.some(row => row.id === item.id))) { const error = new Error('Existing order items cannot be added, removed or replaced after invoicing.'); error.status = 409; throw error; }
+    const items = currentItems.map(item => {
+      const requestedItem = requested.find(row => row.id === item.id);
+      for (const field of ['invoicedQuantity', 'deliveredQuantity']) {
+        const value = String(item[field] ?? '0').trim();
+        if (!/^\d+(?:\.\d{1,3})?$/.test(value)) { const error = new Error('Recorded invoice or delivery quantities are invalid.'); error.status = 409; throw error; }
+        const [whole, fraction = ''] = value.split('.');
+        const recorded = BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0'));
+        if (requestedItem.units < recorded) { const error = new Error('Quantity for ' + (item.sku || item.productName) + ' cannot be lower than its already invoiced or delivered quantity.'); error.status = 409; throw error; }
+      }
+      const parsed = {};
+      for (const [key, source] of [['unitPrice', item.unitPrice], ['discountRate', item.discountRate ?? '0']]) {
+        const value = String(source ?? '').trim();
+        if (!/^\d+(?:\.\d+)?$/.test(value)) { const error = new Error('The saved order pricing is invalid.'); error.status = 409; throw error; }
+        const [whole, rawFraction = ''] = value.split('.');
+        const fraction = rawFraction.replace(/0+$/, '');
+        if (fraction.length > 6) { const error = new Error('The saved order pricing precision is invalid.'); error.status = 409; throw error; }
+        parsed[key] = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+      }
+      if (parsed.unitPrice > 100000000000000n || parsed.discountRate > 100000000n) { const error = new Error('The saved order pricing exceeds its supported range.'); error.status = 409; throw error; }
+      return { ...item, quantity: requestedItem.quantity, quantityThousandths: requestedItem.units, priceMillionths: parsed.unitPrice, discountMillionths: parsed.discountRate };
+    });
+    const pricing = {};
+    for (const [key, source] of [['rate', order.rate ?? '1'], ['vatRate', order.vatRate ?? '0'], ['discount', order.discount ?? '0']]) {
+      const value = String(source).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(value)) { const error = new Error('The saved order pricing is invalid.'); error.status = 409; throw error; }
+      const [whole, rawFraction = ''] = value.split('.');
+      const fraction = rawFraction.replace(/0+$/, '');
+      if (fraction.length > 6) { const error = new Error('The saved order pricing precision is invalid.'); error.status = 409; throw error; }
+      pricing[key] = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0') || '0');
+    }
+    const rateMillionths = pricing.rate;
+    const vatMillionths = pricing.vatRate;
+    const enteredDiscount = pricing.discount;
+    if (rateMillionths <= 0n || rateMillionths > 1000000000000n || vatMillionths > 100000000n || order.discountType === 'percent' && enteredDiscount > 100000000n || order.discountType != null && !['percent', 'amount'].includes(order.discountType)) { const error = new Error('The saved order pricing is invalid.'); error.status = 409; throw error; }
+    order.decimalInTotalPrice = order.decimalInTotalPrice ?? 2;
+    if (!Number.isInteger(order.decimalInTotalPrice) || order.decimalInTotalPrice < 0 || order.decimalInTotalPrice > 6) { const error = new Error('The saved order precision is invalid.'); error.status = 409; throw error; }
+    const places = order.decimalInTotalPrice;
+    const moneyScale = 10n ** BigInt(places);
+    const moneyDivisor = 10n ** BigInt(9 - places);
+    const percent = 100000000n;
+    const calculated = items.map(item => {
+      const snapshot = item;
+      const converted = (item.priceMillionths * rateMillionths + 500000n) / 1000000n;
+      if (converted > 1000000000000000000n) { const error = new Error('The converted price is too large.'); error.status = 400; throw error; }
+      const gross = (item.quantityThousandths * converted + moneyDivisor / 2n) / moneyDivisor;
+      if (gross > 1000000000000n * moneyScale) { const error = new Error('Order gross amount exceeds the supported amount.'); error.status = 400; throw error; }
+      const lineDiscount = (gross * item.discountMillionths + percent / 2n) / percent;
+      return { ...snapshot, converted, gross, lineDiscount, remaining: gross - lineDiscount };
+    });
+    let remainingNet = calculated.reduce((sum, item) => sum + item.remaining, 0n);
+    const headerDivisor = 10n ** BigInt(6 - places);
+    const headerDiscount = order.discountType === 'percent' ? (remainingNet * enteredDiscount + percent / 2n) / percent : order.discountType === 'amount' ? (enteredDiscount + headerDivisor / 2n) / headerDivisor : 0n;
+    if (headerDiscount > remainingNet) { const error = new Error('Header discount cannot exceed the amount after line discounts.'); error.status = 400; throw error; }
+    let remainingDiscount = headerDiscount;
+    const totals = { grossAmount: 0n, lineDiscountAmount: 0n, headerDiscountAmount: headerDiscount, discountAmount: 0n, netAmount: 0n, vatAmount: 0n, amount: 0n };
+    const savedItems = calculated.map(item => {
+      const allocation = remainingNet === 0n ? 0n : remainingNet === item.remaining ? remainingDiscount : remainingDiscount * item.remaining / remainingNet;
+      remainingNet -= item.remaining;
+      remainingDiscount -= allocation;
+      const discountAmount = item.lineDiscount + allocation;
+      const discounted = item.gross - discountAmount;
+      const taxDivisor = order.vatInclusive ? percent + vatMillionths : percent;
+      const vat = (discounted * vatMillionths + taxDivisor / 2n) / taxDivisor;
+      const net = order.vatInclusive ? discounted - vat : discounted;
+      const amount = order.vatInclusive ? discounted : discounted + vat;
+      totals.grossAmount += item.gross;
+      totals.lineDiscountAmount += item.lineDiscount;
+      totals.discountAmount += discountAmount;
+      totals.netAmount += net;
+      totals.vatAmount += vat;
+      totals.amount += amount;
+      const row = { ...item, convertedUnitPrice: `${item.converted / 1000000n}.${(item.converted % 1000000n).toString().padStart(6, '0')}` };
+      for (const [key, value] of Object.entries({ grossAmount: item.gross, lineDiscountAmount: item.lineDiscount, headerDiscountAmount: allocation, discountAmount, netAmount: net, vatAmount: vat, amount, lineTotal: amount })) row[key] = `${value / moneyScale}.${(value % moneyScale).toString().padStart(places, '0').padEnd(6, '0')}`;
+      return row;
+    });
+    if (totals.grossAmount > 1000000000000n * moneyScale || totals.amount > 1000000000000n * moneyScale) { const error = new Error('The document total exceeds the supported amount.'); error.status = 400; throw error; }
+    for (const [key, value] of Object.entries(totals)) order[key] = `${value / moneyScale}.${(value % moneyScale).toString().padStart(places, '0').padEnd(6, '0')}`;
+    order.total = order.amount;
+    const totalsRequest = request(tx).input('id', sql.Int, id);
+    for (const key of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount', 'total']) totalsRequest.input(key, sql.VarChar(sql.MAX), order[key]);
+    await totalsRequest.query(`UPDATE dbo.SalesOrders SET grossAmount=@grossAmount,lineDiscountAmount=@lineDiscountAmount,headerDiscountAmount=@headerDiscountAmount,
+      discountAmount=@discountAmount,netAmount=@netAmount,vatAmount=@vatAmount,amount=@amount,total=@total,updatedAt=SYSUTCDATETIME() WHERE id=@id`);
+    for (const item of savedItems) {
+      const req = request(tx).input('id', sql.Int, item.id).input('orderId', sql.Int, id).input('quantity', sql.VarChar(sql.MAX), item.quantity);
+      for (const key of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount', 'lineTotal']) req.input(key, sql.VarChar(sql.MAX), item[key]);
+      await req.query(`UPDATE dbo.SalesOrderItems SET quantity=CAST(@quantity AS DECIMAL(18,3)),grossAmount=@grossAmount,lineDiscountAmount=@lineDiscountAmount,
+        headerDiscountAmount=@headerDiscountAmount,discountAmount=@discountAmount,netAmount=@netAmount,vatAmount=@vatAmount,amount=@amount,lineTotal=@lineTotal WHERE id=@id AND orderId=@orderId`);
+    }
+    await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), 'sales').input('module', sql.NVarChar(sql.MAX), 'sales-orders').input('action', sql.NVarChar(sql.MAX), 'quantity-update').input('recordId', sql.NVarChar(sql.MAX), String(id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
+  });
+  const result = await request().input('id', sql.Int, id).query(`SELECT o.id,o.number,o.customerId,o.customerName,o.customerAddress,o.billToCustomerId,o.billToName,o.billToAddress,
+  CONVERT(varchar(10),o.orderDate,23) AS orderDate,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
+  o.currency,o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,
+  CONVERT(varchar(60),o.vatRate) AS vatRate,o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,
+  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),o.total) AS total,o.notes,o.status,o.createdBy,COALESCE(o.preparedByName,creator.name) AS preparedByName,
+  CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.SalesInvoices i WHERE i.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS invoiced,
+  CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.DeliveryReceipts d WHERE d.orderId=o.id) THEN 1 ELSE 0 END AS bit) AS delivered FROM dbo.SalesOrders o LEFT JOIN dbo.SalesUserLogin creator ON creator.id=o.createdBy WHERE o.id=@id`);
+  const lines = await request().input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
+  CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
+  CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
+  CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
+  res.json({ record: { ...result.recordset[0], items: lines.recordset } });
+});
+
 router.delete('/sales-orders/:id', async (req, res) => {
   const parsedId = Number(req.params.id);
   if (!Number.isSafeInteger(parsedId) || parsedId <= 0 || parsedId > 2147483647) {
@@ -1863,13 +2159,18 @@ router.delete('/sales-orders/:id', async (req, res) => {
       error.status = 404;
       throw error;
     }
-    const orderItems = await request(tx).input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+    const orderItems = await request(tx).input('id', sql.Int, id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
     const order = {
       ...orderResult.recordset[0],
       items: orderItems.recordset
@@ -1892,9 +2193,9 @@ router.get('/sales-invoices', async (req, res) => {
   const result = await request().query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,invoiceCreator.name AS preparedByName,o.preparedByName AS sourcePreparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
   i.notes,CONVERT(varchar(60),i.total) AS total,CONVERT(varchar(60),i.paidAmount) AS paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId LEFT JOIN dbo.SalesUserLogin invoiceCreator ON invoiceCreator.id=i.createdBy ORDER BY i.id DESC`);
   res.json({
@@ -1912,9 +2213,9 @@ router.get('/sales-invoices/:id', async (req, res) => {
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,invoiceCreator.name AS preparedByName,o.preparedByName AS sourcePreparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
   i.notes,CONVERT(varchar(60),i.total) AS total,CONVERT(varchar(60),i.paidAmount) AS paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId LEFT JOIN dbo.SalesUserLogin invoiceCreator ON invoiceCreator.id=i.createdBy WHERE i.id=@id`);
   if (!recordResult.recordset.length) {
@@ -1922,13 +2223,13 @@ router.get('/sales-invoices/:id', async (req, res) => {
     error.status = 404;
     throw error;
   }
-  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
-  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).input('invoiceId', sql.Int, recordResult.recordset[0].id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderItemId,@orderId AS orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesInvoiceItems WHERE invoiceId=@invoiceId ORDER BY id`);
   const record = {
     ...recordResult.recordset[0],
     items: recordItems.recordset
@@ -1938,12 +2239,12 @@ router.get('/sales-invoices/:id', async (req, res) => {
   });
 });
 router.get('/delivery-receipts', async (req, res) => {
-  const result = await request().query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,CONVERT(varchar(60),o.total) AS total,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
+  const result = await request().query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,CONVERT(varchar(60),d.amount) AS total,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,o.preparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),d.grossAmount) AS grossAmount,CONVERT(varchar(60),d.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),d.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),d.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),d.netAmount) AS netAmount,CONVERT(varchar(60),d.vatAmount) AS vatAmount,CONVERT(varchar(60),d.amount) AS amount,
   CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId ORDER BY d.id DESC`);
   res.json({
     records: result.recordset
@@ -1957,25 +2258,25 @@ router.get('/delivery-receipts/:id', async (req, res) => {
     throw error;
   }
   const id = parsedId;
-  const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,CONVERT(varchar(60),o.total) AS total,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,CONVERT(varchar(60),d.amount) AS total,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,o.preparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),d.grossAmount) AS grossAmount,CONVERT(varchar(60),d.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),d.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),d.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),d.netAmount) AS netAmount,CONVERT(varchar(60),d.vatAmount) AS vatAmount,CONVERT(varchar(60),d.amount) AS amount,
   CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId WHERE d.id=@id`);
   if (!recordResult.recordset.length) {
     const error = new Error('Delivery receipt could not be found.');
     error.status = 404;
     throw error;
   }
-  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
-  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).input('deliveryReceiptId', sql.Int, recordResult.recordset[0].id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderItemId,@orderId AS orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.DeliveryReceiptItems WHERE deliveryReceiptId=@deliveryReceiptId ORDER BY id`);
   const record = {
     ...recordResult.recordset[0],
     items: recordItems.recordset
@@ -1989,9 +2290,9 @@ router.get('/shipping-invoices', async (req, res) => {
   o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,o.preparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
+  CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
   s.carrier,s.trackingNumber,s.notes,CONVERT(varchar(60),i.total) AS total,CONVERT(varchar(60),i.paidAmount) AS paidAmount,d.number AS deliveryNumber FROM dbo.ShippingInvoices s
   JOIN dbo.SalesInvoices i ON i.id=s.invoiceId
   JOIN dbo.SalesOrders o ON o.id=i.orderId
@@ -2012,9 +2313,9 @@ router.get('/shipping-invoices/:id', async (req, res) => {
   o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,o.preparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
+  CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
   s.carrier,s.trackingNumber,s.notes,CONVERT(varchar(60),i.total) AS total,CONVERT(varchar(60),i.paidAmount) AS paidAmount,d.number AS deliveryNumber FROM dbo.ShippingInvoices s
   JOIN dbo.SalesInvoices i ON i.id=s.invoiceId
   JOIN dbo.SalesOrders o ON o.id=i.orderId
@@ -2024,13 +2325,13 @@ router.get('/shipping-invoices/:id', async (req, res) => {
     error.status = 404;
     throw error;
   }
-  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
-  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).input('invoiceId', sql.Int, recordResult.recordset[0].invoiceId).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderItemId,@orderId AS orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesInvoiceItems WHERE invoiceId=@invoiceId ORDER BY id`);
   const record = {
     ...recordResult.recordset[0],
     items: recordItems.recordset
@@ -2083,13 +2384,18 @@ router.post('/sales-invoices', async (req, res) => {
       error.status = 404;
       throw error;
     }
-    const orderItems = await request(tx).input('id', sql.Int, orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+    const orderItems = await request(tx).input('id', sql.Int, orderId).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
     const order = {
       ...orderResult.recordset[0],
       items: orderItems.recordset
@@ -2104,19 +2410,22 @@ router.post('/sales-invoices', async (req, res) => {
       error.status = 409;
       throw error;
     }
-    const result = await request(tx).input('orderId', sql.Int, orderId).input('invoiceDate', sql.VarChar(sql.MAX), invoiceDate).input('dueDate', sql.VarChar(sql.MAX), dueDate).input('notes', sql.NVarChar(sql.MAX), notes).input('total', sql.VarChar(sql.MAX), String(order.total)).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.SalesInvoices (orderId,invoiceDate,dueDate,notes,total,createdBy,paidAmount,createdAt,updatedAt) OUTPUT INSERTED.id
-        VALUES (@orderId,@invoiceDate,@dueDate,@notes,@total,@createdBy,0,SYSUTCDATETIME(),SYSUTCDATETIME())`);
+    const result = await request(tx).input('orderId', sql.Int, orderId).input('invoiceDate', sql.VarChar(sql.MAX), invoiceDate).input('dueDate', sql.VarChar(sql.MAX), dueDate).input('notes', sql.NVarChar(sql.MAX), notes).input('total', sql.VarChar(sql.MAX), String(order.total)).input('createdBy', sql.Int, user.id).input('grossAmount', sql.VarChar(sql.MAX), order.grossAmount == null ? null : String(order.grossAmount)).input('lineDiscountAmount', sql.VarChar(sql.MAX), order.lineDiscountAmount == null ? null : String(order.lineDiscountAmount)).input('headerDiscountAmount', sql.VarChar(sql.MAX), order.headerDiscountAmount == null ? null : String(order.headerDiscountAmount)).input('discountAmount', sql.VarChar(sql.MAX), order.discountAmount == null ? null : String(order.discountAmount)).input('netAmount', sql.VarChar(sql.MAX), order.netAmount == null ? null : String(order.netAmount)).input('vatAmount', sql.VarChar(sql.MAX), order.vatAmount == null ? null : String(order.vatAmount)).input('amount', sql.VarChar(sql.MAX), String(order.total)).query(`INSERT INTO dbo.SalesInvoices (orderId,invoiceDate,dueDate,notes,total,createdBy,paidAmount,grossAmount,lineDiscountAmount,headerDiscountAmount,discountAmount,netAmount,vatAmount,amount,createdAt,updatedAt) OUTPUT INSERTED.id
+        VALUES (@orderId,@invoiceDate,@dueDate,@notes,@total,@createdBy,0,@grossAmount,@lineDiscountAmount,@headerDiscountAmount,@discountAmount,@netAmount,@vatAmount,@amount,SYSUTCDATETIME(),SYSUTCDATETIME())`);
     const number = `SI-${String(result.recordset[0].id).padStart(8, '0')}`;
     await request(tx).input('id', sql.Int, result.recordset[0].id).input('number', sql.NVarChar(sql.MAX), number).query('UPDATE dbo.SalesInvoices SET number=@number WHERE id=@id');
+    await request(tx).input('invoiceId', sql.Int, result.recordset[0].id).input('orderId', sql.Int, orderId).query(`INSERT INTO dbo.SalesInvoiceItems
+      (invoiceId,orderItemId,productId,productName,description,sku,unit,refNumber,quotationNumber,currency,quantity,unitPrice,convertedUnitPrice,discountRate,deliveryDate,grossAmount,lineDiscountAmount,headerDiscountAmount,discountAmount,netAmount,vatAmount,amount,lineTotal)
+      SELECT @invoiceId,id,productId,productName,description,sku,unit,refNumber,quotationNumber,currency,quantity,unitPrice,convertedUnitPrice,discountRate,deliveryDate,grossAmount,lineDiscountAmount,headerDiscountAmount,discountAmount,netAmount,vatAmount,amount,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId`);
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'sales-invoices').input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     return result.recordset[0].id;
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,invoiceCreator.name AS preparedByName,o.preparedByName AS sourcePreparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
   i.notes,CONVERT(varchar(60),i.total) AS total,CONVERT(varchar(60),i.paidAmount) AS paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId LEFT JOIN dbo.SalesUserLogin invoiceCreator ON invoiceCreator.id=i.createdBy WHERE i.id=@id`);
   if (!recordResult.recordset.length) {
@@ -2124,13 +2433,13 @@ router.post('/sales-invoices', async (req, res) => {
     error.status = 404;
     throw error;
   }
-  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
-  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).input('invoiceId', sql.Int, recordResult.recordset[0].id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderItemId,@orderId AS orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesInvoiceItems WHERE invoiceId=@invoiceId ORDER BY id`);
   const record = {
     ...recordResult.recordset[0],
     items: recordItems.recordset
@@ -2204,9 +2513,9 @@ router.patch('/sales-invoices/:id/payment', async (req, res) => {
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,invoiceCreator.name AS preparedByName,o.preparedByName AS sourcePreparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
   CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
   i.notes,CONVERT(varchar(60),i.total) AS total,CONVERT(varchar(60),i.paidAmount) AS paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId LEFT JOIN dbo.SalesUserLogin invoiceCreator ON invoiceCreator.id=i.createdBy WHERE i.id=@id`);
   if (!recordResult.recordset.length) {
@@ -2214,13 +2523,13 @@ router.patch('/sales-invoices/:id/payment', async (req, res) => {
     error.status = 404;
     throw error;
   }
-  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
-  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).input('invoiceId', sql.Int, recordResult.recordset[0].id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderItemId,@orderId AS orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesInvoiceItems WHERE invoiceId=@invoiceId ORDER BY id`);
   const record = {
     ...recordResult.recordset[0],
     items: recordItems.recordset
@@ -2269,13 +2578,18 @@ router.post('/delivery-receipts', async (req, res) => {
       error.status = 404;
       throw error;
     }
-    const orderItems = await request(tx).input('id', sql.Int, orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+    const orderItems = await request(tx).input('id', sql.Int, orderId).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
   id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@id ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount,CONVERT(varchar(60),COALESCE(billed.invoicedQuantity,0)) AS invoicedQuantity,
+    CONVERT(varchar(60),COALESCE(shipped.deliveredQuantity,0)) AS deliveredQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(billed.invoicedQuantity,0)) AS remainingInvoiceQuantity,
+    CONVERT(varchar(60),oi.quantity-COALESCE(shipped.deliveredQuantity,0)) AS remainingDeliveryQuantity FROM dbo.SalesOrderItems oi
+    OUTER APPLY (SELECT CAST(SUM(s.quantity) AS DECIMAL(18,3)) AS invoicedQuantity FROM dbo.SalesInvoiceItems s WHERE s.orderItemId=oi.id) billed
+    OUTER APPLY (SELECT CAST(SUM(d.quantity) AS DECIMAL(18,3)) AS deliveredQuantity FROM dbo.DeliveryReceiptItems d WHERE d.orderItemId=oi.id) shipped WHERE orderId=@id ORDER BY id`);
     const order = {
       ...orderResult.recordset[0],
       items: orderItems.recordset
@@ -2298,32 +2612,35 @@ router.post('/delivery-receipts', async (req, res) => {
         throw error;
       }
     }
-    const result = await request(tx).input('orderId', sql.Int, orderId).input('deliveryDate', sql.VarChar(sql.MAX), deliveryDate).input('receivedBy', sql.NVarChar(sql.MAX), receivedBy).input('address', sql.NVarChar(sql.MAX), address || order.customerAddress).input('notes', sql.NVarChar(sql.MAX), notes).input('createdBy', sql.Int, user.id).query(`INSERT INTO dbo.DeliveryReceipts (orderId,deliveryDate,receivedBy,address,notes,createdBy,createdAt) OUTPUT INSERTED.id
-        VALUES (@orderId,@deliveryDate,@receivedBy,@address,@notes,@createdBy,SYSUTCDATETIME())`);
+    const result = await request(tx).input('orderId', sql.Int, orderId).input('deliveryDate', sql.VarChar(sql.MAX), deliveryDate).input('receivedBy', sql.NVarChar(sql.MAX), receivedBy).input('address', sql.NVarChar(sql.MAX), address || order.customerAddress).input('notes', sql.NVarChar(sql.MAX), notes).input('createdBy', sql.Int, user.id).input('grossAmount', sql.VarChar(sql.MAX), order.grossAmount == null ? null : String(order.grossAmount)).input('lineDiscountAmount', sql.VarChar(sql.MAX), order.lineDiscountAmount == null ? null : String(order.lineDiscountAmount)).input('headerDiscountAmount', sql.VarChar(sql.MAX), order.headerDiscountAmount == null ? null : String(order.headerDiscountAmount)).input('discountAmount', sql.VarChar(sql.MAX), order.discountAmount == null ? null : String(order.discountAmount)).input('netAmount', sql.VarChar(sql.MAX), order.netAmount == null ? null : String(order.netAmount)).input('vatAmount', sql.VarChar(sql.MAX), order.vatAmount == null ? null : String(order.vatAmount)).input('amount', sql.VarChar(sql.MAX), String(order.total)).query(`INSERT INTO dbo.DeliveryReceipts (orderId,deliveryDate,receivedBy,address,notes,createdBy,grossAmount,lineDiscountAmount,headerDiscountAmount,discountAmount,netAmount,vatAmount,amount,createdAt) OUTPUT INSERTED.id
+        VALUES (@orderId,@deliveryDate,@receivedBy,@address,@notes,@createdBy,@grossAmount,@lineDiscountAmount,@headerDiscountAmount,@discountAmount,@netAmount,@vatAmount,@amount,SYSUTCDATETIME())`);
     const number = `DR-${String(result.recordset[0].id).padStart(8, '0')}`;
     await request(tx).input('id', sql.Int, result.recordset[0].id).input('number', sql.NVarChar(sql.MAX), number).query('UPDATE dbo.DeliveryReceipts SET number=@number WHERE id=@id');
+    await request(tx).input('deliveryReceiptId', sql.Int, result.recordset[0].id).input('orderId', sql.Int, orderId).query(`INSERT INTO dbo.DeliveryReceiptItems
+      (deliveryReceiptId,orderItemId,productId,productName,description,sku,unit,refNumber,quotationNumber,currency,quantity,unitPrice,convertedUnitPrice,discountRate,deliveryDate,grossAmount,lineDiscountAmount,headerDiscountAmount,discountAmount,netAmount,vatAmount,amount,lineTotal)
+      SELECT @deliveryReceiptId,id,productId,productName,description,sku,unit,refNumber,quotationNumber,currency,quantity,unitPrice,convertedUnitPrice,discountRate,deliveryDate,grossAmount,lineDiscountAmount,headerDiscountAmount,discountAmount,netAmount,vatAmount,amount,lineTotal FROM dbo.SalesOrderItems WHERE orderId=@orderId`);
     await request(tx).input('userId', sql.Int, user.id).input('userName', sql.NVarChar(sql.MAX), user.name).input('system', sql.NVarChar(sql.MAX), user.system).input('module', sql.NVarChar(sql.MAX), 'delivery-receipts').input('action', sql.NVarChar(sql.MAX), 'create').input('recordId', sql.NVarChar(sql.MAX), String(result.recordset[0].id)).query('INSERT INTO dbo.AuditTrail(userId,userName,system,module,action,recordId,createdAt) VALUES(@userId,@userName,@system,@module,@action,@recordId,SYSUTCDATETIME())');
     return result.recordset[0].id;
   });
-  const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,CONVERT(varchar(60),o.total) AS total,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,CONVERT(varchar(60),d.amount) AS total,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,o.preparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,
+  CONVERT(varchar(60),d.grossAmount) AS grossAmount,CONVERT(varchar(60),d.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),d.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),d.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),d.netAmount) AS netAmount,CONVERT(varchar(60),d.vatAmount) AS vatAmount,CONVERT(varchar(60),d.amount) AS amount,
   CONVERT(varchar(10),d.deliveryDate,23) AS deliveryDate,d.receivedBy,d.address,d.notes FROM dbo.DeliveryReceipts d JOIN dbo.SalesOrders o ON o.id=d.orderId WHERE d.id=@id`);
   if (!recordResult.recordset.length) {
     const error = new Error('Delivery receipt could not be found.');
     error.status = 404;
     throw error;
   }
-  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
-  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).input('deliveryReceiptId', sql.Int, recordResult.recordset[0].id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderItemId,@orderId AS orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.DeliveryReceiptItems WHERE deliveryReceiptId=@deliveryReceiptId ORDER BY id`);
   const record = {
     ...recordResult.recordset[0],
     items: recordItems.recordset
@@ -2386,9 +2703,9 @@ router.post('/shipping-invoices', async (req, res) => {
   o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
   o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,o.preparedByName,
-  CONVERT(varchar(60),o.grossAmount) AS grossAmount,CONVERT(varchar(60),o.lineDiscountAmount) AS lineDiscountAmount,
-  CONVERT(varchar(60),o.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),o.discountAmount) AS discountAmount,
-  CONVERT(varchar(60),o.netAmount) AS netAmount,CONVERT(varchar(60),o.vatAmount) AS vatAmount,CONVERT(varchar(60),o.amount) AS amount,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
+  CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,CONVERT(varchar(10),s.shippingDate,23) AS shippingDate,
   s.carrier,s.trackingNumber,s.notes,CONVERT(varchar(60),i.total) AS total,CONVERT(varchar(60),i.paidAmount) AS paidAmount,d.number AS deliveryNumber FROM dbo.ShippingInvoices s
   JOIN dbo.SalesInvoices i ON i.id=s.invoiceId
   JOIN dbo.SalesOrders o ON o.id=i.orderId
@@ -2398,13 +2715,13 @@ router.post('/shipping-invoices', async (req, res) => {
     error.status = 404;
     throw error;
   }
-  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).query(`SELECT productId,productName,sku,unit,quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
-  id,orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).input('invoiceId', sql.Int, recordResult.recordset[0].invoiceId).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderItemId,@orderId AS orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
   CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
   CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
   CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
   CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
-  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesOrderItems WHERE orderId=@orderId ORDER BY id`);
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesInvoiceItems WHERE invoiceId=@invoiceId ORDER BY id`);
   const record = {
     ...recordResult.recordset[0],
     items: recordItems.recordset
@@ -2413,7 +2730,7 @@ router.post('/shipping-invoices', async (req, res) => {
     record
   });
 });
-for (const [path, methods] of [['/customer-options', ['GET']], ['/sales-order-options', ['GET']], ['/product-options', ['GET']], ['/customers', ['GET', 'POST']], ['/customers/:id', ['GET', 'PUT', 'DELETE']], ['/products', ['GET', 'POST']], ['/products/:id', ['GET', 'PUT', 'DELETE']], ['/sales-orders', ['GET', 'POST']], ['/sales-orders/:id', ['GET', 'PUT', 'DELETE']], ['/sales-invoices', ['GET', 'POST']], ['/sales-invoices/:id', ['GET']], ['/sales-invoices/:id/payment', ['PATCH']], ['/delivery-receipts', ['GET', 'POST']], ['/delivery-receipts/:id', ['GET']], ['/shipping-invoices', ['GET', 'POST']], ['/shipping-invoices/:id', ['GET']]]) router.all(path, (req, res) => res.set('Allow', methods.join(', ')).status(405).json({
+for (const [path, methods] of [['/customer-options', ['GET']], ['/sales-order-options', ['GET']], ['/product-options', ['GET']], ['/customers', ['GET', 'POST']], ['/customers/:id', ['GET', 'PUT', 'DELETE']], ['/products', ['GET', 'POST']], ['/products/:id', ['GET', 'PUT', 'DELETE']], ['/products/:id/stock-movements', ['GET', 'POST']], ['/sales-orders', ['GET', 'POST']], ['/sales-orders/:id', ['GET', 'PUT', 'DELETE']], ['/sales-orders/:id/quantities', ['PATCH']], ['/sales-invoices', ['GET', 'POST']], ['/sales-invoices/:id', ['GET']], ['/sales-invoices/:id/payment', ['PATCH']], ['/delivery-receipts', ['GET', 'POST']], ['/delivery-receipts/:id', ['GET']], ['/shipping-invoices', ['GET', 'POST']], ['/shipping-invoices/:id', ['GET']]]) router.all(path, (req, res) => res.set('Allow', methods.join(', ')).status(405).json({
   message: 'This HTTP method is not supported.'
 }));
 module.exports = router;

@@ -154,7 +154,7 @@ test('changed Sales In-charge assignments reject inactive accounts inside the cu
 test('partial Product edits preserve child rows, its historical stock and six-place price', async () => {
   const fixture = routeFixture([
     step(/SELECT p\.id/, productResult(product)),
-    step(/UPDATE dbo\.Products/, [], values => { assert.equal(values.stock, 5); assert.equal(values.price, '0.115300'); assert.equal(values.description, 'Updated'); assert.equal(values.isActive, false); assert.equal(values.inventorySetup, 'monthly'); }),
+    step(/UPDATE dbo\.Products/, [], values => { assert.equal(Object.hasOwn(values, 'stock'), false); assert.equal(values.price, '0.115300'); assert.equal(values.description, 'Updated'); assert.equal(values.isActive, false); assert.equal(values.inventorySetup, 'monthly'); }),
     audit(), step(/SELECT p\.id/, productResult({ ...product, description: 'Updated', name: 'Updated', isActive: false })),
   ]);
   const response = await fixture.invoke('put', '/products/:id', { description: 'Updated', productHeaderId: null, isActive: false, offices: 'ignored stale client payload', inventorySchedules: 'ignored stale client payload' });
@@ -178,6 +178,18 @@ test('Product stock edits and circular Product Headers cannot bypass transaction
   circular.done();
 });
 
+test('manual movement history prevents changing Product UOP even when current stock has returned to zero', async () => {
+  const fixture = routeFixture([
+    step(/SELECT p\.id/, productResult({ ...product, stock: '0.000' })),
+    step(/FROM dbo\.ConfigUnits/, [{ id: 2 }]),
+    step(/FROM dbo\.SalesOrderItems[\s\S]*UNION ALL[\s\S]*FROM dbo\.ProductStockMovements/, [{ id: 9 }], values => assert.equal(values.id, 7)),
+  ]);
+  await assert.rejects(() => fixture.invoke('put', '/products/:id', { unit: 'BOX' }), error => error.status === 409 && /stock movements/.test(error.message));
+  assert.equal(fixture.state.commits, 0);
+  assert.equal(fixture.state.rollbacks, 1);
+  fixture.done();
+});
+
 const order = { id: 7, number: 'SO-MOCK', customerId: 2, customerName: 'Customer', customerAddress: 'Office', currency: 'USD', total: 2, status: 'confirmed', invoiced: false, delivered: false };
 const items = [{ productId: 3, productName: 'First', sku: 'P3', unit: 'PCS', quantity: 1, unitPrice: 1, lineTotal: 1 }, { productId: 4, productName: 'Second', sku: 'P4', unit: 'PCS', quantity: 1, unitPrice: 1, lineTotal: 1 }];
 
@@ -199,8 +211,9 @@ test('a successful delivery deducts stock within its receipt transaction and lin
     step(/UPDLOCK,HOLDLOCK/, [order]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
     step(/stock>=@quantity/, [{ id: 3 }], (_values, state) => { state.stock3--; }),
     step(/INSERT INTO dbo\.DeliveryReceipts/, [{ id: 10 }], (_values, _state, query) => assert.match(query, /createdAt/)),
-    step(/UPDATE dbo\.DeliveryReceipts SET number=@number/, [], values => assert.equal(values.number, 'DR-00000010')), audit(),
-    step(/FROM dbo\.DeliveryReceipts/, [{ id: 10, orderId: 7, number: 'DR-MOCK' }]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
+    step(/UPDATE dbo\.DeliveryReceipts SET number=@number/, [], values => assert.equal(values.number, 'DR-00000010')),
+    step(/INSERT INTO dbo\.DeliveryReceiptItems[\s\S]*SELECT @deliveryReceiptId,id/, [], values => { assert.equal(values.deliveryReceiptId, 10); assert.equal(values.orderId, 7); }), audit(),
+    step(/FROM dbo\.DeliveryReceipts/, [{ id: 10, orderId: 7, number: 'DR-MOCK' }]), step(/FROM dbo\.DeliveryReceiptItems/, [items[0]]),
   ], { stock3: 5 });
   const response = await fixture.invoke('post', '/delivery-receipts', { orderId: 7, deliveryDate: '2026-11-13', address: 'Office', receivedBy: 'Customer' });
   assert.equal(response.statusCode, 201);
@@ -216,7 +229,7 @@ test('Invoice list and expanded detail preserve financial snapshots, legacy NULL
   const detailed = { id: 7, number: 'SI-MOCK', orderId: 8, orderNumber: 'SO-MOCK', customerName: 'Customer', currency: 'PHP', sourceCurrency: 'USD', rate: '55.000000', preparedByName: 'Invoice author', sourcePreparedByName: 'Source author', grossAmount: '1100.000000', lineDiscountAmount: '110.000000', headerDiscountAmount: '49.500000', discountAmount: '159.500000', netAmount: '940.500000', vatAmount: '112.860000', amount: '1053.360000', total: '1053.360000', paidAmount: '0.000001' };
   const legacy = { id: 9, number: 'SI-LEGACY', orderId: 10, total: '207.540000', paidAmount: '0.000000', grossAmount: null, discountAmount: null, netAmount: null, vatAmount: null, amount: null };
   const checkHeader = (_values, _state, query) => {
-    for (const name of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) assert.ok(query.includes('CONVERT(varchar(60),o.' + name + ') AS ' + name), name);
+    for (const name of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) assert.ok(query.includes('CONVERT(varchar(60),i.' + name + ') AS ' + name), name);
     assert.match(query, /o\.sourceCurrency,CONVERT\(varchar\(60\),o\.rate\) AS rate/);
     assert.match(query, /invoiceCreator\.name AS preparedByName,o\.preparedByName AS sourcePreparedByName/);
     assert.match(query, /LEFT JOIN dbo\.SalesUserLogin invoiceCreator ON invoiceCreator\.id=i\.createdBy/);
@@ -231,8 +244,9 @@ test('Invoice list and expanded detail preserve financial snapshots, legacy NULL
     const item = { id: 11, orderId: invoice.orderId, productId: 12, productName: 'Snapshot product', refNumber: 'REF', quotationNumber: null, description: 'Snapshot description', quantity: '0.333', unitPrice: '0.115300', convertedUnitPrice: invoice === detailed ? '6.341500' : null, grossAmount: invoice === detailed ? '2.110000' : null, discountAmount: null, netAmount: null, vatAmount: null, amount: '0.040000', lineTotal: '0.040000', currency: 'USD', sourceCurrency: 'USD' };
     const expanded = routeFixture([
       step(/FROM dbo\.SalesInvoices i JOIN dbo\.SalesOrders o/, [invoice], (values, state, query) => { checkHeader(values, state, query); assert.match(query, /WHERE i\.id=@id/); assert.equal(values.id, 7); }),
-      step(/FROM dbo\.SalesOrderItems WHERE orderId=@orderId ORDER BY id/, [item], (values, _state, query) => {
+      step(/FROM dbo\.SalesInvoiceItems WHERE invoiceId=@invoiceId ORDER BY id/, [item], (values, _state, query) => {
         assert.equal(values.orderId, invoice.orderId);
+        assert.equal(values.invoiceId, invoice.id);
         assert.match(query, /CONVERT\(varchar\(60\),COALESCE\(amount,lineTotal\)\) AS amount/);
         assert.match(query, /description AS productDescription,currency,currency AS sourceCurrency/);
         for (const name of ['convertedUnitPrice', 'discountRate', 'grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount']) assert.ok(query.includes('CONVERT(varchar(60),' + name + ') AS ' + name), name);
@@ -274,7 +288,7 @@ test('invoice payments retain six-place precision and exact large decimal string
     const fixture = routeFixture([
       step(/UPDATE dbo\.SalesInvoices/, [{ id: 7 }], values => assert.equal(values.paidAmount, canonical)),
       audit(), step(/FROM dbo\.SalesInvoices/, [{ id: 7, orderId: 7, total: '1000000000000.000000', paidAmount: canonical }]),
-      step(/FROM dbo\.SalesOrderItems/, []),
+      step(/FROM dbo\.SalesInvoiceItems/, []),
     ]);
     const response = await fixture.invoke('patch', '/sales-invoices/:id/payment', { paidAmount });
     assert.equal(response.body.record.paidAmount, canonical);
@@ -355,9 +369,9 @@ test('invoice and shipping inserts explicitly initialize values and assign untru
   const identity = 100000001;
   const invoice = routeFixture([
     step(/UPDLOCK,HOLDLOCK/, [order]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
-    step(/INSERT INTO dbo\.SalesInvoices/, [{ id: identity }], (values, _state, query) => { assert.match(query, /paidAmount,createdAt,updatedAt/); assert.match(query, /,0,SYSUTCDATETIME\(\),SYSUTCDATETIME\(\)\)/); assert.equal(values.notes, null); }),
+    step(/INSERT INTO dbo\.SalesInvoices/, [{ id: identity }], (values, _state, query) => { assert.match(query, /paidAmount,grossAmount/); assert.match(query, /@createdBy,0,@grossAmount/); assert.equal(values.amount, String(order.total)); assert.equal(values.notes, null); }),
     step(/UPDATE dbo\.SalesInvoices SET number=@number/, [], values => assert.equal(values.number, 'SI-100000001')),
-    audit(), step(/FROM dbo\.SalesInvoices/, [{ id: identity, orderId: 7, number: 'SI-100000001', paidAmount: 0 }]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
+    step(/INSERT INTO dbo\.SalesInvoiceItems[\s\S]*SELECT @invoiceId,id/, [], values => { assert.equal(values.invoiceId, identity); assert.equal(values.orderId, 7); }), audit(), step(/FROM dbo\.SalesInvoices/, [{ id: identity, orderId: 7, number: 'SI-100000001', paidAmount: 0 }]), step(/FROM dbo\.SalesInvoiceItems/, [items[0]]),
   ]);
   const savedInvoice = await invoice.invoke('post', '/sales-invoices', { orderId: 7, invoiceDate: '2026-11-13', dueDate: '2026-11-13', notes: '' });
   assert.equal(savedInvoice.body.record.number, 'SI-100000001');
@@ -367,7 +381,7 @@ test('invoice and shipping inserts explicitly initialize values and assign untru
     step(/UPDLOCK,HOLDLOCK/, [{ id: 9, orderId: 7, invoiceDate: '2026-11-13' }]), step(/FROM dbo\.ShippingInvoices WHERE invoiceId/, []),
     step(/INSERT INTO dbo\.ShippingInvoices/, [{ id: identity }], (values, _state, query) => { assert.match(query, /createdAt/); assert.equal(values.carrier, null); assert.equal(values.trackingNumber, null); assert.equal(values.notes, null); }),
     step(/UPDATE dbo\.ShippingInvoices SET number=@number/, [], values => assert.equal(values.number, 'SHI-100000001')),
-    audit(), step(/FROM dbo\.ShippingInvoices/, [{ id: identity, orderId: 7, number: 'SHI-100000001' }]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
+    audit(), step(/FROM dbo\.ShippingInvoices/, [{ id: identity, orderId: 7, number: 'SHI-100000001', invoiceId: 9 }]), step(/FROM dbo\.SalesInvoiceItems/, [items[0]]),
   ]);
   const savedShipping = await shipping.invoke('post', '/shipping-invoices', { invoiceId: 9, shippingDate: '2026-11-13', carrier: '', trackingNumber: '', notes: '' });
   assert.equal(savedShipping.body.record.number, 'SHI-100000001');

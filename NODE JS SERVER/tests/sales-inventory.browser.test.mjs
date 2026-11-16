@@ -40,7 +40,7 @@ function assertReadOnly(app) {
 }
 
 for (const role of ['admin', 'saleshead', 'sales']) {
-  test(`Sales ${role} can monitor product Inventory with correct access and read-only responsive stock`, { timeout: 90000 }, async t => {
+  test(`Sales ${role} can monitor product Inventory with responsive stock and all three movement actions`, { timeout: 90000 }, async t => {
     const app = await inventoryApp(t, role);
     const { page } = app;
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -61,6 +61,13 @@ for (const role of ['admin', 'saleshead', 'sales']) {
     await expect(inventory.getByRole('button', { name: /^(?:\+\s*)?(?:New|Add|Edit|Delete)\b/i })).toHaveCount(0);
     await expect(inventory.locator('.page-heading > button')).toHaveCount(0);
     const row = tableRows.filter({ hasText: 'INV-PCS-001' });
+    for (const name of ['View transactions', 'Manual stock in', 'Manual stock out']) {
+      const action = row.getByRole('button', { name, exact: true });
+      await expect(action).toBeVisible();
+      await expect(action).toBeEnabled();
+      await expect(action).toHaveAttribute('title', name);
+      await expect(action.locator('svg')).toHaveCount(1);
+    }
     await expect(row.locator('td').nth(3)).toHaveText('12.345');
     await expect(row.locator('td').nth(4)).toHaveText('In stock');
     await expect(row).toContainText('PCS');
@@ -115,6 +122,7 @@ for (const role of ['admin', 'saleshead', 'sales']) {
         await expect(card.getByText('12.345', { exact: true })).toBeVisible();
         await expect(card).toContainText('PCS');
         await expect(card.getByRole('button', { name: /^(?:New|Add|Edit|Delete)\b/i })).toHaveCount(0);
+        for (const name of ['View transactions', 'Manual stock in', 'Manual stock out']) await expect(card.getByRole('button', { name, exact: true })).toBeVisible();
         for (const details of await card.locator('details').all()) if (await details.getAttribute('open') === null) await details.locator('summary').click();
         await expect(card).toContainText(products[0].description);
         await expect(card).toContainText('Components');

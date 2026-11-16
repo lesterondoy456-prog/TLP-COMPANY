@@ -518,3 +518,67 @@ function isPhotoDataUrl(value) {
   const content = value.slice(separator + 1).replace(/={1,2}$/, '');
   return content.length > 0 && !/[^A-Za-z0-9+/]/.test(content);
 }
+
+export function stockQuantityUnits(value) {
+  const text = String(value ?? '').trim();
+  if (!/^\d+(?:\.\d+)?$/.test(text)) return null;
+  const [whole, raw = ''] = text.split('.');
+  const fraction = raw.replace(/0+$/, '');
+  if (fraction.length > 3) return null;
+  return BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0') || '0');
+}
+
+export function stockQuantityText(units) {
+  const negative = units < 0n;
+  const value = negative ? -units : units;
+  return (negative ? '-' : '') + (value / 1000n) + '.' + (value % 1000n).toString().padStart(3, '0');
+}
+
+export function manualStockIssue(product) {
+  if (!product) return 'This product is no longer available.';
+  if (!product.isActive) return 'Only active products can receive manual stock movements.';
+  if (!String(product.unit ?? '').trim()) return 'Set the product UOP before recording a stock movement.';
+  if (product.stock == null || String(product.stock).trim() === '') return 'Current stock is not set for this product.';
+  const stock = stockQuantityUnits(product.stock);
+  if (stock === null) return 'Current stock must be a nonnegative quantity with up to 3 decimal places.';
+  if (stock > 999999999999999999n) return 'Current stock exceeds the supported range.';
+  return '';
+}
+
+export function validateManualStockMovementForm(form, product, direction) {
+  const errors = {};
+  if (!dateIsValid(form.movementDate)) errors.movementDate = 'Enter a valid movement date.';
+  const value = String(form.quantity ?? '').trim();
+  const quantity = /^\d+(?:\.\d{1,3})?$/.test(value) ? stockQuantityUnits(value) : null;
+  if (quantity === null || quantity <= 0n || quantity > 999999999999999999n) errors.quantity = 'Enter a quantity greater than zero with up to 3 decimal places, at most 999,999,999,999,999.999.';
+  for (const [key, label, maximum, required] of [['sourceDestination', direction === 'in' ? 'Source' : 'Destination', 500, true], ['reason', 'Reason', 2000, true], ['reference', 'Reference', 100, false]]) {
+    const text = String(form[key] ?? '').trim();
+    if (required && !text) errors[key] = label + ' is required.';
+    else if (text.length > maximum || text.includes('\0')) errors[key] = label + ' must contain at most ' + maximum + ' characters without null characters.';
+  }
+  const unavailable = manualStockIssue(product);
+  if (unavailable) errors.stock = unavailable;
+  else if (quantity !== null && quantity > 0n && quantity <= 999999999999999999n) {
+    const stock = stockQuantityUnits(product.stock);
+    if (direction === 'out' && quantity > stock) errors.quantity = 'Quantity cannot exceed current stock.';
+    if (direction === 'in' && stock + quantity > 999999999999999999n) errors.quantity = 'The resulting stock exceeds 999,999,999,999,999.999.';
+  }
+  return errors;
+}
+
+export function validateOrderQuantities(items, record) {
+  const errors = {};
+  if (!record?.invoiced) errors.order = 'Use the full order form while this order has no invoice.';
+  if (!Array.isArray(items) || items.length !== record?.items?.length) errors.order = 'Refresh the order before updating its quantities.';
+  for (const [index, item] of (items || []).entries()) {
+    const original = record?.items?.find(row => row.id === item.id);
+    const value = String(item.quantity ?? '').trim();
+    const quantity = /^\d+(?:\.\d{1,3})?$/.test(value) ? stockQuantityUnits(value) : null;
+    const invoiced = stockQuantityUnits(original?.invoicedQuantity ?? '0');
+    const delivered = stockQuantityUnits(original?.deliveredQuantity ?? '0');
+    if (!original || original.invoicedQuantity == null || record.delivered && original.deliveredQuantity == null || invoiced === null || delivered === null) errors[index] = 'Refresh the order to load its invoiced and delivered quantities.';
+    else if (quantity === null || quantity <= 0n || quantity > 1000000000n) errors[index] = 'Enter a positive quantity up to 1,000,000 with at most 3 decimal places.';
+    else if (quantity < invoiced || quantity < delivered) errors[index] = 'Quantity cannot be below the invoiced or delivered quantity.';
+  }
+  return errors;
+}

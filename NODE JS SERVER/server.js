@@ -30,6 +30,11 @@ function publishChanges(state, req, res, alreadyPosted) {
   }
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return;
   const emit = (target, resources) => state.io.to(`system:${target}`).emit('data:changed', { system: target, resources: [...new Set(resources)], changedAt: new Date(state.now()).toISOString() });
+  if (system === 'sales' && resource === 'products' && action === 'stock-movements') {
+    emit('sales', ['products', 'stock-movements']);
+    emit('configuration', ['audit-trail']);
+    return;
+  }
   if (resource === 'users' || resource === 'auth' && id === 'profile') {
     // Account IDs belong to separate system tables. Never revoke an equal ID
     // from another system, or other sessions when only this session signs out.
@@ -129,7 +134,7 @@ function createApp(env = process.env, options = {}) {
   app.use((req, res, next) => {
     let alreadyPosted = false;
     const json = res.json;
-    res.json = function (body) { alreadyPosted = body?.alreadyPosted === true; return json.call(this, body); };
+    res.json = function (body) { alreadyPosted = body?.alreadyPosted === true || body?.replayed === true; return json.call(this, body); };
     res.once('finish', () => publishChanges(state, req, res, alreadyPosted));
     next();
   });

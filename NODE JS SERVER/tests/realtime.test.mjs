@@ -23,7 +23,8 @@ function cookie(system, id = 1, expires = Math.floor(Date.now() / 1000) + 3600) 
 function databaseFixture({ business, failAudit = false } = {}) {
   let state = {
     accounts: Object.fromEntries(systems.map(system => [system, [1, 2].map(id => ({ id, name: `Mock ${system} ${id}`, username: `mock_${id}`, cpnumber: '', email: '', photo: '', role: id === 1 ? 'admin' : system, isActive: true }))])),
-    customers: [100], countries: [], audits: [], invoices: [],
+    customers: [100], countries: [], audits: [], invoices: [], invoiceItems: [],
+    products: [{ id: 7, sku: 'P7', name: 'Realtime product', description: null, unit: 'PCS', stock: '5.000', isActive: true }], movements: [],
   };
   const events = [];
   const sql = new Proxy({}, { get: (_object, type) => type === 'MAX' ? -1 : (...args) => ({ type, args }) });
@@ -48,7 +49,7 @@ function databaseFixture({ business, failAudit = false } = {}) {
           const current = scope?.state?.accounts ? scope.state : state;
           const system = text.match(/FROM dbo\.(Sales|Purchasing|Warehouse|Configuration)UserLogin\b/)?.[1].toLowerCase();
           if (system && text.startsWith('SELECT ')) {
-            let records = current.accounts[system].filter(row => !text.includes('WHERE id=@id') || row.id === params.id);
+            let records = current.accounts[system].filter(row => !/WHERE id=@(?:id|createdById)/.test(text) || row.id === (params.id ?? params.createdById));
             if (text.includes('AND isActive=1')) records = records.filter(row => row.isActive);
             if (text.includes('COUNT(*)')) return { recordset: [{ total: records.filter(row => row.role === 'admin' && row.isActive).length }] };
             return { recordset: structuredClone(records) };
@@ -58,14 +59,31 @@ function databaseFixture({ business, failAudit = false } = {}) {
             for (const input of inputs) query.input(...input);
             return query.query(statement);
           }
+          if (text.includes('FROM dbo.Products')) return { recordset: current.products.filter(row => row.id === params.productId).map(row => ({ ...row })) };
+          if (text.includes('FROM dbo.ProductStockMovements WITH')) return { recordset: current.movements.filter(row => row.requestKey === params.requestKey).map(row => ({ ...row })) };
+          if (text.includes('FROM dbo.ProductStockMovements m JOIN')) return { recordset: current.movements.filter(row => row.id === params.movementId).map(row => ({ ...row, movementId: row.id, id: 'manual:' + row.id, type: 'manual-' + row.direction, createdByUsername: 'mock_1', createdByName: 'Mock sales 1' })) };
           if (text.startsWith('SELECT i.id') && text.includes('FROM dbo.SalesInvoices')) return { recordset: current.invoices.filter(row => row.id === params.id).map(row => ({ ...row, customerId: 100, customerName: 'Mock Customer', currency: 'USD', status: 'unpaid' })) };
           if (text.startsWith('SELECT productId,productName') && text.includes('FROM dbo.SalesOrderItems')) return { recordset: [{ productId: 1, productName: 'Mock Product', sku: 'P1', unit: 'PCS', quantity: 1, unitPrice: 10, lineTotal: 10 }] };
+          if (text.startsWith('SELECT productId,productName') && text.includes('FROM dbo.SalesInvoiceItems')) return { recordset: current.invoiceItems.filter(row => row.invoiceId === params.invoiceId) };
           assert.ok(scope, 'Every mutation must belong to the fake transaction.');
+          if (text.startsWith('UPDATE dbo.Products SET stock=CAST')) {
+            current.products.find(row => row.id === params.productId).stock = params.stockAfter;
+            return { recordset: [] };
+          }
+          if (text.startsWith('INSERT INTO dbo.ProductStockMovements')) {
+            const row = { ...params, id: current.movements.length + 1 };
+            current.movements.push(row);
+            return { recordset: [{ id: row.id }] };
+          }
           if (text.startsWith('SELECT o.id') && text.includes('FROM dbo.SalesOrders')) return { recordset: [{ id: 7, number: 'SO-MOCK', customerId: 100, customerName: 'Mock Customer', orderDate: '2026-11-13', status: 'confirmed', total: 10, currency: 'USD', invoiced: current.invoices.some(row => row.orderId === 7) }] };
           if (text.startsWith('INSERT INTO dbo.SalesInvoices')) {
             const id = current.invoices.length + 1;
             current.invoices.push({ ...params, id, paidAmount: 0 });
             return { recordset: [{ id }] };
+          }
+          if (text.startsWith('INSERT INTO dbo.SalesInvoiceItems')) {
+            current.invoiceItems.push({ invoiceId: params.invoiceId, orderId: params.orderId, id: 1, orderItemId: 1, productId: 1, productName: 'Mock Product', sku: 'P1', unit: 'PCS', quantity: '1.000', unitPrice: '10.000000', lineTotal: '10.000000' });
+            return { recordset: [] };
           }
           if (text.startsWith('UPDATE dbo.SalesInvoices SET number=@number')) {
             current.invoices.find(row => row.id === params.id).number = params.number;
@@ -265,6 +283,37 @@ test('configuration saves refresh dependent systems without exposing master valu
   assert.deepEqual(events[1].resources, ['options']);
   assert.ok(events[3].resources.includes('countries'));
   assert.ok(!JSON.stringify(events).includes('Private Mock Country'));
+});
+
+test('stock movements notify Sales and audit watchers only after commit, with no events for retries or failures', async t => {
+  const api = await fixture(t);
+  const sales = await api.joined('sales'), configuration = await api.joined('configuration'), warehouse = await api.joined('warehouse');
+  const body = { requestKey: 'a'.repeat(32), direction: 'out', quantity: '1.234', movementDate: '2026-11-16', sourceDestination: 'Customer pickup', reason: 'Recorded release', reference: null };
+  const salesChange = once(sales.socket, 'data:changed'), auditChange = once(configuration.socket, 'data:changed');
+  const response = await api.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', body);
+  assert.equal(response.status, 201, await response.clone().text());
+  const [event] = await salesChange;
+  assert.deepEqual(event.resources, ['products', 'stock-movements']);
+  assert.deepEqual((await auditChange)[0].resources, ['audit-trail']);
+  assert.equal(api.events.at(-1), 'commit');
+  assert.equal(api.snapshot().products[0].stock, '3.766');
+  assert.equal(api.snapshot().movements.length, 1);
+  assert.deepEqual(Object.keys(event).sort(), ['changedAt', 'resources', 'system']);
+  assert.equal(JSON.stringify(event).includes(body.reason), false);
+  const retry = await api.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', body);
+  assert.equal(retry.status, 200); assert.equal((await retry.json()).replayed, true);
+  const rejected = await api.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', { ...body, requestKey: 'b'.repeat(32), quantity: '99.000' });
+  assert.equal(rejected.status, 409);
+  await delay(50);
+  assert.equal(sales.events.length, 1); assert.equal(configuration.events.length, 1); assert.equal(warehouse.events.length, 0);
+  assert.equal(api.snapshot().products[0].stock, '3.766'); assert.equal(api.snapshot().movements.length, 1);
+  const failed = await fixture(t, { failAudit: true });
+  const listener = await failed.joined('sales');
+  const rolledBack = await failed.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', body);
+  assert.equal(rolledBack.status, 409);
+  await delay(50);
+  assert.equal(failed.events.at(-1), 'rollback'); assert.equal(listener.events.length, 0);
+  assert.equal(failed.snapshot().products[0].stock, '5.000'); assert.equal(failed.snapshot().movements.length, 0);
 });
 
 test('logout revokes only its session; account edits revoke the affected system user and pending tickets', async t => {

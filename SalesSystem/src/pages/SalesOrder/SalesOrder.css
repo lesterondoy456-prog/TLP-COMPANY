@@ -46,3 +46,32 @@
 @media (max-width: 1050px) { .sales-order-header { grid-template-columns: 1fr 1fr; } .sales-order-header > :last-child { grid-column: 1 / -1; } .sales-order-header > :last-child .sales-order-fields { grid-template-columns: repeat(4, 1fr); } .sales-order-totals { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 680px) { .modal.sales-order-modal, .modal.sales-document { width: calc(100vw - 20px); } .sales-order-header { grid-template-columns: 1fr; gap: 14px; } .sales-order-section { padding: 15px; } .sales-order-header > :last-child .sales-order-fields { grid-template-columns: 1fr 1fr; } .sales-order-totals { grid-template-columns: 1fr 1fr; } .sales-order-monitor .records-table td:first-child, .sales-order-monitor .records-table th:first-child, .sales-order-monitor .records-table td:last-child, .sales-order-monitor .records-table th:last-child { position: static; } }
 @media print { .sales-document .document-table { min-width: 0; font-size: 9px; } .sales-document .document-table th, .sales-document .document-table td { padding: 7px 5px; } }
+
+.modal.order-quantities-modal .order-quantity-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+.modal.order-quantities-modal .order-quantity-details > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.order-quantity-hint { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 18px; }
+.order-quantity-fields { padding: 0; border: 0; min-width: 0; }
+.order-quantity-table { min-width: 760px; }
+.order-quantity-table td { vertical-align: top; }
+.order-quantity-table td:first-child { min-width: 180px; white-space: normal; }
+.order-quantity-table td:last-child { min-width: 180px; max-width: 240px; }
+.order-quantity-table small { display: block; margin-top: 6px; color: var(--muted); line-height: 1.6; }
+.order-quantity-table input[aria-invalid="true"] + small { color: var(--danger); }
+.order-quantity-mobile-label { display: none; }
+.order-quantity-totals { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 24px; margin-top: 22px; }
+.order-quantity-totals > div { display: flex; flex-direction: column; gap: 8px; }
+.order-quantity-totals span { color: var(--muted); font-size: 11px; }
+.order-quantity-totals strong { color: var(--text-strong); font-size: 18px; }
+@media (max-width: 600px) {
+  .modal.order-quantities-modal .order-quantity-details { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .modal.order-quantities-modal .order-quantity-table { min-width: 0; width: 100%; }
+  .order-quantity-table thead { display: none; }
+  .order-quantity-table tbody { display: grid; gap: 12px; }
+  .order-quantity-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .order-quantity-table td { min-width: 0 !important; max-width: none !important; display: flex; flex-direction: column; gap: 6px; border: 0; padding: 12px; text-align: left; }
+  .order-quantity-table td::before { content: attr(data-label); color: var(--muted); font-size: 10px; }
+  .order-quantity-table td:first-child, .order-quantity-table td:last-child { grid-column: 1 / -1; }
+  .order-quantity-table td:last-child { border-top: 1px solid var(--line); }
+  .order-quantity-table td:last-child::before { display: none; }
+  .order-quantity-table .order-quantity-mobile-label { display: block; color: var(--muted); font-size: 10px; }
+}
