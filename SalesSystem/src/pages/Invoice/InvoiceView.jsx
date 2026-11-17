@@ -113,7 +113,7 @@ function InvoiceFormChrome({ number }) {
   const rightLabels = ['Total Sales (VAT Inclusive)', 'Less: VAT', 'Amount: Net of VAT', 'Less Discount (SC/PWD Discount)', 'Amount Due', 'Add: VAT', 'TOTAL AMOUNT DUE'];
   return <svg className="invoice-form-chrome" data-template-chrome="" viewBox="0 0 210 297" aria-hidden="true">
     <g fill="#262626">
-      <path transform="translate(16.5 0) scale(.75 1)" d="M66 8h16v3H76v11h-4V11h-6zM79 12h4v10h-4zM84 8h8a5 5 0 0 1 0 10h-4v4h-4zm4 3v4h4a2 2 0 0 0 0-4z" />
+      <path transform="translate(16.5 0) scale(.75 1)" d="M66 8h16v3H76v8h-4v-8h-6zM79 12h4v8h5l-1 2h-8zM84 8h8a5 5 0 0 1 0 10h-4v1h-4zm4 3v4h4a2 2 0 0 0 0-4z" />
       <text x="91" y="18" className="invoice-company-title">TTI Laguna Philippines Inc.</text>
       <g className="invoice-company-details" textAnchor="middle">
         <text x="112" y="23">Unit 4 &amp; 5, ILO Land Inc., Warehouse No. 3, American Road</text>
