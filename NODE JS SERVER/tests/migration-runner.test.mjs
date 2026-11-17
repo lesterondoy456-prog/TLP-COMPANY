@@ -48,7 +48,7 @@ function fakePools({ failBatch = 0, databaseExists = true, failCreate = false } 
 test('migration runner applies SQL files atomically without querying or changing account records', async () => {
   const fake = fakePools();
   await runMigrations({ database: 'MockMigrationDatabase', ...fake });
-  assert.deepEqual([...MIGRATION_FILES], ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql']);
+  assert.deepEqual([...MIGRATION_FILES], ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql', 'sales-invoice-print.sql']);
   const expected = await Promise.all(MIGRATION_FILES.map(filename => readFile(new URL('../migration/' + filename, import.meta.url), 'utf8')));
   assert.deepEqual(fake.batches, expected);
   assert.deepEqual(fake.events.filter(event => event[0] === 'query').map(event => event[1]), ['master']);
@@ -98,4 +98,13 @@ test('schema migrations never create database defaults, check rules or computed 
     assert.doesNotMatch(source, /\bPERSISTED\b/i, filename);
     assert.doesNotMatch(source, /\bCREATE\s+TABLE\s+dbo\.(?:ProductOffices|SupplyOffices)\b/i, filename);
   }
+});
+
+test('invoice print snapshots add only nullable MAX columns without backfilling historical invoices', async () => {
+  const source = await readFile(new URL('../migration/sales-invoice-print.sql', import.meta.url), 'utf8');
+  for (const field of ['buyerTin', 'shipToName', 'vatClass', 'preparedByName']) {
+    assert.ok(source.includes("IF COL_LENGTH(N'dbo.SalesInvoices',N'" + field + "') IS NULL"), field);
+    assert.ok(source.includes('ALTER TABLE dbo.SalesInvoices ADD ' + field + ' NVARCHAR(MAX) NULL;'), field);
+  }
+  assert.doesNotMatch(source, /\b(?:UPDATE|INSERT|MERGE|DELETE|DEFAULT|CHECK|TRIGGER|FUNCTION)\b/i);
 });

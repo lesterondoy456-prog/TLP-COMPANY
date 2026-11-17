@@ -36,6 +36,8 @@ function fixture({ invoiced = true, delivered = false, failAudit = false, places
             assert.match(query, /CAST\(SUM\(d.quantity\) AS DECIMAL\(18,3\)\)/);
             return { recordset: dtoItems() };
           }
+          if (query.startsWith('SELECT buyer.tin AS buyerTin')) return { recordset: [{ buyerTin: null, shipToName: null }] };
+          if (query.startsWith('SELECT [class] FROM dbo.ConfigVatCodes')) return { recordset: [{ class: 'Vatable' }] };
           if (query.startsWith('UPDATE dbo.SalesOrders SET grossAmount')) {
             assert.ok(scope);
             assert.deepEqual(Object.keys(values).sort(), ['id', ...fields].sort());

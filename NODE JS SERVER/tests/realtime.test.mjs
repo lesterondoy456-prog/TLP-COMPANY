@@ -65,6 +65,7 @@ function databaseFixture({ business, failAudit = false } = {}) {
           if (text.startsWith('SELECT i.id') && text.includes('FROM dbo.SalesInvoices')) return { recordset: current.invoices.filter(row => row.id === params.id).map(row => ({ ...row, customerId: 100, customerName: 'Mock Customer', currency: 'USD', status: 'unpaid' })) };
           if (text.startsWith('SELECT productId,productName') && text.includes('FROM dbo.SalesOrderItems')) return { recordset: [{ productId: 1, productName: 'Mock Product', sku: 'P1', unit: 'PCS', quantity: 1, unitPrice: 10, lineTotal: 10 }] };
           if (text.startsWith('SELECT productId,productName') && text.includes('FROM dbo.SalesInvoiceItems')) return { recordset: current.invoiceItems.filter(row => row.invoiceId === params.invoiceId) };
+          if (text.startsWith('SELECT buyer.tin AS buyerTin')) return { recordset: [{ buyerTin: null, shipToName: null }] };
           assert.ok(scope, 'Every mutation must belong to the fake transaction.');
           if (text.startsWith('UPDATE dbo.Products SET stock=CAST')) {
             current.products.find(row => row.id === params.productId).stock = params.stockAfter;

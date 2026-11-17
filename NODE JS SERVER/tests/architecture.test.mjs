@@ -165,7 +165,7 @@ test('CommonJS Express entry mounts shared login before four business routers', 
     if (filename === 'ConfigurationApi') assert.doesNotMatch(api, /\bmaxLength\b/, 'Configuration form length limits belong only in the frontend validation helper.');
     if (!shared) assert.doesNotMatch(api, /\.length\s*>\s*field\.maxLength/, 'Backend text values must not retain frontend length caps.');
     for (const [, specifier] of api.matchAll(/\brequire\(['"]([^'"]+)['"]\)/g)) {
-      assert.ok(specifier.startsWith('node:') || specifier === 'express' || specifier === '../db', `${filename} must not depend on another API or backend helper: ${specifier}`);
+      assert.ok(specifier.startsWith('node:') || specifier === 'express' || specifier === '../db' || filename === 'SalesApi' && specifier === 'exceljs', `${filename} must not depend on another API or backend helper: ${specifier}`);
     }
     for (const method of filename === 'WarehouseApi' ? ['get'] : ['get', 'post', 'put']) assert.ok(api.includes('router.' + method + '('), `${filename} must explicitly register ${method.toUpperCase()} endpoints.`);
     assert.doesNotMatch(api, /router\.(?:get|post|put|delete|use|all)\(['"]\/api\//);

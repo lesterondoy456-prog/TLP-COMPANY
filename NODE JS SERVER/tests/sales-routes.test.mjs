@@ -231,7 +231,7 @@ test('Invoice list and expanded detail preserve financial snapshots, legacy NULL
   const checkHeader = (_values, _state, query) => {
     for (const name of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) assert.ok(query.includes('CONVERT(varchar(60),i.' + name + ') AS ' + name), name);
     assert.match(query, /o\.sourceCurrency,CONVERT\(varchar\(60\),o\.rate\) AS rate/);
-    assert.match(query, /invoiceCreator\.name AS preparedByName,o\.preparedByName AS sourcePreparedByName/);
+    assert.match(query, /i\.buyerTin,i\.shipToName,i\.vatClass,COALESCE\(i\.preparedByName,invoiceCreator\.name\) AS preparedByName,o\.preparedByName AS sourcePreparedByName/);
     assert.match(query, /LEFT JOIN dbo\.SalesUserLogin invoiceCreator ON invoiceCreator\.id=i\.createdBy/);
     assert.match(query, /CONVERT\(varchar\(60\),i\.total\) AS total,CONVERT\(varchar\(60\),i\.paidAmount\) AS paidAmount/);
     assert.doesNotMatch(query, /CreditNote|COALESCE\(o\.(?:grossAmount|discountAmount|netAmount|vatAmount),0\)/i);
@@ -369,6 +369,7 @@ test('invoice and shipping inserts explicitly initialize values and assign untru
   const identity = 100000001;
   const invoice = routeFixture([
     step(/UPDLOCK,HOLDLOCK/, [order]), step(/FROM dbo\.SalesOrderItems/, [items[0]]),
+    step(/SELECT buyer\.tin AS buyerTin,customer\.drName AS shipToName/, [{ buyerTin: null, shipToName: null }]),
     step(/INSERT INTO dbo\.SalesInvoices/, [{ id: identity }], (values, _state, query) => { assert.match(query, /paidAmount,grossAmount/); assert.match(query, /@createdBy,0,@grossAmount/); assert.equal(values.amount, String(order.total)); assert.equal(values.notes, null); }),
     step(/UPDATE dbo\.SalesInvoices SET number=@number/, [], values => assert.equal(values.number, 'SI-100000001')),
     step(/INSERT INTO dbo\.SalesInvoiceItems[\s\S]*SELECT @invoiceId,id/, [], values => { assert.equal(values.invoiceId, identity); assert.equal(values.orderId, 7); }), audit(), step(/FROM dbo\.SalesInvoices/, [{ id: identity, orderId: 7, number: 'SI-100000001', paidAmount: 0 }]), step(/FROM dbo\.SalesInvoiceItems/, [items[0]]),

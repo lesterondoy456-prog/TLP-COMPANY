@@ -50,4 +50,12 @@ The Product monitor includes descriptions, units, pricing, approvals and remarks
 
 After invoicing, the Sales Order editor permits only existing line quantities, with the actual invoiced and delivered quantities as minimums. Invoice, delivery and shipping documents retain their saved items and totals. Before documents exist, the regular form edits all order details and items. Desktop navigation retains its collapsible icon rail preference; mobile navigation opens a full labeled drawer.
 
+## Invoice preview and printing
+
+Invoice **View** shows the TTI preprinted Sales Invoice form, with a fit-to-width preview and zoom. **Download Excel** downloads a real `.xlsx` workbook populated from the saved invoice. Open it in Excel and print the Invoice worksheet onto preprinted **A4 portrait** paper at **100%**. Continuation pages use manual page breaks on the same worksheet. The workbook retains the supplied Excel template's margins, columns, row heights and merged fields. The company heading, grid, labels, preprinted serial number and printer details are already on the paper and are omitted from the workbook. Check alignment against a real sheet before using a printer for the first time.
+
+Each page has fourteen physical item slots. Long descriptions continue into additional slots and invoices continue onto another page when needed; final totals appear only on the last page. The system SI number identifies every page. Unit prices display five decimal places and amounts two, following the Excel reference, while the saved prices and totals retain their original precision.
+
+The buyer is **Bill To**, and **Ship To** uses the Sales Order customer's DR Name. New invoices capture the buyer TIN, Ship To name, VAT classification and preparer's name at issuance. Missing historical values stay blank. Prices, quantities, discounts and totals come from the saved invoice, so subsequent Sales Order quantity or master-data changes do not alter the invoice. The discount slot shows the saved monetary invoice discount, including line and header discounts. Downloading a workbook does not create or update a transaction. No approval workflow is added.
+
 SQL, migrations, and the backend's local `.env` remain in `NODE JS SERVER`. See its README for backend startup and Docker commands.

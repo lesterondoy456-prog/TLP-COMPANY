@@ -165,11 +165,19 @@ test('An invoiced Sales Order exposes quantity-only edits, enforces invoice and 
     await page.locator('.sidebar').getByRole('button', { name: tab, exact: true }).click();
     await page.getByRole('button', { name: 'View', exact: true }).click();
     dialog = page.getByRole('dialog', { name: title, exact: true });
-    const rows = dialog.locator('.document-table > tbody > tr');
-    await expect(rows).toHaveCount(2);
-    await expect(rows.nth(0).locator('td').nth(2)).toHaveText(quantities[0]);
-    await expect(rows.nth(1).locator('td').nth(2)).toHaveText(quantities[1]);
-    if (title !== 'Delivery Receipt') await expect(dialog.locator('.document-grand-total strong')).toHaveText(new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'USD' }).format('63.750000'));
+    if (title === 'Invoice') {
+      const rows = dialog.locator('[data-invoice-item]');
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0).locator('[data-invoice-column="quantity"]')).toHaveText(quantities[0]);
+      await expect(rows.nth(1).locator('[data-invoice-column="quantity"]')).toHaveText(quantities[1]);
+      await expect(dialog.locator('[data-invoice-summary] [data-invoice-field="totalAmountDue"]')).toHaveText('63.75');
+    } else {
+      const rows = dialog.locator('.document-table > tbody > tr');
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0).locator('td').nth(2)).toHaveText(quantities[0]);
+      await expect(rows.nth(1).locator('td').nth(2)).toHaveText(quantities[1]);
+      if (title !== 'Delivery Receipt') await expect(dialog.locator('.document-grand-total strong')).toHaveText(new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'USD' }).format('63.750000'));
+    }
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   }
   assert.equal(JSON.stringify({ invoice, delivery, shipping }), snapshots);

@@ -121,6 +121,10 @@ A relative Sales route such as `/customers` is available at `/api/sales/customer
 
 All SQL files and database/schema checking live under `migration/`, including `inventory-movements.sql`, `sales-document-items.sql`, and the existing schema files. Backend startup applies these idempotent migrations in one transaction before listening; a failed batch rolls back the schema update. Run `npm run migrate` to apply migrations without starting HTTP. Migrations do not provision accounts or create orders, invoices, or stock transactions. The document migration copies actual existing SI/DR item and financial values once into immutable snapshots. A new installation needs its department accounts provisioned in the database before users can sign in. The backend contains the actual local `.env`; no `.env.example` is required.
 
+`migration/sales-invoice-print.sql` adds four optional Sales Invoice print snapshots: Bill To TIN, the Sales Order customer's DR Name, VAT classification, and invoice preparer name. The existing invoice POST captures them in its issuance transaction; existing invoices are not backfilled from current master data. The invoice endpoints return the snapshots for the page-local preprinted Invoice view. Saved invoice items and financial totals remain authoritative for printing.
+
+`GET /api/sales/sales-invoices/:id/excel` downloads a real Excel workbook for printing on the preprinted invoice form. The endpoint reads saved invoice snapshots and fills the blank `templates/SalesInvoice.xlsx` through ExcelJS directly inside its handler. The blank template preserves the supplied Excel layout without copying sample records. Downloads do not write to the database or create files on the server.
+
 One company uses these systems. Product and Supplies forms have no Office selection, and their APIs do not save office links.
 Customers use their table row ID for links; there is no separate generated customer code. Customer discount values are shown and saved only when Percent or Amount is selected.
 

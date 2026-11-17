@@ -1,4 +1,6 @@
 const express = require('express');
+const path = require('node:path');
+const ExcelJS = require('exceljs');
 const router = express.Router();
 const {
   request,
@@ -2192,7 +2194,7 @@ router.delete('/sales-orders/:id', async (req, res) => {
 router.get('/sales-invoices', async (req, res) => {
   const result = await request().query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
-  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,invoiceCreator.name AS preparedByName,o.preparedByName AS sourcePreparedByName,
+  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,i.buyerTin,i.shipToName,i.vatClass,COALESCE(i.preparedByName,invoiceCreator.name) AS preparedByName,o.preparedByName AS sourcePreparedByName,
   CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
   CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
   CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
@@ -2212,7 +2214,7 @@ router.get('/sales-invoices/:id', async (req, res) => {
   const id = parsedId;
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
-  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,invoiceCreator.name AS preparedByName,o.preparedByName AS sourcePreparedByName,
+  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,i.buyerTin,i.shipToName,i.vatClass,COALESCE(i.preparedByName,invoiceCreator.name) AS preparedByName,o.preparedByName AS sourcePreparedByName,
   CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
   CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
   CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
@@ -2238,6 +2240,203 @@ router.get('/sales-invoices/:id', async (req, res) => {
     record
   });
 });
+router.get('/sales-invoices/:id/excel', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
+    const error = new Error('Enter a valid id.');
+    error.status = 400;
+    throw error;
+  }
+  const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
+  o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
+  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,i.buyerTin,i.shipToName,i.vatClass,COALESCE(i.preparedByName,invoiceCreator.name) AS preparedByName,o.preparedByName AS sourcePreparedByName,
+  CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
+  CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
+  CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
+  CONVERT(varchar(10),i.invoiceDate,23) AS invoiceDate,CONVERT(varchar(10),i.dueDate,23) AS dueDate,
+  i.notes,CONVERT(varchar(60),i.total) AS total,CONVERT(varchar(60),i.paidAmount) AS paidAmount, CASE WHEN i.paidAmount>=i.total THEN 'paid' WHEN i.paidAmount>0 THEN 'partial' ELSE 'unpaid' END AS status FROM dbo.SalesInvoices i JOIN dbo.SalesOrders o ON o.id=i.orderId LEFT JOIN dbo.SalesUserLogin invoiceCreator ON invoiceCreator.id=i.createdBy WHERE i.id=@id`);
+  if (!recordResult.recordset.length) {
+    const error = new Error('Sales invoice could not be found.');
+    error.status = 404;
+    throw error;
+  }
+  const recordItems = await request().input('orderId', sql.Int, recordResult.recordset[0].orderId).input('invoiceId', sql.Int, recordResult.recordset[0].id).query(`SELECT productId,productName,sku,unit,CONVERT(varchar(60),quantity) AS quantity,CONVERT(varchar(60),unitPrice) AS unitPrice,CONVERT(varchar(60),lineTotal) AS lineTotal,
+  id,orderItemId,@orderId AS orderId,refNumber,quotationNumber,description,description AS productDescription,currency,currency AS sourceCurrency,
+  CONVERT(varchar(60),convertedUnitPrice) AS convertedUnitPrice,CONVERT(varchar(60),discountRate) AS discountRate,
+  CONVERT(varchar(10),deliveryDate,23) AS deliveryDate,CONVERT(varchar(60),grossAmount) AS grossAmount,
+  CONVERT(varchar(60),lineDiscountAmount) AS lineDiscountAmount,CONVERT(varchar(60),headerDiscountAmount) AS headerDiscountAmount,
+  CONVERT(varchar(60),discountAmount) AS discountAmount,CONVERT(varchar(60),netAmount) AS netAmount,
+  CONVERT(varchar(60),vatAmount) AS vatAmount,CONVERT(varchar(60),COALESCE(amount,lineTotal)) AS amount FROM dbo.SalesInvoiceItems WHERE invoiceId=@invoiceId ORDER BY id`);
+  const record = { ...recordResult.recordset[0], items: recordItems.recordset };
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(path.join(__dirname, '../templates/SalesInvoice.xlsx'));
+  const template = workbook.worksheets[0];
+  // ExcelJS reads fractional template font sizes as integers; retain the source sizes.
+  for (const [address, size] of [['G2', 9.65], ['C5', 8.25], ['X2', 9.75], ['X8', 9.75]]) template.getCell(address).font = { ...template.getCell(address).font, size };
+  template.eachRow({ includeEmpty: true }, row => row.eachCell({ includeEmpty: true }, cell => { cell.value = null; }));
+  const templateModel = structuredClone(template.model);
+  const headers = [
+    ['G2', 'Customer Name', record.billToName ?? (record.billToCustomerId == null ? record.customerName : null), 94, 9.65],
+    ['C5', 'Address', record.billToAddress ?? (record.billToCustomerId == null ? record.customerAddress : null), 106, 8.25],
+    ['G8', 'Ship To', record.shipToName, 106, 9], ['X5', 'Terms', record.paymentTerm, 48, 9],
+    ['X8', 'TIN', record.buyerTin, 52, 9.75], ['F45', 'Prepared by', record.preparedByName, 59, 7],
+  ];
+  const printedHeaders = [], entries = [];
+  for (const [address, label, raw, width, size] of headers) {
+    const value = String(raw ?? '').replace(/\s+/g, ' ').trim();
+    let textWidth = 0;
+    for (const character of Array.from(value)) textWidth += /[MW@%]/.test(character) ? 1000 : /[mw]/.test(character) ? 800 : /[A-Z]/.test(character) ? 750 : /[il.,:;'!|]/.test(character) ? 350 : /[0-9]/.test(character) ? 500 : character === ' ' ? 250 : /[\x20-\x7e]/.test(character) ? 550 : 1000;
+    const fittingSize = textWidth ? Math.min(size, width * 72 / 25.4 * 1000 / textWidth) : size;
+    printedHeaders.push({ address, value: fittingSize < 7 ? 'See continuation' : value || null, size: fittingSize === size ? size : Math.max(7, Math.floor(fittingSize * 10) / 10) });
+    if (fittingSize < 7) entries.push({ text: label + ': ' + value });
+  }
+  for (const [index, item] of record.items.entries()) {
+    const sku = String(item.sku || '').trim();
+    const description = String(item.description || item.productDescription || item.productName || '').trim();
+    let text = sku && (description === sku || description.startsWith(sku + ' ') || description.startsWith(sku + '\n')) ? description : [sku, description].filter(Boolean).join(' ');
+    const unit = String(item.unit || '').trim();
+    let unitWidth = 0;
+    for (const character of Array.from(unit)) unitWidth += /[MW@%]/.test(character) ? 1000 : /[mw]/.test(character) ? 800 : /[A-Z]/.test(character) ? 750 : /[il.,:;'!|]/.test(character) ? 350 : /[0-9]/.test(character) ? 500 : character === ' ' ? 250 : /[\x20-\x7e]/.test(character) ? 550 : 1000;
+    const unitSize = unitWidth ? Math.min(8, 11 * 72 / 25.4 * 1000 / unitWidth) : 8;
+    if (unitSize < 7) text += '\nUOP: ' + unit;
+    entries.push({ item, index, text, unit: unitSize < 7 ? 'See note' : unit || null, unitSize: Math.max(7, Math.floor(unitSize * 10) / 10) });
+  }
+  const notes = String(record.notes || '').trim();
+  const shortNotes = notes.replace(/\s+/g, ' ');
+  if (shortNotes.length > 120) entries.push({ text: 'Remarks: ' + notes });
+  const lines = [];
+  for (const entry of entries) {
+    let part = 0;
+    for (const paragraph of entry.text.replace(/\r/g, '').split('\n')) {
+      let line = '', used = 0;
+      for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+        const characters = Array.from(word, character => ({ value: character, width: /[MW@%]/.test(character) ? 1000 : /[mw]/.test(character) ? 800 : /[A-Z]/.test(character) ? 750 : /[il.,:;'!|]/.test(character) ? 350 : /[0-9]/.test(character) ? 500 : /[\x20-\x7e]/.test(character) ? 550 : 1000 }));
+        const wordWidth = characters.reduce((total, character) => total + character.width, 0);
+        if (line && used + 250 + wordWidth <= 22000) { line += ' ' + word; used += 250 + wordWidth; continue; }
+        if (line) { lines.push({ ...entry, part: part++, text: line }); line = ''; used = 0; }
+        for (const character of characters) {
+          if (line && used + character.width > 22000) { lines.push({ ...entry, part: part++, text: line }); line = ''; used = 0; }
+          line += character.value; used += character.width;
+        }
+      }
+      lines.push({ ...entry, part: part++, text: line });
+    }
+  }
+  const pages = Math.max(1, Math.ceil(lines.length / 14));
+  const knownClass = ['Vatable', 'Vat-Exempt', 'Zero Rated'].includes(record.vatClass);
+  const knownVat = record.vatAmount != null && /^\d+(?:\.\d+)?$/.test(String(record.vatAmount));
+  const knownMode = typeof record.vatInclusive === 'boolean';
+  const currency = /^[A-Z]{3}$/.test(record.currency || '') ? new Intl.NumberFormat('en-PH', { style: 'currency', currency: record.currency }).formatToParts(0).find(part => part.type === 'currency')?.value || record.currency : record.currency || '';
+  let totalQuantity = 0n;
+  let knownQuantity = record.items.length > 0;
+  for (const item of record.items) {
+    const value = String(item.quantity ?? '');
+    if (!/^\d+(?:\.\d{1,3})?$/.test(value)) { knownQuantity = false; continue; }
+    const [whole, fraction = ''] = value.split('.');
+    totalQuantity += BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0'));
+  }
+  for (let pageIndex = 0; pageIndex < pages; pageIndex++) {
+    const final = pageIndex === pages - 1;
+    let sheet = template;
+    if (pageIndex > 0) {
+      sheet = workbook.addWorksheet('Invoice ' + (pageIndex + 1));
+      const model = structuredClone(templateModel);
+      model.id = sheet.id; model.name = sheet.name; model.mergeCells = model.merges;
+      sheet.model = model;
+    } else sheet.name = 'Invoice 1';
+    sheet.pageSetup = { ...sheet.pageSetup, paperSize: 9, orientation: 'portrait', scale: 100, fitToPage: false, printArea: 'A1:AA51', margins: { left: 0.23, right: 0.27, top: 0.30, bottom: 0.20, header: 0.30, footer: 0.30 } };
+    sheet.headerFooter = { oddFooter: '&L' + String(record.number || '').replaceAll('&', '&&') + '&RPage ' + (pageIndex + 1) + ' of ' + pages };
+    for (const header of printedHeaders) {
+      if (header.address === 'F45' && !final) continue;
+      const cell = sheet.getCell(header.address);
+      cell.value = header.value;
+      cell.font = { ...cell.font, size: header.size };
+      cell.alignment = { ...cell.alignment, wrapText: false, shrinkToFit: false };
+    }
+    sheet.getCell('V51').value = record.number || null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(record.invoiceDate || '')) { sheet.getCell('X2').value = new Date(record.invoiceDate + 'T00:00:00Z'); sheet.getCell('X2').numFmt = 'm/d/yy'; }
+    const numericCells = [];
+    for (const [slot, line] of lines.slice(pageIndex * 14, (pageIndex + 1) * 14).entries()) {
+      const row = 11 + slot;
+      sheet.getCell('J' + row).value = line.text;
+      sheet.getCell('J' + row).alignment = { ...sheet.getCell('J' + row).alignment, wrapText: false, shrinkToFit: true };
+      if (!line.item || line.part !== 0) continue;
+      sheet.getCell('H' + row).value = line.unit;
+      sheet.getCell('H' + row).font = { ...sheet.getCell('H' + row).font, size: line.unitSize };
+      sheet.getCell('H' + row).alignment = { ...sheet.getCell('H' + row).alignment, wrapText: false, shrinkToFit: false };
+      sheet.getCell('Q' + row).value = currency;
+      numericCells.push(['A' + row, line.item.quantity, 3, true], ['T' + row, line.item.convertedUnitPrice ?? line.item.unitPrice, 5, false], ['W' + row, line.item.grossAmount, 2, false]);
+    }
+    if (final) {
+      if (knownQuantity) numericCells.push(['A25', totalQuantity / 1000n + '.' + (totalQuantity % 1000n).toString().padStart(3, '0'), 3, true]);
+      sheet.getCell('D25').value = 'TOTAL';
+      sheet.getCell('A26').value = '********NF********';
+      sheet.getCell('X43').value = currency;
+      sheet.getCell('A27').value = shortNotes && shortNotes.length <= 120 ? 'Remarks: ' + shortNotes : shortNotes ? 'Remarks continued in item rows.' : null;
+      sheet.getCell('A27').alignment = { ...sheet.getCell('A27').alignment, wrapText: false, shrinkToFit: true };
+      numericCells.push(
+        ['M29', knownClass ? record.vatClass === 'Vatable' ? record.netAmount : '0' : null, 2, false],
+        ['M30', knownClass ? record.vatClass === 'Vat-Exempt' ? record.netAmount : '0' : null, 2, false],
+        ['M33', knownClass ? record.vatClass === 'Zero Rated' ? record.netAmount : '0' : null, 2, false],
+        ['M35', record.vatAmount, 2, false],
+        ['Y31', knownVat && knownMode ? record.vatInclusive ? record.vatAmount : '0' : null, 2, false],
+        ['Y36', record.discountAmount, 2, false],
+        ['Y41', knownVat && knownMode ? record.vatInclusive ? '0' : record.vatAmount : null, 2, false],
+        ['Y43', record.total, 2, false],
+      );
+    }
+    for (const [address, raw, places, trim] of numericCells) {
+      if (raw == null || !/^-?\d+(?:\.\d+)?$/.test(String(raw))) continue;
+      const text = String(raw), negative = text.startsWith('-');
+      const [whole, fraction = ''] = text.replace(/^-/, '').split('.');
+      let units = BigInt(whole + fraction.padEnd(places, '0').slice(0, places));
+      if (Number(fraction[places] || 0) >= 5) units++;
+      const digits = units.toString().padStart(places + 1, '0');
+      const canonical = (negative && units ? '-' : '') + digits.slice(0, -places) + '.' + digits.slice(-places);
+      const cell = sheet.getCell(address);
+      const visibleFraction = digits.slice(-places).replace(/0+$/, '');
+      cell.numFmt = trim ? '#,##0' + (visibleFraction ? '.' + '0'.repeat(visibleFraction.length) : '') : places === 5 ? '#,##0.00000' : '#,##0.00';
+      const significantDigits = (whole + fraction).replace(/^0+/, '').replace(/0+$/, '').length;
+      if (significantDigits <= 15) cell.value = Number(text);
+      else if (units.toString().length <= 15) cell.value = Number(canonical);
+      else cell.value = (negative && units ? '-' : '') + digits.slice(0, -places).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (trim ? visibleFraction ? '.' + visibleFraction : '' : '.' + digits.slice(-places));
+      cell.alignment = { ...cell.alignment, horizontal: 'right', wrapText: false, shrinkToFit: true };
+    }
+  }
+  // Keep every page on the active worksheet so Excel's default Print prints the full invoice.
+  const pageSheets = [...workbook.worksheets];
+  const invoiceSheet = pageSheets[0];
+  for (let pageIndex = 1; pageIndex < pageSheets.length; pageIndex++) {
+    const source = pageSheets[pageIndex];
+    const offset = pageIndex * 51;
+    source.eachRow({ includeEmpty: true }, row => {
+      const target = invoiceSheet.getRow(row.number + offset);
+      target.height = row.height; target.hidden = row.hidden; target.style = structuredClone(row.style);
+      row.eachCell({ includeEmpty: true }, cell => {
+        const destination = target.getCell(cell.col);
+        destination.style = structuredClone(cell.style);
+        if (cell.type !== ExcelJS.ValueType.Merge) destination.value = structuredClone(cell.value);
+      });
+    });
+    for (const range of source.model.merges) {
+      const parts = range.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+      invoiceSheet.mergeCellsWithoutStyle(parts[1] + (Number(parts[2]) + offset) + ':' + parts[3] + (Number(parts[4]) + offset));
+    }
+    workbook.removeWorksheet(source.id);
+  }
+  invoiceSheet.name = 'Invoice';
+  invoiceSheet.rowBreaks = [];
+  for (let pageIndex = 1; pageIndex < pages; pageIndex++) invoiceSheet.getRow(pageIndex * 51).addPageBreak();
+  invoiceSheet.pageSetup.printArea = 'A1:AA' + (51 * pages);
+  invoiceSheet.headerFooter.oddFooter = '&L' + String(record.number || '').replaceAll('&', '&&') + '&RPage &P of &N';
+  const buffer = await workbook.xlsx.writeBuffer();
+  const fileName = String(record.number || 'SI-' + id).replace(/[^a-zA-Z0-9._-]/g, '_') + '.xlsx';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + fileName + '"');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(Buffer.from(buffer));
+});
+
 router.get('/delivery-receipts', async (req, res) => {
   const result = await request().query(`SELECT d.id,d.number,d.orderId,o.number AS orderNumber,o.customerId,o.customerName,CONVERT(varchar(60),d.amount) AS total,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
@@ -2410,8 +2609,22 @@ router.post('/sales-invoices', async (req, res) => {
       error.status = 409;
       throw error;
     }
-    const result = await request(tx).input('orderId', sql.Int, orderId).input('invoiceDate', sql.VarChar(sql.MAX), invoiceDate).input('dueDate', sql.VarChar(sql.MAX), dueDate).input('notes', sql.NVarChar(sql.MAX), notes).input('total', sql.VarChar(sql.MAX), String(order.total)).input('createdBy', sql.Int, user.id).input('grossAmount', sql.VarChar(sql.MAX), order.grossAmount == null ? null : String(order.grossAmount)).input('lineDiscountAmount', sql.VarChar(sql.MAX), order.lineDiscountAmount == null ? null : String(order.lineDiscountAmount)).input('headerDiscountAmount', sql.VarChar(sql.MAX), order.headerDiscountAmount == null ? null : String(order.headerDiscountAmount)).input('discountAmount', sql.VarChar(sql.MAX), order.discountAmount == null ? null : String(order.discountAmount)).input('netAmount', sql.VarChar(sql.MAX), order.netAmount == null ? null : String(order.netAmount)).input('vatAmount', sql.VarChar(sql.MAX), order.vatAmount == null ? null : String(order.vatAmount)).input('amount', sql.VarChar(sql.MAX), String(order.total)).query(`INSERT INTO dbo.SalesInvoices (orderId,invoiceDate,dueDate,notes,total,createdBy,paidAmount,grossAmount,lineDiscountAmount,headerDiscountAmount,discountAmount,netAmount,vatAmount,amount,createdAt,updatedAt) OUTPUT INSERTED.id
-        VALUES (@orderId,@invoiceDate,@dueDate,@notes,@total,@createdBy,0,@grossAmount,@lineDiscountAmount,@headerDiscountAmount,@discountAmount,@netAmount,@vatAmount,@amount,SYSUTCDATETIME(),SYSUTCDATETIME())`);
+    const identityResult = await request(tx).input('buyerId', sql.Int, order.billToCustomerId ?? order.customerId).input('customerId', sql.Int, order.customerId).query(`SELECT buyer.tin AS buyerTin,customer.drName AS shipToName
+      FROM dbo.Customers customer LEFT JOIN dbo.Customers buyer ON buyer.id=@buyerId WHERE customer.id=@customerId`);
+    const identity = identityResult.recordset[0];
+    const buyerTin = typeof identity?.buyerTin === 'string' ? identity.buyerTin.trim() || null : null;
+    const shipToName = typeof identity?.shipToName === 'string' ? identity.shipToName.trim() || null : null;
+    const preparedByName = typeof user.name === 'string' ? user.name.trim() || null : null;
+    let vatClass = null;
+    if (order.vatCode) {
+      const vatResult = await request(tx).input('code', sql.NVarChar(sql.MAX), order.vatCode).query('SELECT [class] FROM dbo.ConfigVatCodes WHERE code=@code');
+      const configuredClass = vatResult.recordset[0]?.class;
+      if (['Vatable', 'Vat-Exempt', 'Zero Rated'].includes(configuredClass)) vatClass = configuredClass;
+      if (['Vat-Exempt', 'Zero Rated'].includes(vatClass) && order.vatAmount != null && /[1-9]/.test(String(order.vatAmount))) vatClass = null;
+    }
+    const result = await request(tx).input('orderId', sql.Int, orderId).input('invoiceDate', sql.VarChar(sql.MAX), invoiceDate).input('dueDate', sql.VarChar(sql.MAX), dueDate).input('notes', sql.NVarChar(sql.MAX), notes).input('total', sql.VarChar(sql.MAX), String(order.total)).input('createdBy', sql.Int, user.id).input('grossAmount', sql.VarChar(sql.MAX), order.grossAmount == null ? null : String(order.grossAmount)).input('lineDiscountAmount', sql.VarChar(sql.MAX), order.lineDiscountAmount == null ? null : String(order.lineDiscountAmount)).input('headerDiscountAmount', sql.VarChar(sql.MAX), order.headerDiscountAmount == null ? null : String(order.headerDiscountAmount)).input('discountAmount', sql.VarChar(sql.MAX), order.discountAmount == null ? null : String(order.discountAmount)).input('netAmount', sql.VarChar(sql.MAX), order.netAmount == null ? null : String(order.netAmount)).input('vatAmount', sql.VarChar(sql.MAX), order.vatAmount == null ? null : String(order.vatAmount)).input('amount', sql.VarChar(sql.MAX), String(order.total))
+      .input('buyerTin', sql.NVarChar(sql.MAX), buyerTin).input('shipToName', sql.NVarChar(sql.MAX), shipToName).input('vatClass', sql.NVarChar(sql.MAX), vatClass).input('preparedByName', sql.NVarChar(sql.MAX), preparedByName).query(`INSERT INTO dbo.SalesInvoices (orderId,invoiceDate,dueDate,notes,total,createdBy,paidAmount,grossAmount,lineDiscountAmount,headerDiscountAmount,discountAmount,netAmount,vatAmount,amount,buyerTin,shipToName,vatClass,preparedByName,createdAt,updatedAt) OUTPUT INSERTED.id
+        VALUES (@orderId,@invoiceDate,@dueDate,@notes,@total,@createdBy,0,@grossAmount,@lineDiscountAmount,@headerDiscountAmount,@discountAmount,@netAmount,@vatAmount,@amount,@buyerTin,@shipToName,@vatClass,@preparedByName,SYSUTCDATETIME(),SYSUTCDATETIME())`);
     const number = `SI-${String(result.recordset[0].id).padStart(8, '0')}`;
     await request(tx).input('id', sql.Int, result.recordset[0].id).input('number', sql.NVarChar(sql.MAX), number).query('UPDATE dbo.SalesInvoices SET number=@number WHERE id=@id');
     await request(tx).input('invoiceId', sql.Int, result.recordset[0].id).input('orderId', sql.Int, orderId).query(`INSERT INTO dbo.SalesInvoiceItems
@@ -2422,7 +2635,7 @@ router.post('/sales-invoices', async (req, res) => {
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
-  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,invoiceCreator.name AS preparedByName,o.preparedByName AS sourcePreparedByName,
+  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,i.buyerTin,i.shipToName,i.vatClass,COALESCE(i.preparedByName,invoiceCreator.name) AS preparedByName,o.preparedByName AS sourcePreparedByName,
   CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
   CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
   CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
@@ -2512,7 +2725,7 @@ router.patch('/sales-invoices/:id/payment', async (req, res) => {
   });
   const recordResult = await request().input('id', sql.Int, id).query(`SELECT i.id,i.number,i.orderId,o.number AS orderNumber,o.customerId,o.customerName,o.customerAddress,o.currency,o.billToCustomerId,o.billToName,o.billToAddress,CONVERT(varchar(10),o.expectedDeliveryDate,23) AS expectedDeliveryDate,
   o.sourceCurrency,CONVERT(varchar(60),o.rate) AS rate,o.paymentTerm,o.shipment,o.countryOfOrigin,o.vatCode,CONVERT(varchar(60),o.vatRate) AS vatRate,
-  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,invoiceCreator.name AS preparedByName,o.preparedByName AS sourcePreparedByName,
+  o.vatInclusive,o.discountType,CONVERT(varchar(60),o.discount) AS discount,o.decimalInPrice,o.decimalInTotalPrice,i.buyerTin,i.shipToName,i.vatClass,COALESCE(i.preparedByName,invoiceCreator.name) AS preparedByName,o.preparedByName AS sourcePreparedByName,
   CONVERT(varchar(60),i.grossAmount) AS grossAmount,CONVERT(varchar(60),i.lineDiscountAmount) AS lineDiscountAmount,
   CONVERT(varchar(60),i.headerDiscountAmount) AS headerDiscountAmount,CONVERT(varchar(60),i.discountAmount) AS discountAmount,
   CONVERT(varchar(60),i.netAmount) AS netAmount,CONVERT(varchar(60),i.vatAmount) AS vatAmount,CONVERT(varchar(60),i.amount) AS amount,
@@ -2730,7 +2943,7 @@ router.post('/shipping-invoices', async (req, res) => {
     record
   });
 });
-for (const [path, methods] of [['/customer-options', ['GET']], ['/sales-order-options', ['GET']], ['/product-options', ['GET']], ['/customers', ['GET', 'POST']], ['/customers/:id', ['GET', 'PUT', 'DELETE']], ['/products', ['GET', 'POST']], ['/products/:id', ['GET', 'PUT', 'DELETE']], ['/products/:id/stock-movements', ['GET', 'POST']], ['/sales-orders', ['GET', 'POST']], ['/sales-orders/:id', ['GET', 'PUT', 'DELETE']], ['/sales-orders/:id/quantities', ['PATCH']], ['/sales-invoices', ['GET', 'POST']], ['/sales-invoices/:id', ['GET']], ['/sales-invoices/:id/payment', ['PATCH']], ['/delivery-receipts', ['GET', 'POST']], ['/delivery-receipts/:id', ['GET']], ['/shipping-invoices', ['GET', 'POST']], ['/shipping-invoices/:id', ['GET']]]) router.all(path, (req, res) => res.set('Allow', methods.join(', ')).status(405).json({
+for (const [path, methods] of [['/customer-options', ['GET']], ['/sales-order-options', ['GET']], ['/product-options', ['GET']], ['/customers', ['GET', 'POST']], ['/customers/:id', ['GET', 'PUT', 'DELETE']], ['/products', ['GET', 'POST']], ['/products/:id', ['GET', 'PUT', 'DELETE']], ['/products/:id/stock-movements', ['GET', 'POST']], ['/sales-orders', ['GET', 'POST']], ['/sales-orders/:id', ['GET', 'PUT', 'DELETE']], ['/sales-orders/:id/quantities', ['PATCH']], ['/sales-invoices', ['GET', 'POST']], ['/sales-invoices/:id', ['GET']], ['/sales-invoices/:id/excel', ['GET']], ['/sales-invoices/:id/payment', ['PATCH']], ['/delivery-receipts', ['GET', 'POST']], ['/delivery-receipts/:id', ['GET']], ['/shipping-invoices', ['GET', 'POST']], ['/shipping-invoices/:id', ['GET']]]) router.all(path, (req, res) => res.set('Allow', methods.join(', ')).status(405).json({
   message: 'This HTTP method is not supported.'
 }));
 module.exports = router;

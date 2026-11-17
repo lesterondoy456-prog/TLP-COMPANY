@@ -4,7 +4,7 @@ import { Icon } from '../../components/Icons.jsx';
 import { Badge, Empty, LoadingSkeleton } from '../../components/UI.jsx';
 import { PageHeading, MobileRecordCard } from '../../components/RecordsCard.jsx';
 import CreateInvoiceForm from './CreateInvoiceForm.jsx';
-import DocumentView from '../../components/DocumentView.jsx';
+import InvoiceView from './InvoiceView.jsx';
 import InvoicePaymentForm from './InvoicePaymentForm.jsx';
 import './Invoice.css';
 
@@ -171,7 +171,7 @@ export default function InvoicePage({ data, loading, loaded, onReload, onSaved, 
       <div className="table-footer"><span>{filtered.length ? ((safePage - 1) * 10 + 1) + '–' + Math.min(safePage * 10, filtered.length) : '0'} of {filtered.length.toLocaleString('en-PH')} invoices</span><div><button className="icon-button" aria-label="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" size={16} /></button><span>Page {safePage} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" size={16} /></button></div></div>
     </section>
     {dialog?.type === 'new' && <CreateInvoiceForm orders={data['sales-orders']} customers={data.customers} onClose={() => setDialog(null)} onSaved={saved} />}
-    {dialog?.type === 'view' && <DocumentView kind="sales-invoices" record={dialog.record} onClose={() => setDialog(null)} />}
+    {dialog?.type === 'view' && <InvoiceView record={dialog.record} onClose={() => setDialog(null)} />}
     {dialog?.type === 'payment' && <InvoicePaymentForm record={dialog.record} onClose={() => setDialog(null)} onSaved={saved} />}
   </>;
 }

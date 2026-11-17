@@ -23,7 +23,7 @@ function compile(filename, database = fakeDatabase, cache = modules) {
     if (/^\.\/Api\/LoginApiSystem(?:\.js)?$/.test(specifier)) return compile(path.join(backend, 'Api', 'LoginApiSystem.js'), database, cache);
     const api = specifier.match(/^\.\/Api\/(Sales|Purchasing|Warehouse|Configuration)Api(?:\.js)?$/);
     if (api) return compile(path.join(backend, 'Api', api[1] + 'Api.js'), database, cache);
-    if (specifier === 'express' || specifier === 'socket.io' || specifier.startsWith('node:') || builtinModules.includes(specifier)) return requireBackend(specifier);
+    if (specifier === 'express' || specifier === 'socket.io' || specifier === 'exceljs' || specifier.startsWith('node:') || builtinModules.includes(specifier)) return requireBackend(specifier);
     throw new Error('Unexpected dependency in isolated API test: ' + specifier);
   };
   cache.set(filename, compiled);
@@ -60,7 +60,7 @@ export function loadRouterWithDatabase(system, database) {
   compiled.paths = Module._nodeModulePaths(path.dirname(filename));
   compiled.require = specifier => {
     if (/^\.\.?\/db(?:\.js)?$/.test(specifier)) return database;
-    if (specifier === 'express' || specifier.startsWith('node:') || builtinModules.includes(specifier)) return requireBackend(specifier);
+    if (specifier === 'express' || specifier === 'exceljs' || specifier.startsWith('node:') || builtinModules.includes(specifier)) return requireBackend(specifier);
     throw new Error('Unexpected dependency in route test: ' + specifier);
   };
   compiled._compile(readFileSync(filename, 'utf8'), filename);
