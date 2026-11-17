@@ -29,7 +29,7 @@
 .invoice-line-quantity { width: 29mm; text-align: right; }
 .invoice-line-unit { width: 14.1mm; text-align: center; }
 .invoice-line-description { width: 66.9mm; }
-.invoice-body-line > .invoice-line-price { display: flex; justify-content: space-between; gap: 1mm; width: 33.6mm; }
+.invoice-body-line > .invoice-line-price { display: flex; justify-content: flex-end; gap: .7mm; width: 33.6mm; }
 .invoice-line-amount { width: 36.9mm; text-align: right; }
 .invoice-note-line { padding-left: 43.1mm; }
 .invoice-quantity-total { position: absolute; top: 164.9mm; left: 18.3mm; height: 7.1mm; width: 110mm; display: flex; align-items: center; gap: 2mm; font-size: 8pt; font-weight: 700; }
@@ -37,12 +37,10 @@
 .invoice-quantity-total > strong { font-weight: 700; }
 .invoice-end-marker { margin-left: 5mm; font-size: 8pt; font-weight: 400; font-style: italic; }
 .invoice-summary-value { text-align: right; line-height: 3.1mm; font-size: 8pt; font-variant-numeric: tabular-nums; }
-.invoice-grand-total { font-size: 9pt; font-weight: 700; }
-.invoice-total-currency { left: 163.4mm; top: 216.1mm; font-size: 9pt; }
+.invoice-grand-total { display: flex; justify-content: flex-end; gap: .7mm; white-space: nowrap; font-size: 9pt; font-weight: 700; }
 .invoice-remarks { position: absolute; left: 20mm; top: 200mm; width: 105mm; font-size: 8pt; line-height: 3.2mm; white-space: pre; }
 .invoice-prepared-by { left: 35.2mm; top: 226.8mm; width: 59mm; height: 4.9mm; font-size: 7pt; font-weight: 700; line-height: 2.45mm; white-space: pre; }
 .invoice-download-error { flex-shrink: 0; margin: 0; padding: 10px 22px; border-radius: 0; font-size: 12px; }
-.invoice-data-footer { position: absolute; left: 18.5mm; right: 11.2mm; top: 278mm; display: flex; justify-content: space-between; gap: 8mm; font-size: 7pt; line-height: 3mm; font-weight: 700; }
 @media (max-width: 600px) {
   .modal.invoice-view { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
   .invoice-view .modal-heading { padding: 16px; }

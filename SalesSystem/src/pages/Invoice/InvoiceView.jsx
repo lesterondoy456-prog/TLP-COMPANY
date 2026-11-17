@@ -245,7 +245,7 @@ export default function InvoiceView({ record, onClose }) {
             ['discountAmount', record.discountAmount, 163.4, 194.1, 33.8],
             ['amountDue', null, 163.4, 200.8, 33.8],
             ['addVat', knownVat && knownMode ? record.vatInclusive ? 0 : record.vatAmount : null, 163.4, 208, 33.8],
-            ['totalAmountDue', record.total, 166.5, 216.1, 30.7],
+            ['totalAmountDue', record.total, 163.4, 216.1, 33.8],
           ];
           return <div key={pageIndex} className="invoice-page-frame" style={{ width: 210 * 96 / 25.4 * scale, height: 297 * 96 / 25.4 * scale }}>
             <section className="invoice-preprinted-page" data-invoice-page={pageIndex + 1} aria-label={'Invoice page ' + (pageIndex + 1) + ' of ' + pages.length} style={{ transform: 'scale(' + scale + ')' }}>
@@ -262,12 +262,15 @@ export default function InvoiceView({ record, onClose }) {
               </div>)}
               {final && <div data-invoice-summary="">
                 <div className="invoice-quantity-total"><span data-invoice-field="quantityTotal">{invoiceNumber(totalQuantity, 3, true)}</span><strong>TOTAL</strong><span className="invoice-end-marker">********NF********</span></div>
-                {summaryFields.map(([name, value, x, y, width]) => <span key={name} className={'invoice-print-field invoice-summary-value' + (name === 'totalAmountDue' ? ' invoice-grand-total' : '')} data-invoice-field={name} aria-label={name} style={{ left: x + 'mm', top: y + 'mm', width: width + 'mm' }}>{invoiceNumber(value, 2)}</span>)}
-                <span className="invoice-print-field invoice-total-currency">{currency}</span>
+                {summaryFields.map(([name, value, x, y, width]) => name === 'totalAmountDue' ?
+                  <span key={name} className="invoice-print-field invoice-summary-value invoice-grand-total" style={{ left: x + 'mm', top: y + 'mm', width: width + 'mm' }}>
+                    <span className="invoice-total-currency">{currency}</span><span data-invoice-field={name} aria-label={name}>{invoiceNumber(value, 2)}</span>
+                  </span> :
+                  <span key={name} className="invoice-print-field invoice-summary-value" data-invoice-field={name} aria-label={name} style={{ left: x + 'mm', top: y + 'mm', width: width + 'mm' }}>{invoiceNumber(value, 2)}</span>
+                )}
                 {page.notes?.length > 0 && <div className="invoice-remarks" data-invoice-field="notes">{page.notes.map((line, index) => <div key={index}>{line}</div>)}</div>}
                 <span className="invoice-print-field invoice-prepared-by" data-invoice-field="preparedByName">{layout.headers.find(field => field.name === 'preparedByName').lines.join('\n')}</span>
               </div>}
-              <footer className="invoice-data-footer"><span data-invoice-field="invoiceNumber">{record.number}</span><span data-invoice-field="pageNumber">Page {pageIndex + 1} of {pages.length}</span></footer>
             </section>
           </div>;
         })}

@@ -2327,6 +2327,7 @@ router.get('/sales-invoices/:id/excel', async (req, res) => {
   const knownVat = record.vatAmount != null && /^\d+(?:\.\d+)?$/.test(String(record.vatAmount));
   const knownMode = typeof record.vatInclusive === 'boolean';
   const currency = /^[A-Z]{3}$/.test(record.currency || '') ? new Intl.NumberFormat('en-PH', { style: 'currency', currency: record.currency }).formatToParts(0).find(part => part.type === 'currency')?.value || record.currency : record.currency || '';
+  const currencyFormat = currency ? '"' + currency.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]/g, ' ') + '" ' : '';
   let totalQuantity = 0n;
   let knownQuantity = record.items.length > 0;
   for (const item of record.items) {
@@ -2364,14 +2365,12 @@ router.get('/sales-invoices/:id/excel', async (req, res) => {
       sheet.getCell('H' + row).value = line.unit;
       sheet.getCell('H' + row).font = { ...sheet.getCell('H' + row).font, size: line.unitSize };
       sheet.getCell('H' + row).alignment = { ...sheet.getCell('H' + row).alignment, wrapText: false, shrinkToFit: false };
-      sheet.getCell('Q' + row).value = currency;
-      numericCells.push(['A' + row, line.item.quantity, 3, true], ['T' + row, line.item.convertedUnitPrice ?? line.item.unitPrice, 5, false], ['W' + row, line.item.grossAmount, 2, false]);
+      numericCells.push(['A' + row, line.item.quantity, 3, true], ['T' + row, line.item.convertedUnitPrice ?? line.item.unitPrice, 5, false, true], ['W' + row, line.item.grossAmount, 2, false]);
     }
     if (final) {
       if (knownQuantity) numericCells.push(['A25', totalQuantity / 1000n + '.' + (totalQuantity % 1000n).toString().padStart(3, '0'), 3, true]);
       sheet.getCell('D25').value = 'TOTAL';
       sheet.getCell('A26').value = '********NF********';
-      sheet.getCell('X43').value = currency;
       sheet.getCell('A27').value = shortNotes && shortNotes.length <= 120 ? 'Remarks: ' + shortNotes : shortNotes ? 'Remarks continued in item rows.' : null;
       sheet.getCell('A27').alignment = { ...sheet.getCell('A27').alignment, wrapText: false, shrinkToFit: true };
       numericCells.push(
@@ -2382,10 +2381,10 @@ router.get('/sales-invoices/:id/excel', async (req, res) => {
         ['Y31', knownVat && knownMode ? record.vatInclusive ? record.vatAmount : '0' : null, 2, false],
         ['Y36', record.discountAmount, 2, false],
         ['Y41', knownVat && knownMode ? record.vatInclusive ? '0' : record.vatAmount : null, 2, false],
-        ['Y43', record.total, 2, false],
+        ['Y43', record.total, 2, false, true],
       );
     }
-    for (const [address, raw, places, trim] of numericCells) {
+    for (const [address, raw, places, trim, withCurrency] of numericCells) {
       if (raw == null || !/^-?\d+(?:\.\d+)?$/.test(String(raw))) continue;
       const text = String(raw), negative = text.startsWith('-');
       const [whole, fraction = ''] = text.replace(/^-/, '').split('.');
@@ -2395,11 +2394,11 @@ router.get('/sales-invoices/:id/excel', async (req, res) => {
       const canonical = (negative && units ? '-' : '') + digits.slice(0, -places) + '.' + digits.slice(-places);
       const cell = sheet.getCell(address);
       const visibleFraction = digits.slice(-places).replace(/0+$/, '');
-      cell.numFmt = trim ? '#,##0' + (visibleFraction ? '.' + '0'.repeat(visibleFraction.length) : '') : places === 5 ? '#,##0.00000' : '#,##0.00';
+      cell.numFmt = (withCurrency ? currencyFormat : '') + (trim ? '#,##0' + (visibleFraction ? '.' + '0'.repeat(visibleFraction.length) : '') : places === 5 ? '#,##0.00000' : '#,##0.00');
       const significantDigits = (whole + fraction).replace(/^0+/, '').replace(/0+$/, '').length;
       if (significantDigits <= 15) cell.value = Number(text);
       else if (units.toString().length <= 15) cell.value = Number(canonical);
-      else cell.value = (negative && units ? '-' : '') + digits.slice(0, -places).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (trim ? visibleFraction ? '.' + visibleFraction : '' : '.' + digits.slice(-places));
+      else cell.value = (withCurrency && currency ? currency + ' ' : '') + (negative && units ? '-' : '') + digits.slice(0, -places).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (trim ? visibleFraction ? '.' + visibleFraction : '' : '.' + digits.slice(-places));
       cell.alignment = { ...cell.alignment, horizontal: 'right', wrapText: false, shrinkToFit: true };
     }
   }

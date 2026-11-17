@@ -86,13 +86,14 @@ test('Excel endpoint returns a styled data-only workbook using frozen invoice va
   assert.equal(sheet.getCell('A25').numFmt, '#,##0');
   assert.equal(sheet.getCell('H11').value, 'PCS');
   assert.equal(sheet.getCell('T11').value, 0.115304, 'Retain the six-place saved value under the five-place display format.');
-  assert.equal(sheet.getCell('T11').numFmt, '#,##0.00000');
+  assert.equal(sheet.getCell('T11').numFmt, '"$" #,##0.00000');
   assert.equal(sheet.getCell('W11').value, 10.004434, 'Print the saved line gross, not tax-inclusive amount or quantity times price.');
   assert.equal(sheet.getCell('W11').numFmt, '#,##0.00');
   for (const [address, value] of [['M29', 1356.444434], ['M30', 0], ['M33', 0], ['M35', 123.555566], ['Y31', 0], ['Y36', 17], ['Y41', 123.555566], ['Y43', 1480]]) assert.equal(sheet.getCell(address).value, value, address);
   for (const address of ['Y29', 'Y34', 'Y39', 'E47', 'E49']) assert.equal(sheet.getCell(address).value, null, address);
-  assert.equal(sheet.getCell('X43').value, '$');
-  assert.equal(sheet.getCell('Q11').value, '$');
+  assert.equal(sheet.getCell('Y43').numFmt, '"$" #,##0.00');
+  assert.equal(sheet.getCell('X43').value, null);
+  assert.equal(sheet.getCell('Q11').value, null);
   assert.equal(sheet.getColumn('C').hidden, true);
   assert.equal(sheet.model.merges.length, 116);
   assert.equal(sheet.pageSetup.paperSize, 9);
@@ -177,10 +178,38 @@ test('long headers, UOP, descriptions and remarks continue without losing text o
 test('Excel export keeps large five-place prices as exact text and retains safe legacy buyer snapshots', async t => {
   const api = await fixture(t, { invoice: { billToCustomerId: null, billToName: null, billToAddress: null, buyerTin: null, shipToName: null, vatClass: null }, items: [{ ...baseItem, convertedUnitPrice: '999999999999.123455' }] });
   const { workbook } = await api.download(); const sheet = workbook.worksheets[0];
-  assert.equal(sheet.getCell('T11').value, '999,999,999,999.12346');
+  assert.equal(sheet.getCell('T11').value, '$ 999,999,999,999.12346');
   assert.equal(sheet.getCell('G2').value, baseInvoice.customerName);
   assert.equal(sheet.getCell('C5').value, baseInvoice.customerAddress);
   for (const address of ['X8', 'G8', 'M29', 'M30', 'M33']) assert.equal(sheet.getCell(address).value, null);
+});
+
+test('currency stays beside native unit-price and grand-total values for USD, PHP, bare codes and unknown currencies', async t => {
+  for (const [currency, prefix] of [['USD', '"$" '], ['PHP', '"₱" '], ['LOCAL', '"LOCAL" '], [null, ''], ['R"\\;', '"R\\"\\\\;" ']]) {
+    const api = await fixture(t, { invoice: { currency } });
+    const { workbook, buffer } = await api.download(); const sheet = workbook.worksheets[0];
+    assert.equal(sheet.getCell('T11').value, 0.115304);
+    assert.equal(sheet.getCell('Y43').value, 1480);
+    if (currency !== 'R"\\;') {
+      assert.equal(sheet.getCell('T11').numFmt, prefix + '#,##0.00000');
+      assert.equal(sheet.getCell('Y43').numFmt, prefix + '#,##0.00');
+    }
+    // ExcelJS strips backslash escapes while reading; verify the actual native format XML.
+    const zip = await JSZip.loadAsync(buffer);
+    const formats = [...(await zip.file('xl/styles.xml').async('string')).matchAll(/formatCode="([^"]*)"/g)].map(match => match[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&'));
+    if (prefix) {
+      assert.ok(formats.includes(prefix + '#,##0.00000'));
+      assert.ok(formats.includes(prefix + '#,##0.00'));
+    }
+    assert.equal(sheet.getCell('Q11').value, null);
+    assert.equal(sheet.getCell('X43').value, null);
+    assert.equal(sheet.getCell('T11').alignment.horizontal, 'right');
+    assert.equal(sheet.getCell('Y43').alignment.horizontal, 'right');
+    assert.equal(sheet.model.merges.length, 116);
+  }
+  const blanks = await fixture(t, { invoice: { total: null }, items: [{ ...baseItem, convertedUnitPrice: null, unitPrice: null }] });
+  const { workbook } = await blanks.download(); const sheet = workbook.worksheets[0];
+  for (const address of ['Q11', 'T11', 'X43', 'Y43']) assert.equal(sheet.getCell(address).value, null, 'Unknown values must stay blank: ' + address);
 });
 
 test('invalid IDs, missing invoices, unsupported methods and foreign system users produce no workbook or business writes', async t => {

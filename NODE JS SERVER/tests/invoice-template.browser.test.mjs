@@ -112,11 +112,9 @@ for (const count of [1, 14, 15, 100]) {
     await expect(summary(dialog)).toHaveCount(1);
     await expect(summary(pages(dialog).last())).toHaveCount(1);
     for (let index = 0; index < expectedPages - 1; index++) await expect(summary(pages(dialog).nth(index))).toHaveCount(0);
-    for (let index = 0; index < expectedPages; index++) {
-      await expect(field(pages(dialog).nth(index), 'invoiceNumber')).toHaveText(record.number);
-      await expect(field(pages(dialog).nth(index), 'pageNumber')).toContainText(new RegExp('\\b' + (index + 1) + '\\b'));
-      await expect(field(pages(dialog).nth(index), 'pageNumber')).toContainText(new RegExp('\\b' + expectedPages + '\\b'));
-    }
+    await expect(dialog.locator('.invoice-data-footer')).toHaveCount(0);
+    await expect(dialog.locator('[data-invoice-field="invoiceNumber"], [data-invoice-field="pageNumber"]')).toHaveCount(0);
+    for (let index = 0; index < expectedPages; index++) await expect(pages(dialog).nth(index).locator('.invoice-form-number')).toContainText(record.number);
     const chrome = dialog.locator('[data-template-chrome]');
     assert.ok(await chrome.count() >= expectedPages, 'Every preview sheet must show the complete preprinted form.');
     await expect(chrome.first()).toBeVisible();
@@ -137,10 +135,25 @@ for (const count of [1, 14, 15, 100]) {
       await expect(second.locator('[data-invoice-column="unitPrice"] > span').last()).toHaveText('0.11531');
       await expect(second.locator('[data-invoice-column="grossAmount"]')).toHaveText('10.01');
     }
+    await dialog.getByRole('combobox', { name: 'Invoice zoom', exact: true }).selectOption({ label: '100%' });
+    const priceCurrency = first.locator('[data-invoice-column="unitPrice"] > span').first();
+    const priceValue = first.locator('[data-invoice-column="unitPrice"] > span').last();
+    const totalCurrency = summary(dialog).locator('.invoice-total-currency');
+    const totalValue = field(summary(dialog), 'totalAmountDue');
+    for (const [label, currency, amount] of [['Unit price', priceCurrency, priceValue], ['Grand total', totalCurrency, totalValue]]) {
+      const textBox = element => { const range = document.createRange(); range.selectNodeContents(element); const box = range.getBoundingClientRect(); return { x: box.x, width: box.width }; };
+      const left = await currency.evaluate(textBox), right = await amount.evaluate(textBox);
+      const gap = right.x - left.x - left.width;
+      assert.ok(gap >= -0.5 && gap <= 4, `${label} currency must sit next to its amount at 100% zoom, within about 1 mm; observed gap ${gap}px.`);
+    }
     const last = dialog.locator(`[data-invoice-item="${count - 1}"]`);
     await expect(last.locator('[data-invoice-column="description"]')).toContainText(record.items.at(-1).sku);
     await last.scrollIntoViewIfNeeded();
     await browser.screenshot(`invoice-template-${count}-screen.png`);
+    if (count === 1) {
+      await totalValue.scrollIntoViewIfNeeded();
+      await browser.screenshot('invoice-template-grand-total-currency-100.png');
+    }
     await page.emulateMedia({ media: 'print' });
     for (let index = 0; index < await chrome.count(); index++) await expect(chrome.nth(index)).toBeHidden();
     await expect(first.locator('[data-invoice-column="unitPrice"]')).toBeVisible();
