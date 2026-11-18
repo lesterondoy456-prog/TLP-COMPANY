@@ -7,12 +7,13 @@ import test from 'node:test';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const backend = path.join(workspace, 'NODE JS SERVER');
-const systems = { SalesSystem: 5189, WarehouseSystem: 5190, PurchasingSystem: 5191, ConfigurationSystem: 5192 };
+const systems = { SalesSystem: 5189, WarehouseSystem: 5190, PurchasingSystem: 5191, ConfigurationSystem: 5192, ITTicketSystem: 5193 };
 const sidebarPages = {
-  SalesSystem: ['Customer', 'Product', 'Inventory', 'SalesOrder', 'Invoice', 'DeliveryReceipt', 'ShippingInvoice', 'SalesUserLogin'],
-  PurchasingSystem: ['PRMonitoring', 'POMonitoring', 'Supplier', 'Supplies', 'ReceivingReceipt', 'PurchasingUserLogin'],
-  WarehouseSystem: ['SuppliesStock', 'WarehouseUserLogin'],
-  ConfigurationSystem: ['ATC', 'AuditTrail', 'Bank', 'Country', 'Currency', 'CustomerCategory', 'PaymentTerm', 'ProductCategory', 'SuppliesCategory', 'UnitOfProduct', 'VAT', 'Warehouse', 'WarehouseLocation', 'ConfigurationUserLogin'],
+  SalesSystem: ['Customer', 'Product', 'Inventory', 'SalesOrder', 'Invoice', 'DeliveryReceipt', 'ShippingInvoice', 'HelpDesk', 'SalesUserLogin'],
+  PurchasingSystem: ['PRMonitoring', 'POMonitoring', 'Supplier', 'Supplies', 'ReceivingReceipt', 'HelpDesk', 'PurchasingUserLogin'],
+  WarehouseSystem: ['SuppliesStock', 'HelpDesk', 'WarehouseUserLogin'],
+  ITTicketSystem: ['HelpDesk', 'ITTUserLogin'],
+  ConfigurationSystem: ['ATC', 'AuditTrail', 'Bank', 'Country', 'Currency', 'CustomerCategory', 'PaymentTerm', 'ProductCategory', 'SuppliesCategory', 'UnitOfProduct', 'VAT', 'Warehouse', 'WarehouseLocation', 'Machine', 'ConfigurationUserLogin'],
 };
 const { parse } = createRequire(path.join(workspace, 'SalesSystem', 'package.json'))('@babel/parser');
 
@@ -132,14 +133,14 @@ for (const [project, port] of Object.entries(systems)) {
 test('frontend containers use their own Vite ports and the shared API proxy target without Nginx', async () => {
   const compose = await readFile(path.join(backend, 'compose.yaml'), 'utf8');
   assert.doesNotMatch(compose, /nginx/i);
-  assert.equal([...compose.matchAll(/API_PROXY_TARGET:\s*["']?http:\/\/nodejs-server:5188/g)].length, 4);
+  assert.equal([...compose.matchAll(/API_PROXY_TARGET:\s*["']?http:\/\/nodejs-server:5188/g)].length, 5);
   for (const port of Object.values(systems)) assert.match(compose, new RegExp(':' + port + '["\']?\\s*$', 'm'));
 });
 
-test('CommonJS Express entry mounts shared login before four business routers', async () => {
+test('CommonJS Express entry mounts shared login before five business routers', async () => {
   await assert.rejects(access(path.join(backend, 'Api', 'ClientApi.js')), error => error.code === 'ENOENT');
   await assert.rejects(access(path.join(backend, 'Api', 'router.js')), error => error.code === 'ENOENT');
-  assert.deepEqual((await readdir(path.join(backend, 'Api'))).filter(filename => filename.endsWith('.js')).sort(), ['ConfigurationApi.js', 'LoginApiSystem.js', 'PurchasingApi.js', 'SalesApi.js', 'WarehouseApi.js']);
+  assert.deepEqual((await readdir(path.join(backend, 'Api'))).filter(filename => filename.endsWith('.js')).sort(), ['ConfigurationApi.js', 'ITTicketApi.js', 'LoginApiSystem.js', 'PurchasingApi.js', 'SalesApi.js', 'WarehouseApi.js']);
   const server = await readFile(path.join(backend, 'server.js'), 'utf8');
   assert.match(server, /require\(['"]express['"]\)/);
   assert.match(server, /const\s+app\s*=\s*express\(\)/);
@@ -147,7 +148,7 @@ test('CommonJS Express entry mounts shared login before four business routers', 
   assert.equal(backendPackage.type, 'commonjs');
   assert.match(server, /app\.use\(['"]\/api['"],\s*require\(['"]\.\/Api\/LoginApiSystem(?:\.js)?['"]\)\)/);
   const loginPosition = server.indexOf('./Api/LoginApiSystem');
-  for (const filename of ['LoginApiSystem', 'SalesApi', 'PurchasingApi', 'ConfigurationApi', 'WarehouseApi']) {
+  for (const filename of ['LoginApiSystem', 'SalesApi', 'PurchasingApi', 'ConfigurationApi', 'WarehouseApi', 'ITTicketApi']) {
     const api = await readFile(path.join(backend, 'Api', filename + '.js'), 'utf8');
     assertRouteCallbacksOnly(api, filename);
     const shared = filename === 'LoginApiSystem';
@@ -167,7 +168,7 @@ test('CommonJS Express entry mounts shared login before four business routers', 
     for (const [, specifier] of api.matchAll(/\brequire\(['"]([^'"]+)['"]\)/g)) {
       assert.ok(specifier.startsWith('node:') || specifier === 'express' || specifier === '../db' || filename === 'SalesApi' && specifier === 'exceljs', `${filename} must not depend on another API or backend helper: ${specifier}`);
     }
-    for (const method of filename === 'WarehouseApi' ? ['get'] : ['get', 'post', 'put']) assert.ok(api.includes('router.' + method + '('), `${filename} must explicitly register ${method.toUpperCase()} endpoints.`);
+    for (const method of filename === 'WarehouseApi' ? ['get'] : filename === 'ITTicketApi' ? ['get', 'post', 'patch'] : ['get', 'post', 'put']) assert.ok(api.includes('router.' + method + '('), `${filename} must explicitly register ${method.toUpperCase()} endpoints.`);
     assert.doesNotMatch(api, /router\.(?:get|post|put|delete|use|all)\(['"]\/api\//);
   }
   assert.doesNotMatch(server, /readFile|frontendDirectory|\/dist\b|Api\/router\.js/);

@@ -18,8 +18,10 @@ import UnitOfProduct from './pages/UnitOfProduct/UnitOfProduct.jsx';
 import VAT from './pages/VAT/VAT.jsx';
 import Warehouse from './pages/Warehouse/Warehouse.jsx';
 import WarehouseLocation from './pages/WarehouseLocation/WarehouseLocation.jsx';
+import Machine from './pages/Machine/Machine.jsx';
 import ConfigurationUserLogin from './pages/ConfigurationUserLogin/ConfigurationUserLogin.jsx';
 import Profile from './pages/Profile/Profile.jsx';
+import HelpDesk from './pages/HelpDesk/HelpDesk.jsx';
 
 const tabs = [
   { id: 'config-atc', title: 'ATC', icon: 'grid' },
@@ -35,8 +37,10 @@ const tabs = [
   { id: 'config-vat-codes', title: 'VAT', icon: 'grid' },
   { id: 'config-warehouses', title: 'Warehouse', icon: 'grid' },
   { id: 'config-locations', title: 'Warehouse Location', icon: 'grid' },
+  { id: 'config-machines', title: 'Machines', icon: 'grid' },
+  { id: 'helpdesk', title: 'Help Desk', icon: 'bell' },
 ];
-const pages = { 'config-atc': ATC, 'config-audit-trail': AuditTrail, 'config-banks': Bank, 'config-countries': Country, 'config-currencies': Currency, 'config-customer-categories': CustomerCategory, 'config-payment-terms': PaymentTerm, 'config-product-categories': ProductCategory, 'config-supplies-categories': SuppliesCategory, 'config-units': UnitOfProduct, 'config-vat-codes': VAT, 'config-warehouses': Warehouse, 'config-locations': WarehouseLocation };
+const pages = { 'config-atc': ATC, 'config-audit-trail': AuditTrail, 'config-banks': Bank, 'config-countries': Country, 'config-currencies': Currency, 'config-customer-categories': CustomerCategory, 'config-payment-terms': PaymentTerm, 'config-product-categories': ProductCategory, 'config-supplies-categories': SuppliesCategory, 'config-units': UnitOfProduct, 'config-vat-codes': VAT, 'config-warehouses': Warehouse, 'config-locations': WarehouseLocation, 'config-machines': Machine, helpdesk: HelpDesk };
 
 export default function App() {
   const [user, setUser] = useState(null);

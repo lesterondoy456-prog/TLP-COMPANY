@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { writeFile } from 'node:fs/promises';
@@ -7,10 +7,10 @@ import { mockBrowser } from './helpers/mock-browser.mjs';
 import { loadApi } from './helpers/load-api.mjs';
 
 const projects = [
-  { project: 'SalesSystem', system: 'sales', first: 'Customer', next: 'Product', count: 8 },
-  { project: 'PurchasingSystem', system: 'purchasing', first: 'PR Monitoring', next: 'PO Monitoring', count: 6 },
-  { project: 'WarehouseSystem', system: 'warehouse', first: 'Supplies Stock', next: 'WarehouseUserLogin', count: 2 },
-  { project: 'ConfigurationSystem', system: 'configuration', first: 'ATC', next: 'Bank', count: 14 },
+  { project: 'SalesSystem', system: 'sales', first: 'Customer', next: 'Product', count: 9 },
+  { project: 'PurchasingSystem', system: 'purchasing', first: 'PR Monitoring', next: 'PO Monitoring', count: 7 },
+  { project: 'WarehouseSystem', system: 'warehouse', first: 'Supplies Stock', next: 'WarehouseUserLogin', count: 3 },
+  { project: 'ConfigurationSystem', system: 'configuration', first: 'ATC', next: 'Bank', count: 16 },
 ];
 
 async function settled(page) {

@@ -39,6 +39,15 @@ test('product approvals retain customer, approval date and remarks while ignorin
   invalid({ ...product(), customerApprovals: [{ customerId: 20 }, { customerId: 20 }] });
 });
 
+test('products allow at most one selected customer and preserve historical links on unrelated edits', () => {
+  invalid({ ...product(), customerApprovals: [{ customerId: 20 }, { customerId: 21 }] });
+  assert.deepEqual(validateProduct({ ...product(), customerApprovals: [] }).customerApprovals, []);
+  const legacy = { ...validateProduct(product()), customerApprovals: [{ customerId: 20, approvalDate: null, approvalRemarks: 'Historic first approval' }, { customerId: 21, approvalDate: null, approvalRemarks: 'Historic second approval' }] };
+  assert.deepEqual(validateProduct({ revision: '2' }, legacy).customerApprovals, legacy.customerApprovals);
+  assert.deepEqual(validateProduct({ customerApprovals: [{ customerId: 21 }] }, legacy).customerApprovals, [{ customerId: 21, approvalDate: null, approvalRemarks: null }]);
+  assert.deepEqual(validateProduct({ customerApprovals: [] }, legacy).customerApprovals, []);
+});
+
 test('partial product edits preserve child collections and stock, while explicit empty arrays clear only that collection', () => {
   const existing = validateProduct({ ...product(), stock: 5, processes: [{ name: 'Printing' }], offices: [{ name: 'TTI Laguna Philippines Inc.' }], inventorySetup: 'monthly' });
   const edited = validateProduct({ revision: '2' }, existing);

@@ -1,6 +1,6 @@
 const { readFile } = require('node:fs/promises');
 const { join } = require('node:path');
-const MIGRATION_FILES = ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql', 'sales-invoice-print.sql', 'invoice-stock-delivery.sql'];
+const MIGRATION_FILES = ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql', 'sales-invoice-print.sql', 'invoice-stock-delivery.sql', 'machines.sql', 'it-tickets.sql'];
 
 async function runMigrations({ database, createPool, sql, onPoolError }) {
   if (typeof database !== 'string' || !database || database.length > 128 || /[;\x00-\x1f]/.test(database)) {

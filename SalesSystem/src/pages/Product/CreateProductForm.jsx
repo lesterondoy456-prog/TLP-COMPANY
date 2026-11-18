@@ -34,7 +34,7 @@ const NUMBER_FIELDS = {
   divisor: { label: 'Divisor', places: 6 },
   weight: { label: 'Weight', places: 6 },
 };
-const ROW_LIMITS = { processes: 100, customerApprovals: 100, linkedSupplies: 200 };
+const ROW_LIMITS = { processes: 100, customerApprovals: 1, linkedSupplies: 200 };
 const MONTHLY_SCHEDULE = [
   { sched: 'Apr-30', month: 'April' },
   { sched: 'Aug-31', month: 'August' },
@@ -75,6 +75,7 @@ function initialValues(record) {
 export default function CreateProductForm({ record, onClose, onSaved }) {
   const [form, setForm] = useState(() => initialValues(record));
   const [tab, setTab] = useState('basic');
+  const [preserveLegacyCustomers, setPreserveLegacyCustomers] = useState((record?.customerApprovals?.length || 0) > 1);
   const [options, setOptions] = useState({});
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [lookupError, setLookupError] = useState('');
@@ -106,11 +107,17 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
   const categories = (options.categories || []).filter(row => row.isActive !== false);
   const supplies = (options.supplies || []).filter(row => row.isActive !== false);
   const headers = (options.headers || []).filter(row => Number(row.id) !== Number(record?.id));
+  const productCustomer = form.customerApprovals[0] || { customerId: '', approvalDate: '', approvalRemarks: '' };
   const inventorySchedule = form.inventorySetup === 'monthly' ? MONTHLY_SCHEDULE : form.inventorySetup === 'quarterly' ? QUARTERLY_SCHEDULE : [];
 
   function set(key, value) {
     setForm(current => ({ ...current, [key]: value }));
     clearError(key);
+  }
+
+  function chooseProductCustomer(value) {
+    setForm(current => ({ ...current, customerApprovals: value ? [{ customerId: value, approvalDate: String(current.customerApprovals[0]?.customerId) === String(value) ? current.customerApprovals[0]?.approvalDate || '' : '', approvalRemarks: String(current.customerApprovals[0]?.customerId) === String(value) ? current.customerApprovals[0]?.approvalRemarks || '' : '' }] : [] }));
+    setErrors(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith('customerApprovals'))));
   }
 
   function clearError(key) {
@@ -202,7 +209,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
     event.preventDefault();
     if (busy) return;
     setError('');
-    const invalid = validateProductForm(form);
+    const invalid = validateProductForm(preserveLegacyCustomers ? { ...form, customerApprovals: [] } : form);
     setErrors(invalid);
     const first = Object.keys(invalid)[0];
     if (first) {
@@ -217,7 +224,7 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
     body.vatMode = form.vatMode || null;
     body.productHeaderId = form.productHeaderId === '' ? null : Number(form.productHeaderId);
     body.processes = form.processes.map(row => ({ name: row.name.trim() }));
-    body.customerApprovals = form.customerApprovals.map(row => ({
+    if (!preserveLegacyCustomers) body.customerApprovals = form.customerApprovals.map(row => ({
         customerId: Number(row.customerId),
         approvalDate: row.approvalDate || null,
         approvalRemarks: (row.approvalRemarks || '').trim() || null,
@@ -287,15 +294,19 @@ export default function CreateProductForm({ record, onClose, onSaved }) {
             </div>
           </div>
           <div role="tabpanel" id={formId + '-panel-customer'} aria-labelledby={formId + '-tab-customer'} hidden={tab !== 'customer'}>
-            <div className="product-tab-heading"><div><h3>Customer</h3><p>Record customer approval details.</p></div><button type="button" className="button secondary small" disabled={form.customerApprovals.length >= ROW_LIMITS.customerApprovals} onClick={() => set('customerApprovals', [...form.customerApprovals, { customerId: '', approvalDate: '', approvalRemarks: '' }])}>Add customer</button></div>
-            <div className="product-row-cards">{form.customerApprovals.map((row, index) => <section className="product-section" key={index}>
-              <div className="product-section-heading"><h3>Customer {index + 1}</h3><button type="button" className="icon-button danger-text" aria-label={'Remove customer approval ' + (index + 1)} onClick={() => removeRow('customerApprovals', index)}><Icon name="x" size={16} /></button></div>
+            <div className="product-tab-heading"><div><h3>Customer</h3><p>Select one customer for this product, or leave it unassigned.</p></div></div>
+            {preserveLegacyCustomers ? <div className="product-section">
+              <p className="notice">This product has multiple historical customer links. They are preserved when saving other product details. Choose Change customer to replace them with one customer or leave the product unassigned.</p>
+              {(record.customerApprovals || []).map((row, index) => <div className="product-related-block" key={row.customerId ?? index}><strong>{row.customerName || (options.customers || []).find(customer => String(customer.id) === String(row.customerId))?.name || 'Customer ' + row.customerId}</strong><span>Approval date · {dateInput(row.approvalDate) || '—'}</span><p>{row.approvalRemarks || '—'}</p></div>)}
+              <button type="button" className="button secondary small" onClick={() => { setPreserveLegacyCustomers(false); set('customerApprovals', []); }}>Change customer</button>
+            </div> : <section className="product-section">
               <div className="product-fields">
-                <label className="field product-span-2"><span>Customer Name</span><select {...controlProps('customerApprovals.' + index + '.customerId', 'Customer Name ' + (index + 1))} value={row.customerId} onChange={event => updateRow('customerApprovals', index, 'customerId', event.target.value)}><option value="">Select a customer</option>{(options.customers || []).map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select>{fieldError('customerApprovals.' + index + '.customerId')}</label>
-                <label className="field"><span>Approval Date</span><input {...controlProps('customerApprovals.' + index + '.approvalDate', 'Approval Date ' + (index + 1))} type="date" value={row.approvalDate || ''} onChange={event => updateRow('customerApprovals', index, 'approvalDate', event.target.value)} />{fieldError('customerApprovals.' + index + '.approvalDate')}</label>
-                <label className="field"><span>Approval Remarks</span><textarea {...controlProps('customerApprovals.' + index + '.approvalRemarks', 'Approval Remarks ' + (index + 1))} rows={3} maxLength={2000} value={row.approvalRemarks || ''} onChange={event => updateRow('customerApprovals', index, 'approvalRemarks', event.target.value)} />{fieldError('customerApprovals.' + index + '.approvalRemarks')}</label>
+                <label className="field product-span-2"><span>Customer Name</span><select {...controlProps('customerApprovals.0.customerId', 'Customer Name 1')} value={productCustomer.customerId} onChange={event => chooseProductCustomer(event.target.value)}><option value="">None</option>{productCustomer.customerId && !(options.customers || []).some(customer => String(customer.id) === String(productCustomer.customerId)) && <option value={productCustomer.customerId}>{record?.customerApprovals?.[0]?.customerName || 'Saved customer'}</option>}{(options.customers || []).map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select>{fieldError('customerApprovals.0.customerId')}</label>
+                <label className="field"><span>Approval Date</span><input {...controlProps('customerApprovals.0.approvalDate', 'Approval Date 1')} disabled={busy || !productCustomer.customerId} type="date" value={productCustomer.approvalDate || ''} onChange={event => updateRow('customerApprovals', 0, 'approvalDate', event.target.value)} />{fieldError('customerApprovals.0.approvalDate')}</label>
+                <label className="field"><span>Approval Remarks</span><textarea {...controlProps('customerApprovals.0.approvalRemarks', 'Approval Remarks 1')} disabled={busy || !productCustomer.customerId} rows={3} maxLength={2000} value={productCustomer.approvalRemarks || ''} onChange={event => updateRow('customerApprovals', 0, 'approvalRemarks', event.target.value)} />{fieldError('customerApprovals.0.approvalRemarks')}</label>
               </div>
-            </section>)}{!form.customerApprovals.length && <div className="product-empty-panel">No customer approvals added.</div>}</div>
+              {(record?.customerApprovals?.length || 0) > 1 && <button type="button" className="button secondary small" onClick={() => { setPreserveLegacyCustomers(true); set('customerApprovals', initialValues(record).customerApprovals); }}>Keep existing customers</button>}
+            </section>}
           </div>
           <div role="tabpanel" id={formId + '-panel-inventory'} aria-labelledby={formId + '-tab-inventory'} hidden={tab !== 'inventory'}>
             <section className="product-section">

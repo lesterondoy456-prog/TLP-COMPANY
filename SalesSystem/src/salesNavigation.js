@@ -36,6 +36,11 @@ export const SALES_PAGES = [
     "icon": "shipping"
   },
   {
+    "id": "helpdesk",
+    "title": "Help Desk",
+    "icon": "bell"
+  },
+  {
     "id": "users",
     "title": "SalesUserLogin",
     "icon": "shield"

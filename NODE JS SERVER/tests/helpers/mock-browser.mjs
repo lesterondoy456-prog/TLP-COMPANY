@@ -9,8 +9,8 @@ import { chromium } from '@playwright/test';
 
 // Static assets and in-memory routes only: no environment, backend, or SQL imports.
 const workspace = fileURLToPath(new URL('../../../', import.meta.url));
-const projects = new Set(['SalesSystem', 'PurchasingSystem', 'WarehouseSystem', 'ConfigurationSystem']);
-const systemNames = { SalesSystem: 'sales', PurchasingSystem: 'purchasing', WarehouseSystem: 'warehouse', ConfigurationSystem: 'configuration' };
+const projects = new Set(['SalesSystem', 'PurchasingSystem', 'WarehouseSystem', 'ConfigurationSystem', 'ITTicketSystem']);
+const systemNames = { SalesSystem: 'sales', PurchasingSystem: 'purchasing', WarehouseSystem: 'warehouse', ConfigurationSystem: 'configuration', ITTicketSystem: 'itticket' };
 const screenshots = new URL('../../.qa/screenshots/', import.meta.url);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 

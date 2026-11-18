@@ -1,4 +1,5 @@
 export const CONFIGURATION_FIELD_LENGTHS = {
+  "machines": { "code": 40, "name": 150, "description": 500 },
   "atc": {
     "code": 40,
     "description": 500,

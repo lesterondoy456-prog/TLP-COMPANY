@@ -74,6 +74,18 @@ services:
     depends_on:
       nodejs-server:
         condition: service_healthy
+  it-ticket-system:
+    image: tti-company-it-ticket-system:local
+    build:
+      context: ../ITTicketSystem
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:5193:5193"
+    environment:
+      API_PROXY_TARGET: http://nodejs-server:5188
+    depends_on:
+      nodejs-server:
+        condition: service_healthy
   configuration-tunnel:
     image: cloudflare/cloudflared:2026.10.6
     restart: unless-stopped

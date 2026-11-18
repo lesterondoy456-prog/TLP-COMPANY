@@ -6,7 +6,7 @@ import { invokeRoute, loadRouterWithDatabase, loadServer } from './helpers/load-
 const actor = (role = 'admin', system = 'sales', id = 1) => ({ id, system, role, isActive: true, name: 'Mock Actor', username: 'mock_actor', cpnumber: '', email: '', photo: '' });
 const body = role => ({ name: 'Mock Target', username: 'mock_target', cpnumber: '', email: 'mock@example.test', photo: '', role, isActive: true, password: 'Mock-Password-12345' });
 const requestFor = (user, input = {}, id = 9) => ({ params: { system: user.system, id: String(id) }, testUser: user, body: input, is: type => type === 'application/json' });
-const tableFor = system => system[0].toUpperCase() + system.slice(1) + 'UserLogin';
+const tableFor = system => system === 'itticket' ? 'ITTicketUserLogin' : system[0].toUpperCase() + system.slice(1) + 'UserLogin';
 
 // Actual shared router callbacks run against predetermined responses. Any query
 // beyond the planned authorization/transaction boundary fails immediately.
@@ -280,5 +280,21 @@ test('unknown and case-variant namespaces are rejected before real business rout
     const response = await fetch(origin + path);
     assert.equal(response.status, 404, path);
     assert.ok((await response.json()).message);
+  }
+});
+
+test('separate IT administrators create IT staff while IT staff cannot manage accounts', async () => {
+  const admin = actor('admin', 'itticket');
+  const stage = stagedDatabase(createPlan(admin, 'it'));
+  const created = await invokeRoute(loadRouterWithDatabase('login', stage.database), 'POST', '/:system/users', requestFor(admin, body('it')));
+  assert.equal(created.body.record.system, 'itticket');
+  assert.equal(created.body.record.role, 'it');
+  stage.done();
+  const worker = actor('it', 'itticket');
+  for (const [method, path] of [['GET', '/:system/users'], ['POST', '/:system/users'], ['PUT', '/:system/users/:id']]) {
+    const denied = stagedDatabase();
+    await assert.rejects(invokeRoute(loadRouterWithDatabase('login', denied.database), method, path, requestFor(worker, body('admin'))), error => error.status === 403);
+    assert.equal(denied.calls.length, 0);
+    assert.equal(denied.counters.transactions, 0);
   }
 });

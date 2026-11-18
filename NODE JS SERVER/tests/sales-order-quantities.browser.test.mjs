@@ -3,11 +3,12 @@ import test from 'node:test';
 import { expect } from '@playwright/test';
 import { mockBrowser } from './helpers/mock-browser.mjs';
 
-const actor = { id: 1, system: 'sales', name: 'Order Quantity Admin', username: 'mock_quantity', role: 'admin', isActive: true };
-const customer = { id: 20, name: 'Mock Quantity Customer', salesName: 'Mock Billing Name', address: 'Main office, Laguna', salesAddressType: 'office', paymentTerm: '30 DAYS', vatCode: 'VZ', vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, isActive: true };
+const actor = { id: 1, system: 'sales', name: 'Order Edit Admin', username: 'mock_order_edit', role: 'admin', isActive: true };
+const customer = { id: 20, name: 'Mock Order Customer', salesName: 'Mock Billing Name', address: 'Main office, Laguna', salesAddressType: 'office', paymentTerm: '30 DAYS', vatCode: 'VZ', vatInclusive: false, decimalInPrice: 6, decimalInTotalPrice: 2, isActive: true };
 const products = [
-  { id: 30, sku: 'QTY-PCS-030', name: 'Precision component', description: 'Frozen component description', unit: 'PCS', currency: 'USD', price: '10.000000', stock: '100.000', isActive: true },
-  { id: 31, sku: 'QTY-KG-031', name: 'Packaging material', description: 'Frozen material description', unit: 'KG', currency: 'USD', price: '2.000000', stock: '50.000', isActive: true },
+  { id: 30, sku: 'QTY-PCS-030', name: 'Precision component', description: 'Component description', unit: 'PCS', currency: 'USD', price: '10.000000', stock: '100.000', isActive: true },
+  { id: 31, sku: 'QTY-KG-031', name: 'Packaging material', description: 'Material description', unit: 'KG', currency: 'USD', price: '2.000000', stock: '50.000', isActive: true },
+  { id: 32, sku: 'QTY-PCS-032', name: 'Additional cable', description: 'Additional cable description', unit: 'PCS', currency: 'USD', price: '5.000000', stock: '80.000', isActive: true },
 ];
 const options = {
   currencies: [{ id: 1, code: 'USD', description: 'US Dollar', isActive: true }],
@@ -16,14 +17,17 @@ const options = {
   countries: [], shipments: [{ value: 'air', label: 'By Air' }],
 };
 
-function orderFixture(invoiced = true, delivered = true) {
-  const items = products.map((product, index) => ({
+function orderFixture({ invoiced = true, allLinked = false, delivered = false } = {}) {
+  const items = products.slice(0, 2).map((product, index) => ({
     id: 101 + index, orderId: 11, productId: product.id, productName: product.name, sku: product.sku, description: product.description,
     unit: product.unit, currency: 'USD', unitPrice: product.price, convertedUnitPrice: product.price,
-    quantity: index ? '8.500' : '10.000', invoicedQuantity: invoiced ? index ? '1.250' : '6.125' : '0.000',
-    deliveredQuantity: delivered ? index ? '2.375' : '4.000' : '0.000', remainingDeliveryQuantity: delivered ? index ? '6.125' : '6.000' : index ? '8.500' : '10.000',
+    refNumber: 'REF-' + (101 + index), quotationNumber: 'QT-' + (101 + index), deliveryDate: '2026-12-01',
+    quantity: index ? '8.500' : '10.000', hasInvoice: invoiced && (!index || allLinked),
+    invoicedQuantity: invoiced && (!index || allLinked) ? index ? '1.250' : '6.125' : '0.000',
+    deliveredQuantity: delivered && !index ? '4.000' : '0.000',
+    remainingDeliveryQuantity: delivered && !index ? '6.000' : index ? '8.500' : '10.000',
     grossAmount: index ? '17.000000' : '100.000000', netAmount: index ? '17.000000' : '100.000000', amount: index ? '17.000000' : '100.000000',
-    lineTotal: index ? '17.000000' : '100.000000', discountAmount: '0.000000', vatAmount: '0.000000', discountRate: null, deliveryDate: null,
+    lineTotal: index ? '17.000000' : '100.000000', lineDiscountAmount: '0.000000', headerDiscountAmount: '0.000000', discountAmount: '0.000000', vatAmount: '0.000000', discountRate: null,
   }));
   return {
     id: 11, number: 'SO-QTY-MOCK', customerId: 20, customerName: customer.name, customerAddress: customer.address,
@@ -58,177 +62,265 @@ async function openOrders(app) {
   await expect(app.page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
   await app.page.locator('.sidebar').getByRole('button', { name: 'Sales Order', exact: true }).click();
   await expect(app.page.getByRole('heading', { name: 'Sales Order', exact: true })).toBeVisible();
+  await expect(app.page.locator('.sales-order-monitor').getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
 }
 
-function firstOrderRow(page) { return page.locator('.sales-order-monitor .records-table > tbody > tr').filter({ hasText: products[0].sku }); }
+function orderRow(page, index = 0) { return page.locator('.sales-order-monitor .records-table > tbody > tr').filter({ hasText: products[index].sku }); }
+const editDialog = page => page.getByRole('dialog', { name: 'Edit SO-QTY-MOCK', exact: true });
+const writes = app => app.apiRequests.filter(call => !['GET', 'HEAD', 'OPTIONS'].includes(call.method));
 
-test('An uninvoiced and undelivered Sales Order retains the complete editable form and saves a full PUT', { timeout: 90000 }, async t => {
-  let current = orderFixture(false, false);
-  const writes = [];
+test('Edit from a searched later Sales Order line loads every item in the full editable form and saves an uninvoiced PUT', { timeout: 90000 }, async t => {
+  let current = orderFixture({ invoiced: false });
+  const savedBodies = [];
   const app = await orderApp(t, {
     getOrder: () => current,
     onWrite: ({ method, pathname, body }) => {
-      assert.equal(method, 'PUT'); assert.equal(pathname, '/api/sales-orders/11'); writes.push(body);
+      assert.equal(method, 'PUT'); assert.equal(pathname, '/api/sales-orders/11'); savedBodies.push(body);
       current = { ...current, ...body, items: body.items.map((item, index) => ({ ...current.items[index], ...item })) };
       return { json: { record: current } };
     },
   });
   const { page } = app;
   await openOrders(app);
-  await expect(firstOrderRow(page).getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
-  await firstOrderRow(page).getByRole('button', { name: 'Edit', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Edit SO-QTY-MOCK', exact: true });
+  const search = page.getByRole('searchbox', { name: 'Search sales order items', exact: true });
+  await search.fill(products[1].sku);
+  await expect(orderRow(page)).toHaveCount(0);
+  await expect(orderRow(page, 1)).toHaveCount(1);
+  await orderRow(page, 1).getByRole('button', { name: 'Edit', exact: true }).click();
+  const dialog = editDialog(page);
+  await expect(dialog.locator('.sales-order-items tbody tr')).toHaveCount(2);
+  await expect(dialog.getByLabel('Product 1', { exact: true })).toHaveValue('30');
+  await expect(dialog.getByLabel('Product 2', { exact: true })).toHaveValue('31');
   await expect(dialog.getByLabel('Customer *', { exact: true })).toBeEditable();
   await expect(dialog.getByLabel('Currency *', { exact: true })).toHaveValue('USD');
   await expect(dialog.getByLabel('Product 1', { exact: true })).toBeEditable();
-  await expect(dialog.getByLabel('Unit price 1', { exact: true })).toBeEditable();
+  await expect(dialog.getByLabel('Quantity 1', { exact: true })).toBeEditable();
+  await expect(dialog.getByLabel('Quantity 2', { exact: true })).toBeEditable();
   await dialog.getByLabel('Unit price 1', { exact: true }).fill('12.345600');
   await dialog.getByLabel('Quantity 1', { exact: true }).fill('4.125');
   await dialog.getByLabel('Notes', { exact: true }).fill('An uninvoiced order may still change its details.');
   await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  assert.equal(writes.length, 1);
-  assert.equal(writes[0].customerId, 20); assert.equal(writes[0].currency, 'USD');
-  assert.equal(writes[0].items[0].unitPrice, '12.345600'); assert.equal(writes[0].items[0].quantity, '4.125');
-  assert.equal(writes[0].notes, 'An uninvoiced order may still change its details.');
-  assert.ok(app.apiRequests.filter(call => call.method !== 'GET').every(call => call.method === 'PUT'));
+  assert.equal(savedBodies.length, 1);
+  assert.equal(savedBodies[0].customerId, 20); assert.equal(savedBodies[0].currency, 'USD');
+  assert.equal(savedBodies[0].items.length, 2);
+  assert.equal(savedBodies[0].items[0].unitPrice, '12.345600'); assert.equal(savedBodies[0].items[0].quantity, '4.125');
+  assert.equal(savedBodies[0].items[1].quantity, '8.500');
+  assert.equal(savedBodies[0].notes, 'An uninvoiced order may still change its details.');
+  assert.equal(app.apiRequests.filter(call => call.method === 'GET' && call.pathname === '/api/sales-orders/11').length, 1, 'Edit must load the complete order instead of editing only the clicked list row.');
+  assert.ok(writes(app).every(call => call.method === 'PUT'));
+  await search.fill('');
+  await expect(orderRow(page).getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+  await expect(orderRow(page).getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
   app.assertSafe();
 });
 
-test('An invoiced Sales Order exposes quantity-only edits, enforces invoice and delivery floors and preserves saved document snapshots', { timeout: 120000 }, async t => {
-  let current = orderFixture();
-  const documentItems = current.items.map((item, index) => ({ ...item, quantity: index ? '1.250' : '6.125', grossAmount: index ? '2.500000' : '61.250000', netAmount: index ? '2.500000' : '61.250000', amount: index ? '2.500000' : '61.250000', lineTotal: index ? '2.500000' : '61.250000' }));
-  const invoice = { ...structuredClone(current), id: 71, number: 'SI-QTY-SNAPSHOT', orderId: 11, orderNumber: current.number, invoiceDate: '2026-11-14', dueDate: '2026-12-14', total: '63.750000', grossAmount: '63.750000', netAmount: '63.750000', paidAmount: '0.000000', status: 'unpaid', items: documentItems };
-  const delivery = { id: 81, number: 'DR-QTY-SNAPSHOT', invoiceId: null, invoiceNumber: null, orderId: 11, orderNumber: current.number, customerName: current.customerName, deliveredTo: 'Legacy snapshot receiver company', deliveryDate: '2026-11-15', receivedBy: 'Snapshot Receiver', address: 'Snapshot receiving bay', paymentTerm: current.paymentTerm, preparedByName: actor.name, items: current.items.map(({ productId, productName, sku, description, unit }, index) => ({ productId, productName, sku, description, unit, quantity: index ? '2.375' : '4.000' })) };
+test('A mixed Sales Order keeps the complete form, locks its header and SI row, and edits only the no-SI row without changing saved documents', { timeout: 120000 }, async t => {
+  let current = orderFixture({ delivered: true });
+  const frozenLine = structuredClone(current.items[0]);
+  const invoiceItem = { ...structuredClone(frozenLine), quantity: '6.125', grossAmount: '61.250000', netAmount: '61.250000', amount: '61.250000', lineTotal: '61.250000' };
+  const invoice = { ...structuredClone(current), id: 71, number: 'SI-QTY-SNAPSHOT', orderId: 11, orderNumber: current.number, invoiceDate: '2026-11-14', dueDate: '2026-12-14', total: '61.250000', grossAmount: '61.250000', netAmount: '61.250000', paidAmount: '0.000000', status: 'unpaid', items: [invoiceItem] };
+  const delivery = { id: 81, number: 'DR-QTY-SNAPSHOT', orderId: 11, orderNumber: current.number, customerName: current.customerName, deliveredTo: 'Frozen receiver company', deliveryDate: '2026-11-15', receivedBy: 'Snapshot Receiver', address: 'Snapshot receiving bay', paymentTerm: current.paymentTerm, preparedByName: actor.name, items: [{ ...structuredClone(frozenLine), quantity: '4.000' }] };
   const shipping = { ...structuredClone(invoice), id: 91, number: 'SHI-QTY-SNAPSHOT', shippingDate: '2026-11-15', invoiceNumber: invoice.number, deliveryNumber: delivery.number, carrier: 'Snapshot carrier', trackingNumber: 'TRACK-SNAPSHOT' };
   const snapshots = JSON.stringify({ invoice, delivery, shipping });
-  const writes = [];
+  const savedBodies = [];
   const app = await orderApp(t, {
     getOrder: () => current, invoice, delivery, shipping,
     onWrite: ({ method, pathname, body }) => {
-      assert.equal(method, 'PATCH'); assert.equal(pathname, '/api/sales-orders/11/quantities'); writes.push(body);
-      current = { ...current, total: '66.000000', grossAmount: '66.000000', netAmount: '66.000000', items: current.items.map((item, index) => ({ ...item, quantity: body.items[index].quantity, remainingDeliveryQuantity: index ? '0.000' : '2.125' })) };
+      assert.equal(method, 'PATCH'); assert.equal(pathname, '/api/sales-orders/11/items'); savedBodies.push(body);
+      assert.deepEqual(Object.keys(body).sort(), ['items', 'removedItemIds']);
+      assert.deepEqual(body.removedItemIds, []);
+      assert.deepEqual(body.items.map(item => item.id), [102], 'The SI-linked line must not be submitted as an editable item.');
+      current = { ...current, items: current.items.map(item => item.id === 102 ? { ...item, ...body.items[0], remainingDeliveryQuantity: body.items[0].quantity } : item) };
       return { json: { record: current } };
     },
   });
   const { page } = app;
   await openOrders(app);
-  await expect(firstOrderRow(page).getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
-  await firstOrderRow(page).getByRole('button', { name: 'Edit', exact: true }).click();
-  let dialog = page.getByRole('dialog', { name: 'Update quantities · SO-QTY-MOCK', exact: true });
-  const first = dialog.getByLabel('Order quantity 1', { exact: true }), second = dialog.getByLabel('Order quantity 2', { exact: true });
-  await expect(dialog.locator('input')).toHaveCount(2);
-  await expect(dialog.locator('select, textarea')).toHaveCount(0);
-  await expect(first).toHaveAttribute('step', '0.001'); await expect(first).toHaveAttribute('min', '6.125');
-  await expect(second).toHaveAttribute('min', '2.375');
-  await expect(dialog).toContainText(customer.name); await expect(dialog).toContainText('30 DAYS'); await expect(dialog).toContainText(products[0].sku);
-  const save = dialog.getByRole('button', { name: 'Save quantities', exact: true });
-  for (const value of ['', '0', '-1', '1.0001', '6.124', '1000000.001']) {
-    await first.fill(value); await save.click(); await expect(first).toHaveAttribute('aria-invalid', 'true');
-    assert.equal(writes.length, 0, 'Invalid order quantities must be blocked before HTTP.');
+  await expect(orderRow(page).getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
+  await orderRow(page, 1).getByRole('button', { name: 'Edit', exact: true }).click();
+  let dialog = editDialog(page);
+  await expect(dialog.locator('.sales-order-header > section')).toHaveCount(3);
+  await expect(dialog.locator('.sales-order-items tbody tr')).toHaveCount(2);
+  for (const label of ['Customer *', 'Bill to *', 'Billing address', 'Order date *', 'Expected delivery date *', 'Currency *', 'Rate *', 'Payment term *', 'Shipment *', 'Country of origin', 'VAT code *', 'VAT pricing *', 'Discount type', 'Notes', 'Status *']) {
+    await expect(dialog.getByLabel(label, { exact: true })).not.toBeEditable();
   }
-  await first.fill('6.125'); await second.fill('2.374'); await save.click();
-  await expect(second).toHaveAttribute('aria-invalid', 'true');
-  await expect(dialog).toContainText('Quantity cannot be below the invoiced or delivered quantity.');
-  assert.equal(writes.length, 0);
-  await second.fill('2.375');
-  for (const width of [320, 375, 768, 1920]) {
-    await page.setViewportSize({ width, height: 900 });
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    await expect(first).toBeVisible(); await expect(second).toBeVisible(); await expect(save).toBeVisible();
-    if (width === 320) await app.screenshot('sales-order-quantity-edit-320.png');
-    if (width <= 600) {
-      await expect(dialog.locator('.order-quantity-details > div')).toHaveCount(6);
-      const geometry = await dialog.evaluate(element => {
-        const rect = target => { const box = target.getBoundingClientRect(); return { left: box.left, right: box.right, width: box.width }; };
-        const summary = element.querySelector('.order-quantity-details');
-        const rows = [...element.querySelectorAll('.order-quantity-table tbody tr')];
-        return {
-          summary: { ...rect(summary), display: getComputedStyle(summary).display, columns: getComputedStyle(summary).gridTemplateColumns, cells: [...summary.children].map(cell => ({ ...rect(cell), label: cell.querySelector('span').textContent })) },
-          viewport: rect(element.querySelector('.order-quantity-fields .table-scroll')),
-          rows: rows.map(row => ({ ...rect(row), display: getComputedStyle(row).display, columns: getComputedStyle(row).gridTemplateColumns, cells: [...row.children].map(cell => ({ ...rect(cell), display: getComputedStyle(cell).display, label: cell.dataset.label })) })),
-        };
-      });
-      assert.ok(geometry.summary.cells.every(cell => cell.left >= geometry.summary.left - 1 && cell.right <= geometry.summary.right + 1), 'All six summary fields stay inside their mobile card: ' + JSON.stringify(geometry));
-      assert.ok(geometry.rows.every(row => row.cells.length === 6));
-      assert.ok(geometry.rows.every(row => row.cells.every(cell => cell.left >= geometry.viewport.left - 1 && cell.right <= geometry.viewport.right + 1)), 'All six item fields stay inside their visible mobile card: ' + JSON.stringify(geometry));
-      await app.screenshot('sales-order-quantity-edit-' + width + '.png');
-    }
+  for (const prefix of ['Reference', 'Product', 'Quantity', 'Unit price', 'Discount rate', 'Delivery date', 'Quotation number']) {
+    await expect(dialog.getByLabel(prefix + ' 1', { exact: true })).not.toBeEditable();
+    await expect(dialog.getByLabel(prefix + ' 2', { exact: true })).toBeEditable();
   }
-  await save.click(); await expect(dialog).toHaveCount(0);
-  assert.deepEqual(writes, [{ items: [{ id: 101, quantity: '6.125' }, { id: 102, quantity: '2.375' }] }]);
-  await expect(firstOrderRow(page).locator('td').nth(9)).toHaveText('6.125PCS');
-  await expect(firstOrderRow(page).locator('td').nth(10)).toHaveText('2.125');
-  assert.equal(app.apiRequests.filter(call => call.pathname === '/api/sales-order-options').length, 0, 'Quantity-only editing uses saved details and does not load a full-order options form.');
+  await expect(dialog.getByLabel('Quantity 1', { exact: true })).toHaveValue('10.000');
+  await expect(dialog.getByRole('button', { name: 'Remove product 1', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Remove product 2', exact: true })).toBeEnabled();
+  await expect(dialog.locator('tr[data-invoice-locked="true"]')).toHaveCount(1);
+  await expect(dialog.locator('.sales-order-item-lock')).toHaveCount(0);
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 960 });
+    await dialog.locator('.sales-order-items-scroll').evaluate(element => { element.scrollLeft = 0; });
+    const productGeometry = await dialog.getByLabel('Product 1', { exact: true }).evaluate(select => {
+      const cell = select.closest('td').getBoundingClientRect();
+      const input = select.getBoundingClientRect();
+      return { inputLeft: input.left, inputRight: input.right, cellLeft: cell.left, cellRight: cell.right };
+    });
+    assert.ok(productGeometry.inputLeft >= productGeometry.cellLeft && productGeometry.inputRight <= productGeometry.cellRight + 1, 'Locked product controls must stay within their cell: ' + JSON.stringify(productGeometry));
+  }
 
-  for (const [tab, title, quantities] of [['Invoice', 'Invoice', ['6.125', '1.25']], ['Delivery Receipt', 'Delivery Receipt', ['4', '2.375']], ['Shipping Invoice', 'Shipping Invoice', ['6.125', '1.25']]]) {
+  await dialog.getByLabel('Quantity 2', { exact: true }).fill('4.125');
+  await dialog.getByLabel('Unit price 2', { exact: true }).fill('3.456789');
+  await dialog.getByLabel('Reference 2', { exact: true }).fill('REF-OPEN-UPDATED');
+  await dialog.getByLabel('Quotation number 2', { exact: true }).fill('QT-OPEN-UPDATED');
+  await dialog.getByLabel('Discount rate 2', { exact: true }).fill('5');
+  await dialog.getByLabel('Delivery date 2', { exact: true }).fill('2026-12-20');
+  for (const width of [320, 768, 1920]) {
+    await page.setViewportSize({ width, height: 1000 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'The full form must stay inside the viewport while its line-item table scrolls.');
+    await expect(dialog.getByRole('button', { name: 'Save sales order', exact: true })).toBeVisible();
+  }
+  await app.screenshot('sales-order-mixed-si-locks.png');
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(savedBodies.length, 1);
+  assert.deepEqual(savedBodies[0].items[0], { id: 102, productId: 31, quantity: '4.125', unitPrice: '3.456789', refNumber: 'REF-OPEN-UPDATED', quotationNumber: 'QT-OPEN-UPDATED', discountRate: '5', deliveryDate: '2026-12-20' });
+  assert.deepEqual(current.items[0], frozenLine);
+  await expect(orderRow(page, 1).locator('td').nth(9)).toHaveText('4.125KG');
+  await expect(orderRow(page).locator('td').nth(9)).toHaveText('10PCS');
+  for (const [tab, title, quantity] of [['Invoice', 'Invoice', '6.125'], ['Delivery Receipt', 'Delivery Receipt', '4'], ['Shipping Invoice', 'Shipping Invoice', '6.125']]) {
     await page.locator('.sidebar').getByRole('button', { name: tab, exact: true }).click();
     await page.getByRole('button', { name: 'View', exact: true }).click();
     dialog = page.getByRole('dialog', { name: title, exact: true });
     if (title === 'Invoice') {
-      const rows = dialog.locator('[data-invoice-item]');
-      await expect(rows).toHaveCount(2);
-      await expect(rows.nth(0).locator('[data-invoice-column="quantity"]')).toHaveText(quantities[0]);
-      await expect(rows.nth(1).locator('[data-invoice-column="quantity"]')).toHaveText(quantities[1]);
-      await expect(dialog.locator('[data-invoice-summary] [data-invoice-field="totalAmountDue"]')).toHaveText('63.75');
+      await expect(dialog.locator('[data-invoice-item]')).toHaveCount(1);
+      await expect(dialog.locator('[data-invoice-column="quantity"]')).toHaveText(quantity);
+      await expect(dialog.locator('[data-invoice-summary] [data-invoice-field="totalAmountDue"]')).toHaveText('61.25');
     } else if (title === 'Delivery Receipt') {
-      const rows = dialog.locator('[data-dr-item]');
-      await expect(rows).toHaveCount(2);
-      await expect(rows.nth(0).locator('[data-dr-column="quantity"]')).toHaveText(quantities[0]);
-      await expect(rows.nth(1).locator('[data-dr-column="quantity"]')).toHaveText(quantities[1]);
+      await expect(dialog.locator('[data-dr-item]')).toHaveCount(1);
+      await expect(dialog.locator('[data-dr-column="quantity"]')).toHaveText(quantity);
       await expect(dialog.locator('[data-dr-column="unitPrice"], [data-dr-field="totalAmountDue"]')).toHaveCount(0);
     } else {
-      const rows = dialog.locator('.document-table > tbody > tr');
-      await expect(rows).toHaveCount(2);
-      await expect(rows.nth(0).locator('td').nth(2)).toHaveText(quantities[0]);
-      await expect(rows.nth(1).locator('td').nth(2)).toHaveText(quantities[1]);
-      if (title !== 'Delivery Receipt') await expect(dialog.locator('.document-grand-total strong')).toHaveText(new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'USD' }).format('63.750000'));
+      await expect(dialog.locator('.document-table > tbody > tr')).toHaveCount(1);
+      await expect(dialog.locator('.document-table > tbody > tr td').nth(2)).toHaveText(quantity);
     }
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   }
   assert.equal(JSON.stringify({ invoice, delivery, shipping }), snapshots);
-  assert.ok(app.apiRequests.filter(call => call.method !== 'GET').every(call => call.method === 'PATCH' && call.requestPathname === '/api/sales/sales-orders/11/quantities'));
+  assert.ok(writes(app).every(call => call.method === 'PATCH' && call.requestPathname === '/api/sales/sales-orders/11/items'));
   app.assertSafe();
 });
 
-test('Quantity-only editing blocks saving until every invoiced and delivered quantity is known', { timeout: 90000 }, async t => {
+test('A mixed Sales Order may explicitly remove an unbilled line and add a new line while retaining the omitted SI line', { timeout: 90000 }, async t => {
+  let current = orderFixture();
+  const frozenLine = structuredClone(current.items[0]);
+  const savedBodies = [];
+  const app = await orderApp(t, {
+    getOrder: () => current,
+    onWrite: ({ method, pathname, body }) => {
+      assert.equal(method, 'PATCH'); assert.equal(pathname, '/api/sales-orders/11/items'); savedBodies.push(body);
+      assert.deepEqual(body.removedItemIds, [102]);
+      assert.equal(body.items.length, 1); assert.equal(body.items[0].id, undefined); assert.equal(body.items[0].productId, 32);
+      current = { ...current, items: [current.items[0], { ...body.items[0], id: 103, orderId: 11, sku: products[2].sku, productName: products[2].name, description: products[2].description, unit: 'PCS', currency: 'USD', hasInvoice: false, invoicedQuantity: '0.000', deliveredQuantity: '0.000', remainingDeliveryQuantity: body.items[0].quantity }] };
+      return { json: { record: current } };
+    },
+  });
+  const { page } = app;
+  await openOrders(app);
+  await orderRow(page, 1).getByRole('button', { name: 'Edit', exact: true }).click();
+  const dialog = editDialog(page);
+  await dialog.getByRole('button', { name: 'Remove product 2', exact: true }).click();
+  await expect(dialog.locator('.sales-order-items tbody tr')).toHaveCount(1);
+  await dialog.getByRole('button', { name: /Add product/ }).click();
+  await dialog.getByLabel('Product 2', { exact: true }).selectOption('32');
+  await dialog.getByLabel('Quantity 2', { exact: true }).fill('3.250');
+  await dialog.getByLabel('Reference 2', { exact: true }).fill('NEW-REF');
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(savedBodies.length, 1);
+  assert.deepEqual(current.items[0], frozenLine);
+  await expect(orderRow(page, 1)).toHaveCount(0);
+  await expect(orderRow(page, 2)).toHaveCount(1);
+  app.assertSafe();
+});
+
+test('SI existence locks every linked line even when its invoiced quantity is zero, and adding a new line is still available', { timeout: 90000 }, async t => {
+  const current = orderFixture({ allLinked: true });
+  current.items.forEach(item => { item.invoicedQuantity = '0.000'; });
+  const app = await orderApp(t, { getOrder: () => current, onWrite: call => { throw new Error('Unchanged SI-linked rows must not request ' + call.pathname); } });
+  const { page } = app;
+  await openOrders(app);
+  await orderRow(page, 1).getByRole('button', { name: 'Edit', exact: true }).click();
+  const dialog = editDialog(page);
+  await expect(dialog.locator('.sales-order-items tbody tr')).toHaveCount(2);
+  await expect(dialog.getByLabel('Quantity 1', { exact: true })).not.toBeEditable();
+  await expect(dialog.getByLabel('Quantity 2', { exact: true })).not.toBeEditable();
+  await expect(dialog.getByRole('button', { name: 'Save sales order', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: /Add product/ })).toBeEnabled();
+  assert.equal(writes(app).length, 0);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  app.assertSafe();
+});
+
+test('Unknown invoice linkage and a delivered legacy order stay read-only instead of permitting unsafe edits', { timeout: 90000 }, async t => {
+  const current = orderFixture({ invoiced: false, delivered: true });
+  current.items.forEach(item => { delete item.hasInvoice; });
+  const app = await orderApp(t, { getOrder: () => current, onWrite: call => { throw new Error('Read-only legacy order must not request ' + call.pathname); } });
+  const { page } = app;
+  await openOrders(app);
+  await orderRow(page, 1).getByRole('button', { name: 'Edit', exact: true }).click();
+  const dialog = editDialog(page);
+  await expect(dialog.getByLabel('Quantity 1', { exact: true })).not.toBeEditable();
+  await expect(dialog.getByLabel('Quantity 2', { exact: true })).not.toBeEditable();
+  await expect(dialog.getByRole('button', { name: 'Save sales order', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: /Add product/ })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.equal(writes(app).length, 0);
+  app.assertSafe();
+});
+
+test('An SI created after the edit form opens causes a visible conflict while preserving the unsaved no-SI draft', { timeout: 90000 }, async t => {
   const current = orderFixture();
-  current.items[0].invoicedQuantity = null; current.items[1].deliveredQuantity = null;
+  const before = structuredClone(current);
+  const conflict = 'This item now has a sales invoice. Refresh the order before editing it.';
   const app = await orderApp(t, {
     getOrder: () => current,
-    onWrite: call => { throw new Error('Unknown document quantities must not request ' + call.pathname); },
+    onWrite: ({ method, pathname, body }) => {
+      assert.equal(method, 'PATCH'); assert.equal(pathname, '/api/sales-orders/11/items');
+      assert.deepEqual(body.items.map(item => item.id), [102]);
+      return { status: 409, json: { message: conflict } };
+    },
   });
   const { page } = app;
   await openOrders(app);
-  await firstOrderRow(page).getByRole('button', { name: 'Edit', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Update quantities · SO-QTY-MOCK', exact: true });
-  await dialog.getByLabel('Order quantity 1', { exact: true }).fill('20');
-  await dialog.getByLabel('Order quantity 2', { exact: true }).fill('20');
-  await dialog.getByRole('button', { name: 'Save quantities', exact: true }).click();
-  await expect(dialog.getByLabel('Order quantity 1', { exact: true })).toHaveAttribute('aria-invalid', 'true');
-  await expect(dialog.getByLabel('Order quantity 2', { exact: true })).toHaveAttribute('aria-invalid', 'true');
-  await expect(dialog.getByText('Refresh the order to load its invoiced and delivered quantities.', { exact: true })).toHaveCount(2);
-  assert.ok(app.apiRequests.every(call => call.method === 'GET'));
+  await orderRow(page, 1).getByRole('button', { name: 'Edit', exact: true }).click();
+  const dialog = editDialog(page);
+  await dialog.getByLabel('Quantity 2', { exact: true }).fill('9.125');
+  await dialog.getByLabel('Reference 2', { exact: true }).fill('KEEP-UNSAVED-REF');
+  current.items[1].hasInvoice = true; current.items[1].invoicedQuantity = '1.000';
+  await dialog.getByRole('button', { name: 'Save sales order', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText(conflict);
+  await expect(dialog.getByLabel('Quantity 2', { exact: true })).toHaveValue('9.125');
+  await expect(dialog.getByLabel('Reference 2', { exact: true })).toHaveValue('KEEP-UNSAVED-REF');
+  await expect(dialog.getByRole('button', { name: 'Save sales order', exact: true })).toBeEnabled();
+  assert.equal(current.items[1].quantity, before.items[1].quantity);
+  assert.equal(current.items[1].refNumber, before.items[1].refNumber);
+  assert.deepEqual(current.items[0], before.items[0]);
+  assert.equal(writes(app).length, 1);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   app.assertSafe();
 });
 
-test('A quantity reduction that makes the saved fixed discount exceed the order amount is blocked before PATCH', { timeout: 90000 }, async t => {
-  const current = orderFixture(true, false);
-  current.discountType = 'amount'; current.discount = '150.000000'; current.total = '50.000000';
-  current.grossAmount = '200.000000'; current.discountAmount = '150.000000'; current.netAmount = '50.000000';
-  current.items = [{ ...current.items[0], quantity: '2.000', unitPrice: '100.000000', convertedUnitPrice: '100.000000', invoicedQuantity: '0.500', deliveredQuantity: '0.000', remainingDeliveryQuantity: '2.000', grossAmount: '200.000000', netAmount: '50.000000', amount: '50.000000', lineTotal: '50.000000', discountAmount: '150.000000' }];
-  const app = await orderApp(t, {
-    getOrder: () => current,
-    onWrite: call => { throw new Error('An invalid calculated amount must not request ' + call.pathname); },
-  });
+test('Invalid no-SI quantities are blocked before HTTP while SI quantities remain frozen', { timeout: 90000 }, async t => {
+  const current = orderFixture();
+  const app = await orderApp(t, { getOrder: () => current, onWrite: call => { throw new Error('Invalid line values must not request ' + call.pathname); } });
   const { page } = app;
   await openOrders(app);
-  await firstOrderRow(page).getByRole('button', { name: 'Edit', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Update quantities · SO-QTY-MOCK', exact: true });
-  await dialog.getByLabel('Order quantity 1', { exact: true }).fill('1.000');
-  await dialog.getByRole('button', { name: 'Save quantities', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('Header discount cannot exceed the amount after line discounts.');
-  await expect(dialog.getByLabel('Order quantity 1', { exact: true })).toHaveValue('1.000');
-  assert.ok(app.apiRequests.every(call => call.method === 'GET'));
+  await orderRow(page, 1).getByRole('button', { name: 'Edit', exact: true }).click();
+  const dialog = editDialog(page);
+  const quantity = dialog.getByLabel('Quantity 2', { exact: true });
+  for (const value of ['', '0', '-1', '1.0001', '1000000.001']) {
+    await quantity.fill(value);
+    await expect(dialog.getByRole('button', { name: 'Save sales order', exact: true })).toBeDisabled();
+    await expect(dialog.getByLabel('Quantity 1', { exact: true })).toHaveValue('10.000');
+    assert.equal(writes(app).length, 0);
+  }
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   app.assertSafe();
 });

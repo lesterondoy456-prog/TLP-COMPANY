@@ -23,15 +23,14 @@
   .inventory-filters select { font-size: 14px; }
 }
 
-/* Product stock actions, manual movement review and recorded transaction details. */
+/* Read-only inventory actions and recorded transaction details. */
 .inventory-page .records-table { min-width: 1220px; }
-.inventory-page .records-table .inventory-actions-column { position: sticky; right: 0; z-index: 1; min-width: 148px; background: var(--surface); }
+.inventory-page .records-table .inventory-actions-column { position: sticky; right: 0; z-index: 1; min-width: 70px; background: var(--surface); }
 .inventory-page .records-table th.inventory-actions-column { z-index: 2; }
 .inventory-page .records-table tbody tr:hover .inventory-actions-column { background: var(--surface-hover); }
 .inventory-actions { display: flex; justify-content: flex-end; gap: 7px; }
 .inventory-actions .icon-button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; color: var(--accent); background: var(--surface-raised); }
 .inventory-actions .icon-button:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
-.inventory-actions .inventory-stock-out { color: var(--warning); }
 .inventory-actions .icon-button:disabled { opacity: .45; }
 .inventory-product-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; margin: 0 0 23px; padding: 17px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-muted); }
 .inventory-product-summary > div { min-width: 0; }

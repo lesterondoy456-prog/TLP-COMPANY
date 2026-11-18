@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const { db, initializeDatabase, closeDatabase } = require('./db');
 
 const MAX_BODY = 1024 * 1024;
-const SYSTEMS = ['sales', 'purchasing', 'warehouse', 'configuration'];
+const SYSTEMS = ['sales', 'purchasing', 'warehouse', 'configuration', 'itticket'];
 
 function sessionFingerprint(req, system) {
   const cookie = `tti_${system}_session=`;
@@ -30,6 +30,13 @@ function publishChanges(state, req, res, alreadyPosted) {
   }
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return;
   const emit = (target, resources) => state.io.to(`system:${target}`).emit('data:changed', { system: target, resources: [...new Set(resources)], changedAt: new Date(state.now()).toISOString() });
+  if (resource === 'helpdesk' && id === 'tickets' || system === 'itticket' && resource === 'tickets') {
+    emit('itticket', ['tickets']);
+    const owner = system === 'itticket' ? res.locals.ticketOwner : { system, id: res.locals.user?.id };
+    if (owner && SYSTEMS.includes(owner.system) && owner.system !== 'itticket' && Number.isInteger(owner.id)) state.io.to(`user:${owner.system}:${owner.id}`).emit('data:changed', { system: owner.system, resources: ['helpdesk-tickets'], changedAt: new Date(state.now()).toISOString() });
+    emit('configuration', ['audit-trail']);
+    return;
+  }
   if (system === 'sales' && resource === 'products' && action === 'stock-movements') {
     emit('sales', ['products', 'stock-movements']);
     emit('configuration', ['audit-trail']);
@@ -81,6 +88,7 @@ function attachRealtime(server, app) {
   });
   io.on('connection', socket => {
     socket.join(`system:${socket.data.system}`);
+    socket.join(`user:${socket.data.system}:${socket.data.userId}`);
     const timer = setTimeout(() => socket.disconnect(true), Math.max(1, socket.data.sessionExpiresAt - state.now()));
     timer.unref();
     socket.once('disconnect', () => clearTimeout(timer));
@@ -140,8 +148,13 @@ function createApp(env = process.env, options = {}) {
     next();
   });
   app.all(['/api/:system/auth/profile', '/api/:system/users', '/api/:system/users/:id'], express.json({ limit: Infinity }));
-  app.use(express.json({ limit: MAX_BODY }));
-  app.get('/', (req, res) => res.json({ name: 'TTI Laguna Philippines Inc. API', systems: ['sales', 'purchasing', 'warehouse', 'configuration'] }));
+  const standardJson = express.json({ limit: MAX_BODY });
+  app.use((req, res, next) => {
+    // Parse large support uploads only after their scoped session is verified.
+    if (req.method === 'POST' && /^\/api\/(?:sales|purchasing|warehouse|configuration)\/helpdesk\/tickets\/?$/.test(req.path)) return next();
+    standardJson(req, res, next);
+  });
+  app.get('/', (req, res) => res.json({ name: 'TTI Laguna Philippines Inc. API', systems: SYSTEMS }));
   app.get('/api/health', async (req, res) => {
     try {
       const result = await db().request().query('SELECT DB_NAME() AS name');
@@ -151,6 +164,7 @@ function createApp(env = process.env, options = {}) {
     }
   });
   app.use('/api', require('./Api/LoginApiSystem'));
+  app.post('/api/:system/helpdesk/tickets', express.json({ limit: '72mb' }));
   app.get('/api/:system/realtime-ticket', (req, res) => {
     const { system } = req.params;
     const user = res.locals.user;
@@ -168,6 +182,8 @@ function createApp(env = process.env, options = {}) {
     state.tickets.set(ticket, { system, userId: user.id, session, sessionExpiresAt: res.locals.sessionExpiresAt, expiresAt });
     res.json({ ticket, expiresAt });
   });
+  app.use('/api/itticket', require('./Api/ITTicketApi'));
+  app.use(['/api/sales/helpdesk', '/api/purchasing/helpdesk', '/api/warehouse/helpdesk', '/api/configuration/helpdesk'], require('./Api/ITTicketApi'));
   app.use('/api/sales', require('./Api/SalesApi'));
   app.use('/api/purchasing', require('./Api/PurchasingApi'));
   app.use('/api/warehouse', require('./Api/WarehouseApi'));

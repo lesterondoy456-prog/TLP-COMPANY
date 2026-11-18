@@ -5,6 +5,13 @@ const { promisify } = require('node:util');
 const { request, sql, transaction } = require('../db');
 
 const AUTH_SYSTEMS = {
+  itticket: {
+    table: 'ITTicketUserLogin',
+    roles: ['admin', 'it'],
+    cookie: 'tti_itticket_session',
+    path: '/api/itticket',
+    audience: 'tti-company-itticket'
+  },
   sales: {
     table: 'SalesUserLogin',
     roles: ["admin", "saleshead", "sales"],

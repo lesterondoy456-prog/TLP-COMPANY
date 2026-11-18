@@ -14,6 +14,7 @@ import DeliveryReceiptPage from './pages/DeliveryReceipt/DeliveryReceipt.jsx';
 import ShippingInvoicePage from './pages/ShippingInvoice/ShippingInvoice.jsx';
 import SalesUserLoginPage from './pages/SalesUserLogin/SalesUserLogin.jsx';
 import SalesUserForm from './pages/SalesUserLogin/SalesUserForm.jsx';
+import HelpDesk from './pages/HelpDesk/HelpDesk.jsx';
 
 const EMPTY_DATA = { customers: [], products: [], 'sales-orders': [], 'sales-invoices': [], 'delivery-receipts': [], 'shipping-invoices': [], users: [] };
 
@@ -76,6 +77,7 @@ export default function SalesApp({ user, onUser, onLogout }) {
       {page === 'sales-invoices' && <InvoicePage {...props} />}
       {page === 'delivery-receipts' && <DeliveryReceiptPage {...props} />}
       {page === 'shipping-invoices' && <ShippingInvoicePage {...props} />}
+      {page === 'helpdesk' && <HelpDesk user={user} onNotice={setNotice} />}
       {page === 'users' && canManageUsers && <SalesUserLoginPage {...props} />}
     </Layout>
     {profileOpen && <SalesUserForm profile actorRole={user.role} record={user} onClose={() => setProfileOpen(false)} onSaved={saved} />}

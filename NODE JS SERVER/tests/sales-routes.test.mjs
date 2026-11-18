@@ -67,6 +67,29 @@ const product = {
 };
 const productResult = record => ({ recordsets: [[record], [{ productId: 7, name: 'Cut' }], [], []] });
 
+test('Product direct writes reject multiple selected customers before changing child rows', async () => {
+  const body = { sku: 'P7', unit: 'PCS', currency: 'USD', customerApprovals: [{ customerId: 20 }, { customerId: 21 }] };
+  for (const method of ['post', 'put']) {
+    const fixture = routeFixture(method === 'put' ? [step(/SELECT p\.id/, productResult(product))] : []);
+    await assert.rejects(() => fixture.invoke(method, method === 'post' ? '/products' : '/products/:id', body), error => error.status === 400 && /only one customer/.test(error.message));
+    assert.equal(fixture.state.commits, 0);
+    fixture.done();
+  }
+});
+
+test('Unrelated Product edits retain every historical customer link without rewriting approvals', async () => {
+  const approvals = [{ productId: 7, customerId: 20, customerName: 'Historical A', approvalDate: null, approvalRemarks: 'First approval' }, { productId: 7, customerId: 21, customerName: 'Historical B', approvalDate: null, approvalRemarks: 'Second approval' }];
+  const rows = { recordsets: [[product], [{ productId: 7, name: 'Cut' }], approvals, []] };
+  const fixture = routeFixture([
+    step(/SELECT p\.id/, rows), step(/SELECT id FROM dbo.Customers/, [{ id: 20 }]), step(/SELECT id FROM dbo.Customers/, [{ id: 21 }]),
+    step(/UPDATE dbo.Products/, [], values => assert.equal(values.revision, '2')), audit(), step(/SELECT p\.id/, rows),
+  ]);
+  const result = await fixture.invoke('put', '/products/:id', { revision: '2' });
+  assert.deepEqual(result.body.record.customerApprovals.map(row => row.customerId), [20, 21]);
+  assert.equal(fixture.state.commits, 1);
+  fixture.done();
+});
+
 test('Customer list and detail return Last Sales Date from the latest customer invoice, or NULL without sales', async () => {
   const records = [{ ...customer, lastSalesDate: null }, { ...customer, id: 8, name: 'Customer with invoices', lastSalesDate: '2026-11-14' }];
   const list = routeFixture([step(/FROM dbo\.Customers/, records), step(/FROM dbo\.CustomerDeliveryAddresses/, [])]);

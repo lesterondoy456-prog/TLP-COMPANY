@@ -1,10 +1,10 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import { createHmac, scryptSync } from 'node:crypto';
 import test from 'node:test';
 import { invokeRoute, loadRouterWithDatabase } from './helpers/load-api.mjs';
 
 const secret = 'mock-only-session-secret-for-isolation-tests-123456';
-const systems = ['sales', 'purchasing', 'warehouse', 'configuration'];
+const systems = ['sales', 'purchasing', 'warehouse', 'configuration', 'itticket'];
 const salt = '0123456789abcdef0123456789abcdef';
 const password = 'Mock-Password-12345';
 const passwordHash = `scrypt$${salt}$${scryptSync(password, salt, 64).toString('hex')}`;
@@ -160,4 +160,13 @@ test('failed login attempts are limited before further password queries', async 
   await assert.rejects(api.login('sales', { password: 'wrong-password' }), error => error.status === 429);
   assert.equal(api.calls.length, 8);
   assert.equal((await api.login('purchasing')).body.user.system, 'purchasing');
+});
+
+test('IT staff sign in only to the dedicated IT namespace with a separate cookie audience', async () => {
+  const api = fixture({ role: 'it' });
+  const result = await api.login('itticket');
+  assert.equal(result.body.user.system, 'itticket');
+  assert.equal(result.body.user.role, 'it');
+  assert.match(result.headers['Set-Cookie'], /^tti_itticket_session=/);
+  for (const system of systems.filter(value => value !== 'itticket')) await assert.rejects(api.login(system), unauthorized);
 });

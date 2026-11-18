@@ -8,11 +8,13 @@ import useRealtime from './hooks/useRealtime.js';
 import SuppliesStock from './pages/SuppliesStock/SuppliesStock.jsx';
 import WarehouseUserLogin from './pages/WarehouseUserLogin/WarehouseUserLogin.jsx';
 import Profile from './pages/Profile/Profile.jsx';
+import HelpDesk from './pages/HelpDesk/HelpDesk.jsx';
 
 const tabs = [
   { id: 'warehouse-stock', title: 'Supplies Stock', icon: 'box' },
+  { id: 'helpdesk', title: 'Help Desk', icon: 'bell' },
 ];
-const pages = { 'warehouse-stock': SuppliesStock };
+const pages = { 'warehouse-stock': SuppliesStock, helpdesk: HelpDesk };
 
 export default function App() {
   const [user, setUser] = useState(null);

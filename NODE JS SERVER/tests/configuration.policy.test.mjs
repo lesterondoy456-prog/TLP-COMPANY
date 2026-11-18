@@ -15,9 +15,17 @@ const validateConfiguration = (kind, input, current) => {
 
 const rejects400 = action => assert.throws(action, Error);
 
+test('Machines provide stable code/name/description metadata with one active state', () => {
+  assert.deepEqual(validateConfiguration('machines', { code: ' MC-01 ', name: ' Cutting Machine ', description: ' Line A ', isActive: true }), { code: 'MC-01', name: 'Cutting Machine', description: 'Line A', isActive: true });
+  assert.equal(validateConfiguration('machines', { code: 'MC-02', name: 'Spare Machine' }).description, null);
+  rejects400(() => validateConfiguration('machines', { code: '', name: 'Machine' }));
+  rejects400(() => validateConfiguration('machines', { code: 'MC-01', name: '' }));
+  rejects400(() => validateConfiguration('machines', { code: 'M'.repeat(41), name: 'Machine' }));
+});
+
 test('configuration metadata includes the observed modules and a read-only own-app audit trail', async () => {
   const modules = await readMetadata();
-  assert.deepEqual(modules.map(module => module.kind).sort(), ['atc', 'audit-trail', 'banks', 'countries', 'currencies', 'customer-categories', 'locations', 'payment-terms', 'product-categories', 'supplies-categories', 'units', 'vat-codes', 'warehouses']);
+  assert.deepEqual(modules.map(module => module.kind).sort(), ['atc', 'audit-trail', 'banks', 'countries', 'currencies', 'customer-categories', 'locations', 'machines', 'payment-terms', 'product-categories', 'supplies-categories', 'units', 'vat-codes', 'warehouses']);
   assert.equal(modules.find(module => module.kind === 'audit-trail').readOnly, true);
   assert.ok(modules.filter(module => module.kind !== 'audit-trail').every(module => module.readOnly === false));
   assert.ok(modules.every(module => module.fields.every(field => !Object.hasOwn(field, 'maxLength'))), 'Backend metadata must not own form text-length limits.');
@@ -127,8 +135,18 @@ test('configuration API stores absent optional values as NULL and enforces forme
   const edited = (await call('PUT', 'payment-terms', { days: 0, month: '' })).body.record;
   assert.equal(edited.days, 0, 'An explicitly supplied zero must be retained.');
   assert.equal(edited.month, null);
+  const machine = (await call('POST', 'machines', { code: 'MC-API-01', name: 'Machine API' })).body.record;
+  assert.equal(machine.code, 'MC-API-01');
+  assert.equal(machine.name, 'Machine API');
+  assert.equal(machine.description, null);
+  const revisedMachine = (await call('PUT', 'machines', { description: 'Planning reference' })).body.record;
+  assert.equal(revisedMachine.id, machine.id);
+  assert.equal(revisedMachine.code, 'MC-API-01');
+  assert.equal(revisedMachine.description, 'Planning reference');
   const beforeInvalid = writes;
   for (const method of ['POST', 'PUT']) for (const [kind, body] of [
+    ['machines', { code: '', name: 'Machine' }],
+    ['machines', { code: 'MC-01', name: '' }],
     ['atc', { code: 'MOCK', description: 'Mock', rate: 101 }],
     ['vat-codes', { code: 'MOCK', description: 'Mock', rate: -1 }],
     ['vat-codes', { code: 'MOCK', description: 'Mock', type: 'forged' }],

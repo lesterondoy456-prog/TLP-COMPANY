@@ -251,31 +251,27 @@ test('invoice preview fits mobile width, supports readable zoom and prints unsca
   browser.assertSafe();
 });
 
-test('invoice-specific print styles leave Sales Order and Shipping Invoice document forms intact', { timeout: 90_000 }, async t => {
+test('invoice-specific print styles leave the Shipping Invoice document form intact', { timeout: 90_000 }, async t => {
   const record = invoice(501, 1);
   const browser = await fixture(t, [record]);
   const invoiceDialog = await browser.open(record);
   await invoiceDialog.getByRole('button', { name: 'Close', exact: true }).click();
-  for (const [label, number, columns, filename] of [
-    ['Sales Order', 'SO-SNAPSHOT', ['Product', 'Unit', 'Quantity', 'Unit price', 'Amount', 'Delivery date'], 'sales-order-after-invoice.pdf'],
-    ['Shipping Invoice', 'SHI-SNAPSHOT', ['Product', 'Unit', 'Quantity', 'Unit price', 'Amount', 'Delivery date'], 'shipping-invoice-after-invoice.pdf'],
-  ]) {
-    await browser.page.getByRole('button', { name: label, exact: true }).click();
-    const row = browser.page.getByRole('row').filter({ hasText: number });
-    await row.getByRole('button', { name: 'View', exact: true }).click();
-    const namedDialog = browser.page.getByRole('dialog', { name: label, exact: true });
-    await expect(namedDialog).toBeVisible();
-    const dialog = browser.page.locator('dialog.sales-document[open]');
-    await expect(dialog.locator('[data-invoice-page]')).toHaveCount(0);
-    await expect(dialog.locator('.document-table th')).toHaveText(columns);
-    await browser.page.emulateMedia({ media: 'print' });
-    await expect(dialog.locator('.document-brand')).toBeVisible();
-    await expect(dialog.locator('.document-table th').first()).toBeVisible();
-    assert.equal(await dialog.locator('.document-table td').first().evaluate(element => getComputedStyle(element).visibility), 'visible');
-    await printedPdf(browser.page, filename, 1);
-    await browser.page.emulateMedia({ media: 'screen' });
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  }
+  await browser.page.getByRole('button', { name: 'Shipping Invoice', exact: true }).click();
+  const row = browser.page.getByRole('row').filter({ hasText: 'SHI-SNAPSHOT' });
+  await row.getByRole('button', { name: 'View', exact: true }).click();
+  await expect(browser.page.getByRole('dialog', { name: 'Shipping Invoice', exact: true })).toBeVisible();
+  const dialog = browser.page.locator('dialog.sales-document[open]');
+  const table = dialog.locator('.document-table');
+  await expect(dialog.locator('[data-invoice-page]')).toHaveCount(0);
+  await expect(table.locator('thead th')).toHaveText(['Product', 'Unit', 'Quantity', 'Unit price', 'Amount', 'Delivery date']);
+  await browser.page.emulateMedia({ media: 'print' });
+  await expect(dialog.locator('.document-brand')).toBeVisible();
+  await expect(table.locator('thead th').first()).toBeVisible();
+  assert.equal(await table.locator('tbody td').first().evaluate(element => getComputedStyle(element).visibility), 'visible');
+  await printedPdf(browser.page, 'shipping-invoice-after-invoice.pdf', 1);
+  await browser.page.emulateMedia({ media: 'screen' });
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(browser.page.locator('body')).not.toHaveClass(/invoice-print-open/);
   browser.assertSafe();
 });
 

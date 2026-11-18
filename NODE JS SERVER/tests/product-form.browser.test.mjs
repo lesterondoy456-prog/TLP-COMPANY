@@ -103,20 +103,21 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   }
   await screenshot('product-basic-info-mocked.png');
   await tabs.Customer.click();
-  await panel('Customer').getByRole('button', { name: 'Add customer', exact: true }).click();
+  await expect(panel('Customer').getByRole('button', { name: 'Add customer', exact: true })).toHaveCount(0);
+  await expect(panel('Customer').getByRole('combobox')).toHaveCount(1);
+  await expect(panel('Customer').getByLabel('Customer Name 2', { exact: true })).toHaveCount(0);
   await expect(panel('Customer').getByLabel('EOL Date 1', { exact: true })).toHaveCount(0);
   await expect(panel('Customer').getByLabel('EOL Remarks 1', { exact: true })).toHaveCount(0);
   await expect(panel('Customer').getByLabel('Customer Name 1', { exact: true }).locator('option[value="10"]')).toHaveText('Mock Customer A');
-  await tabs['Basic Info'].click();
-  await save.click();
-  await expect(tabs.Customer).toHaveAttribute('aria-selected', 'true');
-  await expect(panel('Customer').getByLabel('Customer Name 1', { exact: true })).toBeFocused();
-  assert.equal(writes.length, 0);
+  await expect(panel('Customer').getByLabel('Approval Date 1', { exact: true })).toBeDisabled();
+  await panel('Customer').getByLabel('Customer Name 1', { exact: true }).selectOption('11');
+  await panel('Customer').getByLabel('Approval Date 1', { exact: true }).fill('2026-10-01');
+  await panel('Customer').getByLabel('Approval Remarks 1', { exact: true }).fill('Approval for the other customer');
   await panel('Customer').getByLabel('Customer Name 1', { exact: true }).selectOption('10');
+  await expect(panel('Customer').getByLabel('Approval Date 1', { exact: true })).toHaveValue('');
+  await expect(panel('Customer').getByLabel('Approval Remarks 1', { exact: true })).toHaveValue('');
   await panel('Customer').getByLabel('Approval Date 1', { exact: true }).fill('2026-11-13');
   await panel('Customer').getByLabel('Approval Remarks 1', { exact: true }).fill(' Approved sample ');
-  await panel('Customer').getByRole('button', { name: 'Add customer', exact: true }).click();
-  await panel('Customer').getByLabel('Customer Name 2', { exact: true }).selectOption('11');
   await screenshot('product-customers-mocked.png');
   await tabs['Inventory Sched'].click();
   const inventorySetup = panel('Inventory Sched').getByLabel('Inventory Setup', { exact: true });
@@ -154,7 +155,7 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
     model: 'Model X', category: 'Packaging', remarks: 'Mock product remarks', tagColor: '#33ccff',
     quantityPerSecondaryUnit: 12.000001, moq: 100, spq: 10, unitCost: 5.123456, price: 12.34, divisor: 2.5, weight: 3.000001,
     vatMode: 'inclusive', productHeaderId: 20, processes: [{ name: 'Printing' }, { name: 'Cutting' }],
-    customerApprovals: [{ customerId: 10, approvalDate: '2026-11-13', approvalRemarks: 'Approved sample' }, { customerId: 11, approvalDate: null, approvalRemarks: null }],
+    customerApprovals: [{ customerId: 10, approvalDate: '2026-11-13', approvalRemarks: 'Approved sample' }],
     inventorySetup: 'monthly',
     linkedSupplies: [{ suppliesId: 30, quantity: 1.234567, unit: 'kg' }], isActive: true,
   };
@@ -225,6 +226,51 @@ test('CAS Product tabs validate and preserve all scalar and child fields using m
   assert.equal(writes.at(-1).body.moq, 0);
   assert.equal(writes.at(-1).body.revision, null);
   assertSafe();
+});
+
+test('Historical multi-customer Product links survive unrelated edits until an explicit single-customer replacement', { timeout: 60000 }, async t => {
+  const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true };
+  const originalApprovals = [{ customerId: 10, customerName: 'Historic Customer A', approvalDate: '2026-11-01', approvalRemarks: 'First historical approval' }, { customerId: 11, customerName: 'Historic Customer B', approvalDate: null, approvalRemarks: 'Second historical approval' }];
+  let record = { id: 50, sku: 'LEGACY-CUSTOMERS', name: 'Historical product', description: 'Historical product', unit: 'pcs', currency: 'PHP', stock: 0, isActive: true, customerApprovals: structuredClone(originalApprovals), processes: [], linkedSupplies: [] };
+  const writes = [];
+  const app = await mockBrowser(t, async ({ method, pathname, body }) => {
+    if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: actor } };
+    if (method === 'GET' && pathname === '/api/products') return { json: { records: [record] } };
+    if (method === 'GET' && pathname === '/api/products/50') return { json: { record } };
+    if (method === 'GET' && pathname === '/api/product-options') return { json: { units: [{ id: 1, name: 'pcs', description: 'Piece', isActive: true }], currencies: [{ id: 1, code: 'PHP', description: 'Peso', isActive: true }], customers: [{ id: 10, name: 'Historic Customer A' }, { id: 11, name: 'Historic Customer B' }], categories: [], headers: [], supplies: [], processes: [] } };
+    if (method === 'GET' && ['/api/customers', '/api/sales-orders', '/api/sales-invoices', '/api/delivery-receipts', '/api/shipping-invoices', '/api/users'].includes(pathname)) return { json: { records: pathname === '/api/users' ? [actor] : [] } };
+    if (method === 'PUT' && pathname === '/api/products/50') {
+      writes.push(body); record = { ...record, ...body }; return { json: { record } };
+    }
+  }, { project: 'SalesSystem' });
+  const { page } = app;
+  await page.goto(app.origin);
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  const row = page.locator('.product-monitor .records-table tbody tr').filter({ hasText: record.sku });
+  await row.getByRole('button', { name: 'Edit', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'Edit product', exact: true });
+  await dialog.getByRole('tab', { name: 'Customer', exact: true }).click();
+  await expect(dialog.getByRole('tabpanel', { name: 'Customer', exact: true })).toContainText('Historic Customer A');
+  await expect(dialog.getByRole('tabpanel', { name: 'Customer', exact: true })).toContainText('Historic Customer B');
+  await expect(dialog.getByLabel('Customer Name 1', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('tab', { name: 'Basic Info', exact: true }).click();
+  await dialog.getByLabel('Rev', { exact: true }).fill('2');
+  await dialog.getByRole('button', { name: 'Save product', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(Object.hasOwn(writes[0], 'customerApprovals'), false);
+  assert.deepEqual(record.customerApprovals, originalApprovals);
+  await row.getByRole('button', { name: 'Edit', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'Edit product', exact: true });
+  await dialog.getByRole('tab', { name: 'Customer', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Change customer', exact: true }).click();
+  await expect(dialog.getByRole('tabpanel', { name: 'Customer', exact: true }).getByRole('combobox')).toHaveCount(1);
+  await dialog.getByLabel('Customer Name 1', { exact: true }).selectOption('11');
+  await dialog.getByLabel('Approval Remarks 1', { exact: true }).fill('Explicit new approval');
+  await dialog.getByRole('button', { name: 'Save product', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  assert.deepEqual(writes[1].customerApprovals, [{ customerId: 11, approvalDate: null, approvalRemarks: 'Explicit new approval' }]);
+  assert.equal(record.customerApprovals.length, 1);
+  app.assertSafe();
 });
 
 test('Product monitoring shows retained catalog and approval details without retired fields on desktop and mobile', { timeout: 60_000 }, async t => {

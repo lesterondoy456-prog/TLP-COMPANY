@@ -9,6 +9,7 @@ import Supplies from './pages/Supplies/Supplies.jsx';
 import ReceivingReceipt from './pages/ReceivingReceipt/ReceivingReceipt.jsx';
 import PurchasingUserLogin from './pages/PurchasingUserLogin/PurchasingUserLogin.jsx';
 import Profile from './pages/Profile/Profile.jsx';
+import HelpDesk from './pages/HelpDesk/HelpDesk.jsx';
 import './purchasing.css';
 import { api } from './api.js';
 import { APP } from './appSettings.js';
@@ -57,12 +58,13 @@ export default function App() {
 
   if (checking) return <div className="boot-screen" role="status"><div className="brand-mark">T</div><strong>TTI Laguna Philippines Inc.</strong><span>Opening {APP.appName}…</span></div>;
   return user
-    ? <Layout user={user} onLogout={logout} app={APP} tabs={[{ id: 'purchase-requests', title: 'PR Monitoring', icon: 'file' }, { id: 'purchase-orders', title: 'PO Monitoring', icon: 'bag' }, { id: 'suppliers', title: 'Supplier', icon: 'users' }, { id: 'supplies', title: 'Supplies', icon: 'box' }, { id: 'receivings', title: 'Receiving Receipt', icon: 'shipping' }]} page={page} onNavigate={setPage} onProfile={() => setProfileOpen(true)} notice={notice} onNotice={setNotice}>
+    ? <Layout user={user} onLogout={logout} app={APP} tabs={[{ id: 'purchase-requests', title: 'PR Monitoring', icon: 'file' }, { id: 'purchase-orders', title: 'PO Monitoring', icon: 'bag' }, { id: 'suppliers', title: 'Supplier', icon: 'users' }, { id: 'supplies', title: 'Supplies', icon: 'box' }, { id: 'receivings', title: 'Receiving Receipt', icon: 'shipping' }, { id: 'helpdesk', title: 'Help Desk', icon: 'bell' }]} page={page} onNavigate={setPage} onProfile={() => setProfileOpen(true)} notice={notice} onNotice={setNotice}>
         {page === 'purchase-requests' && <PRMonitoring user={user} onNotice={setNotice} />}
         {page === 'purchase-orders' && <POMonitoring user={user} onNotice={setNotice} />}
         {page === 'suppliers' && <Supplier user={user} onNotice={setNotice} />}
         {page === 'supplies' && <Supplies user={user} onNotice={setNotice} />}
         {page === 'receivings' && <ReceivingReceipt user={user} onNotice={setNotice} />}
+        {page === 'helpdesk' && <HelpDesk user={user} onNotice={setNotice} />}
         {page === 'users' && user.role === 'admin' && <PurchasingUserLogin user={user} onUser={setUser} onNotice={setNotice} />}
         {profileOpen && <Profile user={user} onClose={() => setProfileOpen(false)} onSaved={updated => { setUser(updated); setProfileOpen(false); setNotice('Profile saved.'); }} />}
       </Layout>

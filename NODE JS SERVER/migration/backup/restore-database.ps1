@@ -1,12 +1,15 @@
 [CmdletBinding()]
 param(
   [string]$Server = '.\MSSQLSERVER01',
-  [string]$BackupFile = (Join-Path $PSScriptRoot 'TTICompany.bak'),
-  [string]$EnvFile = (Join-Path $PSScriptRoot '..\..\.env')
+  [string]$BackupFile,
+  [string]$EnvFile
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
+
+if ([string]::IsNullOrWhiteSpace($BackupFile)) { $BackupFile = Join-Path $PSScriptRoot 'TTICompany.bak' }
+if ([string]::IsNullOrWhiteSpace($EnvFile)) { $EnvFile = Join-Path $PSScriptRoot '..\..\.env' }
 
 if (!(Test-Path -LiteralPath $BackupFile -PathType Leaf)) { throw 'Backup file not found. Supply -BackupFile with the extracted TTICompany.bak path.' }
 if (!(Test-Path -LiteralPath $EnvFile -PathType Leaf)) { throw 'Backend .env not found. Extract the complete transfer before restoring.' }
@@ -33,12 +36,12 @@ if ($settings.DB_USER.Length -gt 128 -or $settings.DB_PASSWORD.Length -gt 128) {
 if ($settings.DB_USER -in @('dbo', 'sa', 'guest', 'sys', 'INFORMATION_SCHEMA')) { throw 'Use the existing application SQL login in .env, not a system account.' }
 
 $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new()
-$builder.DataSource = $Server
-$builder.InitialCatalog = 'master'
-$builder.IntegratedSecurity = $true
-$builder.Encrypt = $true
-$builder.TrustServerCertificate = $true
-$builder.ConnectTimeout = 30
+$builder['Data Source'] = $Server
+$builder['Initial Catalog'] = 'master'
+$builder['Integrated Security'] = $true
+$builder['Encrypt'] = $true
+$builder['TrustServerCertificate'] = $true
+$builder['Connect Timeout'] = 30
 $connection = [System.Data.SqlClient.SqlConnection]::new($builder.ConnectionString)
 $restored = $false
 try {
@@ -174,8 +177,8 @@ EXEC sys.sp_executesql @statement;
   # ALTER USER preserves permissions and role memberships from the backup.
   # Existing server login passwords are never changed.
   $appBuilder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($builder.ConnectionString)
-  $appBuilder.IntegratedSecurity = $false
-  $appBuilder.InitialCatalog = 'TTICompany'
+  $appBuilder['Integrated Security'] = $false
+  $appBuilder['Initial Catalog'] = 'TTICompany'
   $password = ConvertTo-SecureString $settings.DB_PASSWORD -AsPlainText -Force
   $password.MakeReadOnly()
   $credential = [System.Data.SqlClient.SqlCredential]::new($settings.DB_USER, $password)

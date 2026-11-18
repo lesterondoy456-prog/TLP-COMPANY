@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 // All database access is replaced with a throwing stub or an in-memory adapter.
 const backend = fileURLToPath(new URL('../../', import.meta.url));
 const requireBackend = createRequire(path.join(backend, 'package.json'));
-const systems = { sales: 'Sales', purchasing: 'Purchasing', warehouse: 'Warehouse', configuration: 'Configuration', login: 'LoginApiSystem' };
+const systems = { sales: 'Sales', purchasing: 'Purchasing', warehouse: 'Warehouse', configuration: 'Configuration', itticket: 'ITTicket', login: 'LoginApiSystem' };
 const modules = new Map();
 const blocked = () => { throw new Error('Real database operations are forbidden in isolated tests.'); };
 const sql = new Proxy({}, { get: (_target, type) => type === 'MAX' ? -1 : (...args) => ({ type, args }) });
@@ -21,7 +21,7 @@ function compile(filename, database = fakeDatabase, cache = modules) {
   compiled.require = specifier => {
     if (/^\.\.?\/db(?:\.js)?$/.test(specifier)) return database;
     if (/^\.\/Api\/LoginApiSystem(?:\.js)?$/.test(specifier)) return compile(path.join(backend, 'Api', 'LoginApiSystem.js'), database, cache);
-    const api = specifier.match(/^\.\/Api\/(Sales|Purchasing|Warehouse|Configuration)Api(?:\.js)?$/);
+    const api = specifier.match(/^\.\/Api\/(Sales|Purchasing|Warehouse|Configuration|ITTicket)Api(?:\.js)?$/);
     if (api) return compile(path.join(backend, 'Api', api[1] + 'Api.js'), database, cache);
     if (specifier === 'express' || specifier === 'socket.io' || specifier === 'exceljs' || specifier.startsWith('node:') || builtinModules.includes(specifier)) return requireBackend(specifier);
     throw new Error('Unexpected dependency in isolated API test: ' + specifier);

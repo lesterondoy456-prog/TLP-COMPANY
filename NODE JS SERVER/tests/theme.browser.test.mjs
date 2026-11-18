@@ -5,10 +5,10 @@ import { mockBrowser } from './helpers/mock-browser.mjs';
 import { loadApi } from './helpers/load-api.mjs';
 
 const projects = [
-  { project: 'SalesSystem', system: 'sales', heading: 'Customer', initial: '/api/customers', next: 'Product', count: 8, form: 'New customer' },
-  { project: 'PurchasingSystem', system: 'purchasing', heading: 'PR Monitoring', initial: '/api/purchase-requests', next: 'PO Monitoring', count: 6, form: 'New purchase request' },
-  { project: 'WarehouseSystem', system: 'warehouse', heading: 'Supplies Stock', initial: '/api/inventory', next: 'WarehouseUserLogin', count: 2, form: 'New user' },
-  { project: 'ConfigurationSystem', system: 'configuration', heading: 'ATC', initial: '/api/configuration/atc', next: 'Bank', count: 14, form: 'New record' },
+  { project: 'SalesSystem', system: 'sales', heading: 'Customer', initial: '/api/customers', next: 'Product', count: 9, form: 'New customer' },
+  { project: 'PurchasingSystem', system: 'purchasing', heading: 'PR Monitoring', initial: '/api/purchase-requests', next: 'PO Monitoring', count: 7, form: 'New purchase request' },
+  { project: 'WarehouseSystem', system: 'warehouse', heading: 'Supplies Stock', initial: '/api/inventory', next: 'WarehouseUserLogin', count: 3, form: 'New user' },
+  { project: 'ConfigurationSystem', system: 'configuration', heading: 'ATC', initial: '/api/configuration/atc', next: 'Bank', count: 16, form: 'New record' },
 ];
 
 const companyName = 'TTI Laguna Philippines Inc.';

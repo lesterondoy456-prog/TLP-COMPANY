@@ -48,7 +48,7 @@ function fakePools({ failBatch = 0, databaseExists = true, failCreate = false } 
 test('migration runner applies SQL files atomically without querying or changing account records', async () => {
   const fake = fakePools();
   await runMigrations({ database: 'MockMigrationDatabase', ...fake });
-  assert.deepEqual([...MIGRATION_FILES], ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql', 'sales-invoice-print.sql', 'invoice-stock-delivery.sql']);
+  assert.deepEqual([...MIGRATION_FILES], ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql', 'sales-invoice-print.sql', 'invoice-stock-delivery.sql', 'machines.sql', 'it-tickets.sql']);
   const expected = await Promise.all(MIGRATION_FILES.map(filename => readFile(new URL('../migration/' + filename, import.meta.url), 'utf8')));
   assert.deepEqual(fake.batches, expected);
   assert.deepEqual(fake.events.filter(event => event[0] === 'query').map(event => event[1]), ['master']);

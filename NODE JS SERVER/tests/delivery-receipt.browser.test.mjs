@@ -8,7 +8,7 @@ import { mockBrowser } from './helpers/mock-browser.mjs';
 const actor = { id: 1, system: 'sales', name: 'Frozen DR preparer', username: 'mock_invoice_stock', role: 'admin', isActive: true };
 const customer = { id: 2, name: 'Changed current customer', address: 'Changed current address', drName: 'Changed current receiver', businessStyle: 'Changed business style', tin: 'WRONG-CURRENT-TIN', isActive: true };
 const initialProduct = { id: 41, sku: 'FROZEN-PCS-041', name: 'Current product name', description: 'Changed current product description', unit: 'PCS', stock: '10.250', price: '987.654321', currency: 'USD', isActive: true };
-const initialItem = { id: 101, productId: 41, productName: 'Frozen invoice product', sku: initialProduct.sku, description: 'Frozen invoice description', unit: 'PCS', quantity: '2.125', unitPrice: '987.654321', convertedUnitPrice: '987.654321', grossAmount: '2098.765432', netAmount: '2098.765432', discountAmount: '0.000000', vatAmount: '251.851852', amount: '2350.617284', lineTotal: '2350.617284', invoicedQuantity: '0.000', deliveredQuantity: '0.000', remainingDeliveryQuantity: '2.125' };
+const initialItem = { id: 101, productId: 41, productName: 'Frozen invoice product', sku: initialProduct.sku, description: 'Frozen invoice description', unit: 'PCS', quantity: '2.125', unitPrice: '987.654321', convertedUnitPrice: '987.654321', grossAmount: '2098.765432', netAmount: '2098.765432', discountAmount: '0.000000', vatAmount: '251.851852', amount: '2350.617284', lineTotal: '2350.617284', hasInvoice: false, invoicedQuantity: '0.000', deliveredQuantity: '0.000', remainingDeliveryQuantity: '2.125' };
 const financialKeys = ['currency', 'unitPrice', 'convertedUnitPrice', 'grossAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount', 'total', 'lineTotal'];
 const artifacts = new URL('../.qa/delivery-receipt/', import.meta.url);
 
@@ -46,7 +46,7 @@ async function fixture(t, { seedInvoice = false, seedReceipt, stock = '10.250', 
     const before = state.product.stock;
     const after = (Number(before) - 2.125).toFixed(3);
     state.product.stock = after;
-    state.order.invoiced = true; state.order.items[0].invoicedQuantity = '2.125';
+    state.order.invoiced = true; state.order.items[0].hasInvoice = true; state.order.items[0].invoicedQuantity = '2.125';
     state.invoices.push(invoice);
     state.movements.push({ id: 'invoice:1', movementId: 1, type: 'invoice-out', direction: 'out', quantity: '2.125', unit: 'PCS', stockBefore: before, stockAfter: after, movementDate: invoice.invoiceDate, sourceDestination: invoice.shipToName, reference: invoice.number, reason: 'Sales invoice issued.', createdByUsername: actor.username, createdByName: actor.name, createdAt: '2026-11-18T02:00:00.000Z', invoiceId: invoice.id, invoiceNumber: invoice.number, orderNumber: state.order.number, customerName: invoice.customerName, address: null, receivedBy: null, deliveryReceiptId: null, deliveryReceiptNumber: null });
     return invoice;
@@ -68,6 +68,12 @@ async function fixture(t, { seedInvoice = false, seedReceipt, stock = '10.250', 
     const lists = { '/api/customers': [customer], '/api/products': [state.product], '/api/sales-orders': [state.order], '/api/sales-invoices': state.invoices, '/api/delivery-receipts': state.receipts, '/api/shipping-invoices': [], '/api/users': [actor] };
     if (method === 'GET' && Object.hasOwn(lists, pathname)) return { json: { records: structuredClone(lists[pathname]) } };
     if (method === 'GET' && pathname === '/api/sales-orders/51') return { json: { record: structuredClone(state.order) } };
+    if (method === 'GET' && pathname === '/api/sales-order-options') return { json: {
+      currencies: [{ id: 1, code: 'USD', description: 'US Dollar', isActive: true }],
+      paymentTerms: [{ id: 1, name: '30 DAYS', description: '30 DAYS', isActive: true }],
+      vatCodes: [{ id: 1, code: 'VS', description: 'Vatable', rate: '12.000000', isActive: true }],
+      countries: [], shipments: [{ value: 'land', label: 'By Land' }],
+    } };
     if (method === 'GET' && pathname === '/api/sales-invoices/61') {
       state.detailReads++;
       if (detailFailure && state.detailReads === 1) return { status: 503, json: { message: 'Mock invoice items could not be loaded.' } };
@@ -87,13 +93,6 @@ async function fixture(t, { seedInvoice = false, seedReceipt, stock = '10.250', 
       state.writes.push({ method, pathname, body });
       assert.equal(body.orderId, 51); assert.equal(state.invoices.length, 0);
       return { status: 201, json: { record: issueInvoice() } };
-    }
-    if (method === 'PATCH' && pathname === '/api/sales-orders/51/quantities') {
-      state.writes.push({ method, pathname, body });
-      assert.deepEqual(body.items.map(row => row.id), [101]);
-      state.order.items[0].quantity = body.items[0].quantity;
-      state.order.items[0].remainingDeliveryQuantity = body.items[0].quantity;
-      return { json: { record: structuredClone(state.order) } };
     }
     if (method === 'POST' && pathname === '/api/delivery-receipts') {
       state.writes.push({ method, pathname, body });
@@ -131,7 +130,7 @@ async function noMoney(scope) {
   assert.ok(!labels.some(label => /^(?:unit price|selling price|currency|gross|discount|net amount|vat amount|total amount)$/i.test(label.trim())));
 }
 
-test('an invoice records one stock-out and its DR keeps frozen quantities after the Sales Order changes without deducting again', { timeout: 120_000 }, async t => {
+test('an invoice records one stock-out, locks its Sales Order line, and supplies frozen DR quantities without deducting again', { timeout: 120_000 }, async t => {
   const app = await fixture(t);
   let dialog = await newDelivery(app);
   await expect(dialog.getByRole('combobox', { name: 'Sales order *', exact: true })).toHaveCount(0);
@@ -161,15 +160,17 @@ test('an invoice records one stock-out and its DR keeps frozen quantities after 
   await nav(app, 'Sales Order');
   await app.page.locator('.sales-order-monitor .records-table tbody tr').getByRole('button', { name: 'Edit', exact: true }).click();
   dialog = app.page.getByRole('dialog');
-  await dialog.getByLabel('Order quantity 1', { exact: true }).fill('5.000');
-  await dialog.getByRole('button', { name: 'Save quantities', exact: true }).click();
+  await expect(dialog.getByLabel('Quantity 1', { exact: true })).not.toBeEditable();
+  await expect(dialog.getByLabel('Quantity 1', { exact: true })).toHaveValue('2.125');
+  await expect(dialog.getByLabel('Unit price 1', { exact: true })).not.toBeEditable();
+  await expect(dialog.getByLabel('Customer *', { exact: true })).not.toBeEditable();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  assert.equal(app.state.order.items[0].quantity, '5.000');
+  assert.equal(app.state.order.items[0].quantity, '2.125');
   assert.equal(app.state.invoices[0].items[0].quantity, '2.125');
   dialog = await newDelivery(app);
   await dialog.getByRole('combobox', { name: 'Invoice *', exact: true }).selectOption('61');
   await expect(dialog.getByRole('region', { name: 'Invoice items', exact: true }).locator('table')).toContainText('2.125');
-  await expect(dialog.getByRole('region', { name: 'Invoice items', exact: true }).locator('table')).not.toContainText('5.000');
   await expect(dialog.locator('input[type="number"]')).toHaveCount(0);
   await noMoney(dialog);
   await dialog.getByLabel('Delivery date *', { exact: true }).fill('2026-11-18');
@@ -196,7 +197,7 @@ test('an invoice records one stock-out and its DR keeps frozen quantities after 
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await nav(app, 'Inventory');
   await expect(stockRow.locator('td').nth(3)).toHaveText('8.125');
-  assert.deepEqual(app.state.writes.map(write => write.method + ' ' + write.pathname), ['POST /api/sales-invoices', 'PATCH /api/sales-orders/51/quantities', 'POST /api/delivery-receipts']);
+  assert.deepEqual(app.state.writes.map(write => write.method + ' ' + write.pathname), ['POST /api/sales-invoices', 'POST /api/delivery-receipts']);
   app.assertSafe();
 });
 

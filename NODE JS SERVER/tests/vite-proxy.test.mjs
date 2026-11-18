@@ -10,7 +10,7 @@ import test from 'node:test';
 const { checkOrigin } = loadServer();
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
-const systems = { SalesSystem: 'sales', WarehouseSystem: 'warehouse', PurchasingSystem: 'purchasing', ConfigurationSystem: 'configuration' };
+const systems = { SalesSystem: 'sales', WarehouseSystem: 'warehouse', PurchasingSystem: 'purchasing', ConfigurationSystem: 'configuration', ITTicketSystem: 'itticket' };
 
 for (const [project, system] of Object.entries(systems)) {
   test(`${project} Vite preview forwards API, Uploads and socket.io with rewritten Host and preserved origins and cookies`, { timeout: 30_000 }, async t => {

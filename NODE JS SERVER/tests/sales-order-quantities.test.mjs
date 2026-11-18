@@ -7,23 +7,25 @@ const fields = ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'di
 const qUnits = value => { const [whole, fraction = ''] = String(value).split('.'); return BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0')); };
 const qText = units => `${units / 1000n}.${(units % 1000n).toString().padStart(3, '0')}`;
 
-function fixture({ invoiced = true, delivered = false, failAudit = false, places = 2, inclusive = false, quantity = '2.000', price = '10.000000', rate = '55.000000', lineDiscount = '10.000000', headerDiscount = '5.000000', secondProduct = false } = {}) {
+function fixture({ invoiced = true, delivered = false, failAudit = false, places = 2, inclusive = false, quantity = '2.000', price = '10.000000', rate = '55.000000', lineDiscount = '10.000000', headerDiscount = '5.000000', discountType = 'percent', secondProduct = false } = {}) {
   const actor = { id: 1, username: 'sales_user', name: 'Current actor', role: 'sales', system: 'sales', isActive: true };
   const source = { id: 11, orderId: 7, productId: 3, productName: 'Product snapshot', sku: 'P3', description: 'Original description', unit: 'PCS', quantity, unitPrice: price, discountRate: lineDiscount, currency: 'USD', refNumber: 'REF', quotationNumber: 'QUOTE', deliveryDate: null };
-  const pricing = { items: [source, ...(secondProduct ? [{ ...source, id: 12, productId: 4, productName: 'Second product', sku: 'P4', quantity: '1.000' }] : [])], rate, vatRate: '12.000000', vatInclusive: inclusive, discountType: 'percent', discount: headerDiscount, decimalInTotalPrice: places };
+  const pricing = { items: [source, ...(secondProduct ? [{ ...source, id: 12, productId: 4, productName: 'Second product', sku: 'P4', quantity: '1.000' }] : [])], rate, vatRate: '12.000000', vatInclusive: inclusive, discountType, discount: headerDiscount, decimalInTotalPrice: places };
   const calculated = calculateSalesOrder(pricing);
-  const initialOrder = { id: 7, number: 'SO-7', customerId: 2, customerName: 'Customer snapshot', customerAddress: 'Office snapshot', billToName: 'Bill To snapshot', billToAddress: 'Billing snapshot', orderDate: '2026-11-16', expectedDeliveryDate: '2026-12-01', currency: 'PHP', sourceCurrency: 'USD', rate, vatRate: '12.000000', vatCode: 'VAT12', vatInclusive: inclusive, discountType: 'percent', discount: headerDiscount, decimalInTotalPrice: places, decimalInPrice: 6, notes: 'Immutable header', preparedByName: 'Original actor', status: 'confirmed', ...Object.fromEntries(fields.map(key => [key, calculated[key]])) };
-  const product = { id: 3, sku: 'P3', stock: '100.000', unit: 'PCS', isActive: true };
-  let state = { order: initialOrder, items: calculated.items, product, products: [product, ...(secondProduct ? [{ ...product, id: 4, sku: 'P4' }] : [])], movements: [], invoice: null, invoiceItems: [], delivery: null, deliveryItems: [], shipping: null, audits: [], writes: [], commits: 0, rollbacks: 0 };
+  const initialOrder = { id: 7, number: 'SO-7', customerId: 2, customerName: 'Customer snapshot', customerAddress: 'Office snapshot', billToName: 'Bill To snapshot', billToAddress: 'Billing snapshot', orderDate: '2026-11-16', expectedDeliveryDate: '2026-12-01', currency: 'PHP', sourceCurrency: 'USD', rate, vatRate: '12.000000', vatCode: 'VAT12', vatInclusive: inclusive, discountType, discount: headerDiscount, decimalInTotalPrice: places, decimalInPrice: 6, notes: 'Immutable header', preparedByName: 'Original actor', status: 'confirmed', ...Object.fromEntries(fields.map(key => [key, calculated[key]])) };
+  const product = { id: 3, name: 'Product live', description: 'Current description', currency: 'USD', sku: 'P3', stock: '100.000', unit: 'PCS', isActive: true };
+  let state = { order: initialOrder, items: calculated.items, product, products: [product, ...(secondProduct ? [{ ...product, id: 4, sku: 'P4' }] : [])], movements: [], invoice: null, invoiceItems: [], delivery: null, deliveryItems: [], shipping: null, audits: [], writes: [], commits: 0, rollbacks: 0, nextItemId: secondProduct ? 13 : 12 };
   if (invoiced) { state.invoice = { id: 9, orderId: 7, number: 'SI-9', invoiceDate: '2026-11-16', dueDate: '2026-12-16', paidAmount: '0.000000', ...Object.fromEntries(fields.map(key => [key, calculated[key]])) }; state.invoiceItems = calculated.items.map(item => ({ ...item, id: 101, orderItemId: item.id, invoiceId: 9 })); }
   if (delivered) { state.delivery = { id: 10, invoiceId: invoiced ? 9 : null, stockDeducted: true, orderId: 7, number: 'DR-10', deliveryDate: '2026-11-16', address: 'Actual destination', receivedBy: 'Recipient', ...Object.fromEntries(fields.map(key => [key, calculated[key]])) }; state.deliveryItems = calculated.items.map(item => ({ ...item, id: 201, orderItemId: item.id, deliveryReceiptId: 10 })); state.shipping = { id: 12, invoiceId: 9, orderId: 7, number: 'SHI-12' }; }
   const calls = [];
   const faults = { failAudit, failLedger: false, failProductId: null };
   let queue = Promise.resolve();
   const dtoItems = () => state.items.map(item => {
+    const unknownInvoice = Boolean(state.invoice) && (!state.invoiceItems.length || state.invoiceItems.some(row => !state.items.some(line => line.id === row.orderItemId)));
+    const hasInvoice = unknownInvoice || state.invoiceItems.some(row => row.orderItemId === item.id);
     const invoicedUnits = state.invoiceItems.filter(row => row.orderItemId === item.id).reduce((sum, row) => sum + qUnits(row.quantity), 0n);
     const deliveredUnits = state.deliveryItems.filter(row => row.orderItemId === item.id).reduce((sum, row) => sum + qUnits(row.quantity), 0n);
-    return { ...item, invoicedQuantity: qText(invoicedUnits), deliveredQuantity: qText(deliveredUnits), remainingInvoiceQuantity: qText(qUnits(item.quantity) - invoicedUnits), remainingDeliveryQuantity: qText(qUnits(item.quantity) - deliveredUnits) };
+    return { ...item, hasInvoice, invoicedQuantity: qText(invoicedUnits), deliveredQuantity: qText(deliveredUnits), remainingInvoiceQuantity: qText(qUnits(item.quantity) - invoicedUnits), remainingDeliveryQuantity: qText(qUnits(item.quantity) - deliveredUnits) };
   });
   const database = {
     sql: new Proxy({}, { get: (_target, type) => type === 'MAX' ? -1 : (...args) => ({ type, args }) }),
@@ -40,9 +42,22 @@ function fixture({ invoiced = true, delivered = false, failAudit = false, places
           if (query.startsWith('SELECT id,productId,productName,unit')) { assert.match(query, /ORDER BY productId,id/); return { recordset: state.invoiceItems.toSorted((a, b) => a.productId - b.productId || a.id - b.id).map(item => ({ ...item })) }; }
           if (query.startsWith('SELECT id FROM dbo.ProductStockMovements WITH')) return { recordset: state.movements.filter(row => row.requestKey === values.requestKey || row.invoiceItemId === values.invoiceItemId) };
           if (query.startsWith('SELECT id,unit,isActive')) return { recordset: state.products.filter(row => row.id === values.productId).map(row => ({ ...row })) };
+          if (query.startsWith('SELECT i.id AS invoiceId,linked.orderItemId')) {
+            assert.ok(scope); assert.match(query, /SalesInvoices i WITH \(UPDLOCK,HOLDLOCK\)/); assert.match(query, /SalesInvoiceItems linked WITH \(UPDLOCK,HOLDLOCK\)/);
+            return { recordset: state.invoice ? (state.invoiceItems.length ? state.invoiceItems.map(row => ({ invoiceId: 9, orderItemId: row.orderItemId })) : [{ invoiceId: 9, orderItemId: null }]) : [] };
+          }
+          if (query.startsWith('SELECT d.id AS deliveryReceiptId,linked.orderItemId')) {
+            assert.ok(scope); assert.match(query, /DeliveryReceiptItems linked WITH \(UPDLOCK,HOLDLOCK\)/);
+            return { recordset: state.delivery ? (state.deliveryItems.length ? state.deliveryItems.map(row => ({ deliveryReceiptId: 10, orderItemId: row.orderItemId })) : [{ deliveryReceiptId: 10, orderItemId: null }]) : [] };
+          }
+          if (query.startsWith('SELECT id,name,description,sku,unit,currency,isActive FROM dbo.Products')) return { recordset: state.products.filter(row => row.id === values.id).map(row => ({ ...row })) };
+          if (query.startsWith('SELECT o.id') && scope) assert.match(query, /SalesOrders o WITH \(UPDLOCK,HOLDLOCK\)/);
           if (query.startsWith('SELECT o.id')) return { recordset: [{ ...state.order, invoiced: Boolean(state.invoice), delivered: Boolean(state.delivery) }] };
           if (query.startsWith('SELECT productId,productName') && query.includes('FROM dbo.SalesOrderItems oi')) {
             assert.match(query, /CAST\(SUM\(s.quantity\) AS DECIMAL\(18,3\)\)/);
+            assert.match(query, /EXISTS\(SELECT 1 FROM dbo.SalesInvoiceItems linked WHERE linked.orderItemId=oi.id\)/);
+            assert.match(query, /AS hasInvoice,/);
+            if (scope && query.includes('SalesOrderItems oi WITH')) assert.match(query, /SalesOrderItems oi WITH \(UPDLOCK,HOLDLOCK\)/);
             assert.match(query, /CAST\(SUM\(d.quantity\) AS DECIMAL\(18,3\)\)/);
             return { recordset: dtoItems() };
           }
@@ -52,6 +67,12 @@ function fixture({ invoiced = true, delivered = false, failAudit = false, places
             assert.ok(scope);
             assert.deepEqual(Object.keys(values).sort(), ['id', ...fields].sort());
             state.order = { ...state.order, ...values }; state.writes.push('order-totals'); return { recordset: [] };
+          }
+          if (query.startsWith('DELETE FROM dbo.SalesOrderItems WHERE id=')) { assert.ok(scope); state.items = state.items.filter(item => item.id !== values.id); state.writes.push('item-delete'); return { recordset: [] }; }
+          if (query.startsWith('INSERT INTO dbo.SalesOrderItems ')) { assert.ok(scope); state.items.push({ ...values, id: state.nextItemId++ }); state.writes.push('item-add'); return { recordset: [] }; }
+          if (query.startsWith('UPDATE dbo.SalesOrderItems SET productId=')) {
+            assert.ok(scope); assert.equal(state.invoiceItems.some(item => item.orderItemId === values.id), false, 'Frozen invoice lines must never be updated.');
+            state.items = state.items.map(item => item.id === values.id ? { ...item, ...values } : item); state.writes.push('item-edit'); return { recordset: [] };
           }
           if (query.startsWith('UPDATE dbo.SalesOrderItems SET quantity=')) {
             assert.ok(scope);
@@ -119,76 +140,172 @@ function fixture({ invoiced = true, delivered = false, failAudit = false, places
   };
   const router = loadRouterWithDatabase('sales', database);
   return {
-    get state() { return state; }, calls, pricing, faults,
+    get state() { return state; }, calls, pricing, faults, actor,
     invoke(method, route, body, id = 7) { return invokeRoute(router, method, route, { params: { id }, is: () => true, body, testUser: actor }); },
-    update(quantity, extra = {}) { return this.invoke('patch', '/sales-orders/:id/quantities', { items: [{ id: 11, quantity }], ...extra }); },
+    update(quantity, extra = {}, itemId = 11) { return this.invoke('patch', '/sales-orders/:id/quantities', { items: [{ id: itemId, quantity }], ...extra }); },
+    edit(items, removedItemIds = [], extra = {}) { return this.invoke('patch', '/sales-orders/:id/items', { items, removedItemIds, ...extra }); },
   };
 }
 
-test('post-invoice quantity changes preserve item identity, frozen SI/DR/shipping snapshots and actual stock', async () => {
-  const api = fixture({ delivered: true });
-  const invoiceBefore = structuredClone(api.state.invoice), invoiceItems = structuredClone(api.state.invoiceItems), deliveryBefore = structuredClone(api.state.delivery), deliveryItems = structuredClone(api.state.deliveryItems);
-  const originalItem = structuredClone(api.state.items[0]);
-  const updated = await api.update('3.000');
-  const expected = calculateSalesOrder({ ...api.pricing, items: [{ ...originalItem, quantity: '3.000' }] });
-  for (const key of fields) assert.equal(updated.body.record[key], expected[key], key);
-  assert.equal(updated.body.record.notes, 'Immutable header');
-  assert.equal(updated.body.record.preparedByName, 'Original actor');
-  for (const key of ['id', 'productId', 'unitPrice', 'convertedUnitPrice', 'discountRate', 'description', 'sku', 'unit', 'refNumber']) assert.equal(updated.body.record.items[0][key], originalItem[key]);
-  assert.equal(updated.body.record.items[0].invoicedQuantity, '2.000');
-  assert.equal(updated.body.record.items[0].deliveredQuantity, '2.000');
-  assert.equal(updated.body.record.items[0].remainingInvoiceQuantity, '1.000');
-  assert.equal(updated.body.record.items[0].remainingDeliveryQuantity, '1.000');
-  assert.deepEqual(api.state.invoice, invoiceBefore); assert.deepEqual(api.state.invoiceItems, invoiceItems);
-  assert.deepEqual(api.state.delivery, deliveryBefore); assert.deepEqual(api.state.deliveryItems, deliveryItems);
-  assert.equal(api.state.product.stock, '100.000');
-  for (const route of ['/sales-invoices/:id', '/delivery-receipts/:id', '/shipping-invoices/:id']) {
-    const result = await api.invoke('get', route, undefined);
-    assert.equal(result.body.record.items[0].quantity, '2.000');
-    if (route === '/delivery-receipts/:id') { assert.equal(result.body.record.total, undefined); assert.equal(result.body.record.items[0].amount, undefined); }
-    else { assert.equal(result.body.record.total, invoiceBefore.total); assert.equal(result.body.record.items[0].amount, invoiceItems[0].amount); }
-  }
-  const history = await api.invoke('get', '/products/:id/stock-movements', undefined, 3);
-  assert.equal(history.body.records[0].quantity, '2.000');
-  assert.equal(history.body.records[0].stockBefore, null);
-  assert.deepEqual(api.state.writes, ['order-totals', 'item-quantity']);
+const editablePayload = row => Object.fromEntries(['id', 'productId', 'quantity', 'unitPrice', 'discountRate', 'refNumber', 'quotationNumber', 'deliveryDate'].map(field => [field, row[field] ?? null]));
+function mixedFixture(options = {}) {
+  const api = fixture({ ...options, secondProduct: true });
+  api.state.invoiceItems = api.state.invoiceItems.filter(row => row.orderItemId === 11);
+  api.state.deliveryItems = api.state.deliveryItems.filter(row => row.orderItemId === 11);
+  return api;
+}
+const millionths = value => { const [whole, fraction = ''] = String(value).split('.'); return BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0')); };
+const moneyText = units => `${units / 1000000n}.${(units % 1000000n).toString().padStart(6, '0')}`;
+
+test('mixed SI order edits change only editable items and derived totals, preserving all frozen records and stock', async () => {
+  const api = mixedFixture({ delivered: true });
+  const frozen = structuredClone(api.state.items[0]);
+  const snapshots = structuredClone({ invoice: api.state.invoice, invoiceItems: api.state.invoiceItems, delivery: api.state.delivery, deliveryItems: api.state.deliveryItems, shipping: api.state.shipping, product: api.state.product, movements: api.state.movements });
+  const edited = { ...editablePayload(api.state.items[1]), quantity: '3.125', unitPrice: '11.123456', discountRate: '8.250000', refNumber: 'NEW-REF', quotationNumber: 'NEW-QUOTE', deliveryDate: '2026-12-02' };
+  const result = await api.edit([edited]);
+  assert.equal(result.body.record.items.length, 2);
+  assert.deepEqual(api.state.items[0], frozen);
+  const changed = result.body.record.items.find(row => row.id === 12);
+  for (const [field, value] of Object.entries(edited)) assert.equal(changed[field], value, field);
+  for (const field of ['customerId', 'customerName', 'billToName', 'billToAddress', 'orderDate', 'expectedDeliveryDate', 'currency', 'sourceCurrency', 'rate', 'vatRate', 'vatCode', 'vatInclusive', 'discountType', 'discount', 'decimalInPrice', 'decimalInTotalPrice', 'notes', 'preparedByName', 'status']) assert.equal(result.body.record[field], api.state.order[field], field);
+  assert.deepEqual({ invoice: api.state.invoice, invoiceItems: api.state.invoiceItems, delivery: api.state.delivery, deliveryItems: api.state.deliveryItems, shipping: api.state.shipping, product: api.state.product, movements: api.state.movements }, snapshots);
+  assert.deepEqual(api.state.writes, ['order-totals', 'item-edit']);
+  assert.equal(result.body.record.items[0].hasInvoice, true); assert.equal(changed.hasInvoice, false);
+  assert.equal(api.calls.some(call => /UPDATE dbo\.(?:Products|SalesInvoices|DeliveryReceipts)|INSERT INTO dbo.ProductStockMovements/.test(call.query)), false);
 });
 
-test('quantity floor is the larger actual invoice or delivery amount, including three-decimal boundaries', async () => {
-  for (const [invoiceQty, deliveredQty] of [['1.001', '1.002'], ['1.002', '1.001']]) {
-    const api = fixture({ delivered: true }); api.state.invoiceItems[0].quantity = invoiceQty; api.state.deliveryItems[0].quantity = deliveredQty;
-    await assert.rejects(api.update('1.001'), error => error.status === 409 && /already invoiced or delivered/.test(error.message));
-    assert.equal(api.state.writes.length, 0);
-    const allowed = await api.update('1.002');
-    assert.equal(allowed.body.record.items[0].quantity, '1.002');
+test('all fields and quantity of SI-linked items are locked, including zero quantity and stale form submissions', async () => {
+  for (const attempt of ['change', 'unchanged', 'remove', 'quantities']) {
+    const api = mixedFixture();
+    const line = editablePayload(api.state.items[0]);
+    await assert.rejects(attempt === 'remove' ? api.edit([], [11]) : attempt === 'quantities' ? api.update('3.000') : api.edit([{ ...line, quantity: attempt === 'unchanged' ? line.quantity : '3.000' }]), error => error.status === 409 && /locked/.test(error.message));
+    assert.deepEqual(api.state.writes, []);
   }
+  for (const legacy of ['zero', 'empty', 'unmatched']) {
+    const api = mixedFixture();
+    if (legacy === 'zero') api.state.invoiceItems[0].quantity = '0.000';
+    if (legacy === 'empty') api.state.invoiceItems = [];
+    if (legacy === 'unmatched') api.state.invoiceItems.push({ ...api.state.invoiceItems[0], id: 102, orderItemId: 999 });
+    const record = await api.invoke('get', '/sales-orders/:id');
+    assert.equal(record.body.record.items[0].hasInvoice, true);
+    const target = legacy === 'zero' ? 11 : 12;
+    await assert.rejects(api.edit([editablePayload(api.state.items.find(row => row.id === target))]), error => error.status === 409);
+    assert.deepEqual(api.state.writes, []);
+  }
+  const stale = mixedFixture();
+  const stalePayload = editablePayload(stale.state.items[1]);
+  stale.state.invoiceItems.push({ ...stale.state.items[1], id: 102, invoiceId: 9, orderItemId: 12 });
+  await assert.rejects(stale.edit([{ ...stalePayload, quantity: '3.000' }]), error => error.status === 409);
+  assert.deepEqual(stale.state.writes, []);
 });
 
-test('quantity-only API rejects changed headers, prices, item identities, missing lines and malformed quantities', async () => {
+test('item edit validates headers, identities, duplicate products, quantities and dates before any persistent writes', async () => {
   const attempts = [
-    { items: [{ id: 11, quantity: '3' }], notes: 'tampered header' },
-    { items: [{ id: 11, quantity: '3', unitPrice: '0' }] },
-    { items: [{ id: 12, quantity: '3' }] }, { items: [] },
-    { items: [{ id: 11, quantity: '3' }, { id: 11, quantity: '3' }] },
-    { items: [{ id: 11, quantity: '0' }] }, { items: [{ id: 11, quantity: '1.0001' }] },
-    { items: [{ id: 11, quantity: 3 }] }, { items: [{ id: 11, quantity: '1000000.001' }] },
+    row => ({ items: [row], notes: 'tampered' }),
+    row => ({ items: [{ ...row, unknown: true }] }),
+    row => ({ items: [{ ...row, id: 999 }] }),
+    row => ({ items: [row, row] }),
+    row => ({ items: [row], removedItemIds: [row.id] }),
+    row => ({ items: [{ ...row, productId: 3 }] }),
+    row => ({ items: [{ ...row, quantity: '0' }] }),
+    row => ({ items: [{ ...row, quantity: '1.0001' }] }),
+    row => ({ items: [{ ...row, quantity: '1000000.001' }] }),
+    row => ({ items: [{ ...row, quantity: 'NaN' }] }),
+    row => ({ items: [{ ...row, discountRate: '100.000001' }] }),
+    row => ({ items: [{ ...row, unitPrice: '-1' }] }),
+    row => ({ items: [{ ...row, deliveryDate: '2026-02-30' }] }),
+    row => ({ items: [{ ...row, deliveryDate: '2026-11-15' }] }),
+    row => ({ items: [row], removedItemIds: [999] }),
   ];
-  for (const body of attempts) { const api = fixture(); await assert.rejects(api.invoke('patch', '/sales-orders/:id/quantities', body), error => [400, 409].includes(error.status)); assert.equal(api.state.writes.length, 0); }
+  for (const makeBody of attempts) { const api = mixedFixture(); await assert.rejects(api.invoke('patch', '/sales-orders/:id/items', makeBody(editablePayload(api.state.items[1]))), error => [400, 409].includes(error.status)); assert.deepEqual(api.state.writes, []); }
   const uninvoiced = fixture({ invoiced: false });
-  await assert.rejects(uninvoiced.update('3'), error => error.status === 409 && /regular sales order form/.test(error.message));
+  await assert.rejects(uninvoiced.update('3'), error => error.status === 409 && /full sales order form/.test(error.message));
   const fullEdit = fixture();
   await assert.rejects(fullEdit.invoke('put', '/sales-orders/:id', { customerId: 999, orderDate: '2026-11-16', notes: 'forged', status: 'confirmed', items: [{ productId: 3, quantity: '3', unitPrice: '0' }] }), error => error.status === 409);
-  assert.equal(fullEdit.state.writes.length, 0);
+  assert.deepEqual(fullEdit.state.writes, []);
+  for (const role of ['viewer', 'warehouse']) { const api = mixedFixture(); api.actor.role = role; await assert.rejects(api.edit([editablePayload(api.state.items[1])]), error => error.status === 403); assert.equal(api.calls.length, 0); }
 });
 
-test('quantity recalculation matches the established FX, discount and inclusive/exclusive VAT formulas at zero and six places', async () => {
+test('non-SI additions/removals preserve frozen rows and enforce saved currency and distinct products', async () => {
+  const api = mixedFixture();
+  const frozen = structuredClone(api.state.items[0]);
+  api.state.products.push({ ...api.state.product, id: 5, sku: 'P5', name: 'New product', currency: 'USD' });
+  const replacement = { ...editablePayload(api.state.items[1]), productId: 5, quantity: '4.001' }; delete replacement.id;
+  const response = await api.edit([replacement], [12]);
+  assert.equal(response.body.record.items.length, 2);
+  assert.deepEqual(api.state.items[0], frozen);
+  assert.equal(api.state.items.some(row => row.id === 12), false);
+  assert.equal(response.body.record.items.find(row => row.productId === 5).quantity, '4.001');
+  assert.deepEqual(api.state.writes, ['order-totals', 'item-delete', 'item-add']);
+  const wrongCurrency = mixedFixture(); wrongCurrency.state.products.push({ ...wrongCurrency.state.product, id: 5, currency: 'EUR' });
+  await assert.rejects(wrongCurrency.edit([replacement]), error => error.status === 400 && /saved source currency/.test(error.message));
+  assert.deepEqual(wrongCurrency.state.writes, []);
+});
+
+test('editable subset uses saved FX, percent discount and VAT at zero, two and six money places', async () => {
   for (const places of [0, 2, 6]) for (const inclusive of [false, true]) {
-    const api = fixture({ places, inclusive, quantity: '0.333', price: '0.115300', rate: '55.000000' });
-    const result = await api.update('1.001');
-    const expected = calculateSalesOrder({ ...api.pricing, items: [{ ...api.pricing.items[0], quantity: '1.001' }] });
-    for (const key of fields) assert.equal(result.body.record[key], expected[key], key);
-    for (const key of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount', 'lineTotal']) assert.equal(result.body.record.items[0][key], expected.items[0][key], key);
-    assert.equal(api.calls.some(call => /FROM dbo.Config|FROM dbo.Products/.test(call.query)), false, 'Saved pricing must not change with later Configuration or Product updates.');
+    const api = mixedFixture({ places, inclusive, quantity: '0.333', price: '0.115300', rate: '55.000000' });
+    const frozen = structuredClone(api.state.items[0]);
+    const edited = { ...editablePayload(api.state.items[1]), quantity: '1.001' };
+    const result = await api.edit([edited]);
+    const expected = calculateSalesOrder({ ...api.pricing, items: [{ ...api.state.items[1], quantity: '1.001' }] });
+    for (const key of fields) assert.equal(result.body.record[key], moneyText(millionths(frozen[key === 'total' ? 'amount' : key]) + millionths(expected[key])), key);
+    const actualLine = result.body.record.items.find(row => row.id === 12);
+    for (const key of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount', 'lineTotal']) assert.equal(actualLine[key], expected.items[0][key], key);
+    assert.deepEqual(api.state.items[0], frozen);
+    assert.equal(api.calls.some(call => /FROM dbo.Config|FROM dbo.Products/.test(call.query)), false, 'Saved pricing does not read later Configuration or Product changes.');
+  }
+});
+
+test('fixed header discount keeps frozen allocations and rejects an impossible editable remainder atomically', async () => {
+  const api = mixedFixture({ discountType: 'amount', headerDiscount: '100.000000' });
+  const frozen = structuredClone(api.state.items[0]);
+  const edited = { ...editablePayload(api.state.items[1]), quantity: '2.000' };
+  const result = await api.edit([edited]);
+  assert.equal(result.body.record.headerDiscountAmount, '100.000000');
+  assert.deepEqual(api.state.items[0], frozen);
+  assert.equal(millionths(api.state.items[1].headerDiscountAmount), 100000000n - millionths(frozen.headerDiscountAmount));
+  const failed = mixedFixture({ discountType: 'amount', headerDiscount: '100.000000' });
+  await assert.rejects(failed.edit([{ ...editablePayload(failed.state.items[1]), quantity: '0.001', unitPrice: '0.000001' }]), error => error.status === 400 && /locked item/.test(error.message));
+  assert.deepEqual(failed.state.writes, []);
+});
+
+test('incomplete frozen financials and malformed legacy source references fail closed without writes', async () => {
+  for (const field of ['grossAmount', 'lineDiscountAmount', 'headerDiscountAmount', 'discountAmount', 'netAmount', 'vatAmount', 'amount']) {
+    const api = mixedFixture(); api.state.items[0][field] = null;
+    await assert.rejects(api.edit([{ ...editablePayload(api.state.items[1]), quantity: '3.000' }]), error => error.status === 409);
+    assert.deepEqual(api.state.writes, []);
+  }
+  for (const orderItemId of [null, 0, '11', 999]) {
+    const api = mixedFixture(); api.state.invoiceItems[0].orderItemId = orderItemId;
+    await assert.rejects(api.edit([editablePayload(api.state.items[1])]), error => error.status === 409 && /locked/.test(error.message));
+    assert.deepEqual(api.state.writes, []);
+  }
+});
+
+test('an invoice racing an item save freezes its referenced rows before the stale save can write', async () => {
+  const api = fixture({ invoiced: false });
+  const original = structuredClone(api.state.items[0]);
+  const outcomes = await Promise.allSettled([
+    api.invoke('post', '/sales-invoices', { orderId: 7, invoiceDate: '2026-11-16', dueDate: '2026-12-16' }),
+    api.edit([{ ...editablePayload(original), quantity: '3.000' }]),
+  ]);
+  assert.equal(outcomes[0].status, 'fulfilled');
+  assert.equal(outcomes[1].status, 'rejected');
+  assert.equal(outcomes[1].reason.status, 409);
+  assert.deepEqual(api.state.items[0], original);
+  assert.equal(api.state.product.stock, '98.000'); assert.equal(api.state.movements.length, 1);
+  assert.equal(api.state.invoiceItems[0].quantity, original.quantity);
+  assert.equal(api.state.writes.some(write => ['order-totals', 'item-edit', 'item-add', 'item-delete'].includes(write)), false);
+  assert.equal(api.state.audits.length, 1);
+});
+
+test('legacy quantity endpoint rejects every request before database access', async () => {
+  for (const options of [{}, { invoiced: false }, { secondProduct: true }]) {
+    const api = fixture(options);
+    await assert.rejects(api.update('3.000'), error => error.status === 409 && /full sales order form/.test(error.message));
+    assert.equal(api.calls.length, 0);
+    assert.deepEqual(api.state.writes, []);
   }
 });
 
@@ -206,9 +323,9 @@ test('snapshot creation and stock changes commit atomically while audit failures
   const failedDelivery = fixture({ failAudit: true });
   await assert.rejects(failedDelivery.invoke('post', '/delivery-receipts', { invoiceId: 9, deliveryDate: '2026-11-16', receivedBy: 'Recipient', address: 'Actual destination' }), /Injected audit rollback/);
   assert.equal(failedDelivery.state.delivery, null); assert.equal(failedDelivery.state.deliveryItems.length, 0); assert.equal(failedDelivery.state.product.stock, '100.000');
-  const failedEdit = fixture({ failAudit: true });
+  const failedEdit = mixedFixture({ failAudit: true });
   const original = structuredClone(failedEdit.state.order);
-  await assert.rejects(failedEdit.update('3.000'), /Injected audit rollback/);
+  await assert.rejects(failedEdit.edit([{ ...editablePayload(failedEdit.state.items[1]), quantity: '3.000' }]), /Injected audit rollback/);
   assert.deepEqual(failedEdit.state.order, original); assert.equal(failedEdit.state.items[0].quantity, '2.000');
 });
 
@@ -273,7 +390,7 @@ test('invoice stock guards reject unknown balances, inactive products, invalid u
 test('delivery uses the frozen invoice after order edits, makes no stock changes and adds actual destination to the same movement', async () => {
   const api = fixture({ invoiced: false });
   await api.invoke('post', '/sales-invoices', { orderId: 7, invoiceDate: '2026-11-16', dueDate: '2026-12-16' });
-  await api.update('3.000');
+  await assert.rejects(api.update('3.000'), error => error.status === 409);
   const stock = api.state.product.stock, ledger = structuredClone(api.state.movements), before = api.calls.length;
   const result = await api.invoke('post', '/delivery-receipts', { invoiceId: 9, orderId: 999, items: [{ quantity: '999' }], deliveryDate: '2026-11-17', address: 'Actual dispatch destination' });
   assert.equal(result.body.record.items[0].quantity, '2.000'); assert.equal(result.body.record.invoiceId, 9);

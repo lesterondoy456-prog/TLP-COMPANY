@@ -4,6 +4,14 @@ const { request, sql, transaction } = require("../db");
 const SYSTEM = 'configuration';
 
 const specs = {
+  "machines": {
+    "table": "ConfigMachines", "title": "Machines",
+    "fields": [
+      { "key": "code", "label": "Code", "type": "text", "required": true, "default": "" },
+      { "key": "name", "label": "Name", "type": "text", "required": true, "default": "" },
+      { "key": "description", "label": "Description", "type": "text", "required": false, "default": null }
+    ]
+  },
   "atc": {
     "table": "ConfigAtc",
     "title": "ATC",
@@ -516,6 +524,7 @@ router.get('/masters/:kind', async (req, res) => {
     case 'product-categories': result = await request().query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigProductCategories ORDER BY id DESC`); break;
     case 'supplies-categories': result = await request().query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigSuppliesCategories ORDER BY id DESC`); break;
     case 'warehouses': result = await request().query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigWarehouses ORDER BY id DESC`); break;
+    case 'machines': result = await request().query(`SELECT [id], [code], [name], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigMachines ORDER BY id DESC`); break;
     case 'locations': result = await request().query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigLocations ORDER BY id DESC`); break;
     case 'payment-terms': result = await request().query(`SELECT [id], [description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigPaymentTerms ORDER BY id DESC`); break;
     case 'units': result = await request().query(`SELECT [id], [description], [shortName], [forProduct], [forSupplies], [decimal], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [name] FROM dbo.ConfigUnits ORDER BY id DESC`); break;
@@ -557,6 +566,7 @@ router.get('/masters/:kind/:id', async (req, res) => {
     case 'product-categories': result = await request().input('id', sql.Int, id).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigProductCategories WHERE id=@id`); break;
     case 'supplies-categories': result = await request().input('id', sql.Int, id).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigSuppliesCategories WHERE id=@id`); break;
     case 'warehouses': result = await request().input('id', sql.Int, id).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigWarehouses WHERE id=@id`); break;
+    case 'machines': result = await request().input('id', sql.Int, id).query(`SELECT [id], [code], [name], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigMachines WHERE id=@id`); break;
     case 'locations': result = await request().input('id', sql.Int, id).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigLocations WHERE id=@id`); break;
     case 'payment-terms': result = await request().input('id', sql.Int, id).query(`SELECT [id], [description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigPaymentTerms WHERE id=@id`); break;
     case 'units': result = await request().input('id', sql.Int, id).query(`SELECT [id], [description], [shortName], [forProduct], [forSupplies], [decimal], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [name] FROM dbo.ConfigUnits WHERE id=@id`); break;
@@ -662,6 +672,12 @@ router.post('/masters/:kind', async (req, res) => {
       }
     }
 
+    if (kind === 'machines' && (!values.code || !values.name)) {
+      const error = new Error('Machine Code and Name are required.');
+      error.status = 400;
+      throw error;
+    }
+
     if (kind === 'currencies' && values.isActive && values.isDefault) {
       await request(scope).input('id', sql.Int, current?.id || 0).query('UPDATE dbo.ConfigCurrencies WITH (UPDLOCK,HOLDLOCK) SET isDefault=0,updatedAt=SYSUTCDATETIME() WHERE isActive=1 AND isDefault=1 AND id<>@id');
     }
@@ -677,6 +693,7 @@ router.post('/masters/:kind', async (req, res) => {
       case 'product-categories': result = await query.query(`INSERT INTO dbo.ConfigProductCategories ([name], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
       case 'supplies-categories': result = await query.query(`INSERT INTO dbo.ConfigSuppliesCategories ([name], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@name, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
       case 'warehouses': result = await query.query(`INSERT INTO dbo.ConfigWarehouses ([code], [description], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code, @description, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
+      case 'machines': result = await query.query(`INSERT INTO dbo.ConfigMachines ([code], [name], [description], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code, @name, @description, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
       case 'locations': result = await query.query(`INSERT INTO dbo.ConfigLocations ([code], [description], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@code, @description, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
       case 'payment-terms': result = await query.query(`INSERT INTO dbo.ConfigPaymentTerms ([description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@description, @days, @month, @dateOfMonth, @dayOfMonth, @dueDateEom, @forCustomer, @forSupplier, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
       case 'units': result = await query.query(`INSERT INTO dbo.ConfigUnits ([description], [shortName], [forProduct], [forSupplies], [decimal], isActive, deletedDate,createdAt,updatedAt) OUTPUT INSERTED.id VALUES (@description, @shortName, @forProduct, @forSupplies, @decimal, @isActive, CASE WHEN @isActive=1 THEN NULL ELSE SYSUTCDATETIME() END,SYSUTCDATETIME(),SYSUTCDATETIME())`); break;
@@ -703,6 +720,7 @@ router.post('/masters/:kind', async (req, res) => {
       case 'product-categories': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigProductCategories WHERE id=@id`); break;
       case 'supplies-categories': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigSuppliesCategories WHERE id=@id`); break;
       case 'warehouses': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigWarehouses WHERE id=@id`); break;
+      case 'machines': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [name], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigMachines WHERE id=@id`); break;
       case 'locations': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigLocations WHERE id=@id`); break;
       case 'payment-terms': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigPaymentTerms WHERE id=@id`); break;
       case 'units': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [description], [shortName], [forProduct], [forSupplies], [decimal], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [name] FROM dbo.ConfigUnits WHERE id=@id`); break;
@@ -770,6 +788,7 @@ router.put('/masters/:kind/:id', async (req, res) => {
       case 'product-categories': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigProductCategories WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'supplies-categories': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigSuppliesCategories WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'warehouses': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigWarehouses WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
+      case 'machines': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [name], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigMachines WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'locations': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigLocations WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'payment-terms': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigPaymentTerms WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'units': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [description], [shortName], [forProduct], [forSupplies], [decimal], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [name] FROM dbo.ConfigUnits WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
@@ -836,6 +855,12 @@ router.put('/masters/:kind/:id', async (req, res) => {
       }
     }
 
+    if (kind === 'machines' && (!values.code || !values.name)) {
+      const error = new Error('Machine Code and Name are required.');
+      error.status = 400;
+      throw error;
+    }
+
     if (kind === 'currencies' && values.isActive && values.isDefault) {
       await request(scope).input('id', sql.Int, current?.id || 0).query('UPDATE dbo.ConfigCurrencies WITH (UPDLOCK,HOLDLOCK) SET isDefault=0,updatedAt=SYSUTCDATETIME() WHERE isActive=1 AND isDefault=1 AND id<>@id');
     }
@@ -851,6 +876,7 @@ router.put('/masters/:kind/:id', async (req, res) => {
       case 'product-categories': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigProductCategories SET [name]=@name, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
       case 'supplies-categories': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigSuppliesCategories SET [name]=@name, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
       case 'warehouses': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigWarehouses SET [code]=@code, [description]=@description, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
+      case 'machines': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigMachines SET [code]=@code, [name]=@name, [description]=@description, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
       case 'locations': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigLocations SET [code]=@code, [description]=@description, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
       case 'payment-terms': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigPaymentTerms SET [description]=@description, [days]=@days, [month]=@month, [dateOfMonth]=@dateOfMonth, [dayOfMonth]=@dayOfMonth, [dueDateEom]=@dueDateEom, [forCustomer]=@forCustomer, [forSupplier]=@forSupplier, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
       case 'units': result = await query.input('id', sql.Int, id).query(`UPDATE dbo.ConfigUnits SET [description]=@description, [shortName]=@shortName, [forProduct]=@forProduct, [forSupplies]=@forSupplies, [decimal]=@decimal, isActive=@isActive, deletedDate=CASE WHEN @isActive=1 THEN NULL ELSE COALESCE(deletedDate,SYSUTCDATETIME()) END, updatedAt=SYSUTCDATETIME() OUTPUT INSERTED.id WHERE id=@id`); break;
@@ -877,6 +903,7 @@ router.put('/masters/:kind/:id', async (req, res) => {
       case 'product-categories': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigProductCategories WHERE id=@id`); break;
       case 'supplies-categories': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigSuppliesCategories WHERE id=@id`); break;
       case 'warehouses': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigWarehouses WHERE id=@id`); break;
+      case 'machines': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [name], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigMachines WHERE id=@id`); break;
       case 'locations': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigLocations WHERE id=@id`); break;
       case 'payment-terms': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigPaymentTerms WHERE id=@id`); break;
       case 'units': selectedResult = await request(scope).input('id', sql.Int, savedId).query(`SELECT [id], [description], [shortName], [forProduct], [forSupplies], [decimal], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [name] FROM dbo.ConfigUnits WHERE id=@id`); break;
@@ -935,6 +962,7 @@ router.delete('/masters/:kind/:id', async (req, res) => {
       case 'product-categories': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigProductCategories WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'supplies-categories': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigSuppliesCategories WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'warehouses': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigWarehouses WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
+      case 'machines': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [name], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigMachines WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'locations': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigLocations WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'payment-terms': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigPaymentTerms WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
       case 'units': lockedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [description], [shortName], [forProduct], [forSupplies], [decimal], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [name] FROM dbo.ConfigUnits WITH (UPDLOCK,HOLDLOCK) WHERE id=@id`); break;
@@ -961,6 +989,7 @@ router.delete('/masters/:kind/:id', async (req, res) => {
       case 'product-categories': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigProductCategories SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
       case 'supplies-categories': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigSuppliesCategories SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
       case 'warehouses': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigWarehouses SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
+      case 'machines': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigMachines SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
       case 'locations': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigLocations SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
       case 'payment-terms': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigPaymentTerms SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
       case 'units': await request(scope).input('id', sql.Int, id).query(`UPDATE dbo.ConfigUnits SET isActive=0, deletedDate=COALESCE(deletedDate,SYSUTCDATETIME()), updatedAt=SYSUTCDATETIME() WHERE id=@id`); break;
@@ -987,6 +1016,7 @@ router.delete('/masters/:kind/:id', async (req, res) => {
       case 'product-categories': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigProductCategories WHERE id=@id`); break;
       case 'supplies-categories': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [name], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigSuppliesCategories WHERE id=@id`); break;
       case 'warehouses': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigWarehouses WHERE id=@id`); break;
+      case 'machines': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [name], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigMachines WHERE id=@id`); break;
       case 'locations': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [code], [description], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigLocations WHERE id=@id`); break;
       case 'payment-terms': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [description], [days], [month], [dateOfMonth], [dayOfMonth], [dueDateEom], [forCustomer], [forSupplier], [isActive], [deletedDate], [createdAt], [updatedAt] FROM dbo.ConfigPaymentTerms WHERE id=@id`); break;
       case 'units': selectedResult = await request(scope).input('id', sql.Int, id).query(`SELECT [id], [description], [shortName], [forProduct], [forSupplies], [decimal], [isActive], [deletedDate], [createdAt], [updatedAt], [shortName] AS [name] FROM dbo.ConfigUnits WHERE id=@id`); break;

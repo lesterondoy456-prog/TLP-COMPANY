@@ -180,7 +180,7 @@ function validateProduct(input, current) {
   if (has(input, 'processes')) result.processes = namedRows(input.processes, 'Processes', 100);
   if (has(input, 'customerApprovals')) {
     const customers = new Set();
-    result.customerApprovals = rows(input.customerApprovals, 'Customer approvals', 100).map(row => {
+    result.customerApprovals = rows(input.customerApprovals, 'Customer approvals', 1).map(row => {
       const customerId = v.idValue(row.customerId, 'customer');
       if (customers.has(customerId)) throw new ApiError(400, 'A customer can appear only once in Product Customer settings.');
       customers.add(customerId);
@@ -260,6 +260,32 @@ export function validateSalesRequest(path, options = {}) {
   }
   if (/^\/customers(?:\/\d+)?$/.test(route)) { validateCustomer(input, method === 'PUT' ? {} : undefined); return; }
   if (/^\/products(?:\/\d+)?$/.test(route)) { validateProduct(input, method === 'PUT' ? {} : undefined); return; }
+  if (/^\/sales-orders\/\d+\/items$/.test(route)) {
+    if (!Array.isArray(input.items) || input.items.length > 100) throw new Error('Use at most 100 editable order items.');
+    if (!Array.isArray(input.removedItemIds) || input.removedItemIds.length > 100) throw new Error('Choose valid order items to remove.');
+    const ids = new Set();
+    for (const value of input.removedItemIds) {
+      const id = idValue(value, 'order item');
+      if (ids.has(id)) throw new Error('An order item can be removed only once.');
+      ids.add(id);
+    }
+    for (const item of input.items) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Each order item must be an object.');
+      if (item.id != null) {
+        const id = idValue(item.id, 'order item');
+        if (ids.has(id)) throw new Error('Use each order item only once.');
+        ids.add(id);
+      }
+      idValue(item.productId, 'product');
+      numeric(item, 'quantity', { min: 0.001, max: 1e6, places: 3 });
+      numeric(item, 'unitPrice', { min: 0, max: 1e8, places: 6 });
+      text(item, 'refNumber', 100);
+      text(item, 'quotationNumber', 100);
+      if (item.discountRate != null && String(item.discountRate).trim() !== '') numeric(item, 'discountRate', { min: 0, max: 100, places: 6 });
+      if (item.deliveryDate) date(item, 'deliveryDate');
+    }
+    return;
+  }
   if (/^\/sales-orders(?:\/\d+)?$/.test(route)) {
     text(input, 'currency', 30, true);
     idValue(input.customerId, 'customer');
@@ -370,8 +396,9 @@ export function validateOrderCurrency(currency, configuredCurrencies, productCur
   return '';
 }
 
-export function validateOrderForm(form, items, options, products, customers) {
+export function validateOrderForm(form, items, options, products, customers, editing = {}) {
   const errors = {};
+  if (!editing.headerLocked) {
   const selectedProducts = items.map(item => products.find(product => String(product.id) === String(item.productId))).filter(Boolean);
   const currencyError = validateOrderCurrency(form.currency, options.currencies, selectedProducts.map(product => product.currency), form.rate);
   if (currencyError) errors.currency = currencyError;
@@ -395,13 +422,18 @@ export function validateOrderForm(form, items, options, products, customers) {
   if (form.discountType && String(form.discount ?? '').trim() !== '' && (!numberIsValid(form.discount, 6) || form.discountType === 'percent' && Number(form.discount) > 100)) errors.discount = form.discountType === 'percent' ? 'Enter a discount from 0 to 100 percent with up to 6 decimal places.' : 'Enter a valid discount amount with up to 6 decimal places.';
   if (!['draft', 'confirmed'].includes(form.status)) errors.status = 'Choose Draft or Confirmed.';
   if (String(form.notes ?? '').length > 2000) errors.notes = 'Use 2,000 characters or fewer.';
+  }
   if (!items.length || items.length > 100) errors['items.0.productId'] = 'Add between 1 and 100 order items.';
-  const seen = new Set();
   items.forEach((item, index) => {
+    if (editing.itemLocked?.(item)) return;
     const key = 'items.' + index + '.';
-    if (!products.some(product => String(product.id) === String(item.productId))) errors[key + 'productId'] = 'Choose a product.';
-    else if (seen.has(String(item.productId))) errors[key + 'productId'] = 'Use one line per product. Combine repeated quantities.';
-    seen.add(String(item.productId));
+    const product = products.find(row => String(row.id) === String(item.productId));
+    const saved = editing.headerLocked && editing.savedItems?.find(row => item.id != null && String(row.id) === String(item.id));
+    const unchangedProduct = saved && String(saved.productId) === String(item.productId);
+    if (!product && !unchangedProduct) errors[key + 'productId'] = 'Choose a product.';
+    else if (editing.headerLocked && !unchangedProduct && (product.isActive === false || product.isActive === 0)) errors[key + 'productId'] = 'Choose an active product.';
+    else if (editing.headerLocked && !unchangedProduct && String(product.currency || '').trim().toUpperCase() !== String(editing.sourceCurrency || '').trim().toUpperCase()) errors[key + 'productId'] = 'Choose a product with the saved order source currency (' + editing.sourceCurrency + ').';
+    else if (items.some((line, position) => position !== index && String(line.productId) === String(item.productId))) errors[key + 'productId'] = 'Use one line per product. Combine repeated quantities.';
     if (!numberIsValid(item.quantity, 3, 0.001) || Number(item.quantity) > 1e6) errors[key + 'quantity'] = 'Enter a quantity greater than zero with up to 3 decimal places.';
     if (!numberIsValid(item.unitPrice, 6) || Number(item.unitPrice) > 1e8) errors[key + 'unitPrice'] = 'Enter a quantity and unit price for every order item. Unit price must be zero or more, with up to 6 decimal places.';
     if (String(item.discountRate ?? '').trim() && (!numberIsValid(item.discountRate, 6) || Number(item.discountRate) > 100)) errors[key + 'discountRate'] = 'Enter a line discount from 0 to 100 percent.';
@@ -463,7 +495,7 @@ const PRODUCT_FORM_NUMBERS = {
   weight: { label: 'Weight', places: 6 },
 };
 
-const PRODUCT_FORM_ROW_LIMITS = { processes: 100, customerApprovals: 100, linkedSupplies: 200 };
+const PRODUCT_FORM_ROW_LIMITS = { processes: 100, customerApprovals: 1, linkedSupplies: 200 };
 
 function dateIsValid(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;

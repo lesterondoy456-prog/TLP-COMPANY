@@ -295,35 +295,20 @@ test('configuration saves refresh dependent systems without exposing master valu
   assert.ok(!JSON.stringify(events).includes('Private Mock Country'));
 });
 
-test('stock movements notify Sales and audit watchers only after commit, with no events for retries or failures', async t => {
+test('denied Sales manual stock writes produce no data-change events or inventory changes', async t => {
   const api = await fixture(t);
   const sales = await api.joined('sales'), configuration = await api.joined('configuration'), warehouse = await api.joined('warehouse');
-  const body = { requestKey: 'a'.repeat(32), direction: 'out', quantity: '1.234', movementDate: '2026-11-16', sourceDestination: 'Customer pickup', reason: 'Recorded release', reference: null };
-  const salesChange = once(sales.socket, 'data:changed'), auditChange = once(configuration.socket, 'data:changed');
-  const response = await api.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', body);
-  assert.equal(response.status, 201, await response.clone().text());
-  const [event] = await salesChange;
-  assert.deepEqual(event.resources, ['products', 'stock-movements']);
-  assert.deepEqual((await auditChange)[0].resources, ['audit-trail']);
-  assert.equal(api.events.at(-1), 'commit');
-  assert.equal(api.snapshot().products[0].stock, '3.766');
-  assert.equal(api.snapshot().movements.length, 1);
-  assert.deepEqual(Object.keys(event).sort(), ['changedAt', 'resources', 'system']);
-  assert.equal(JSON.stringify(event).includes(body.reason), false);
-  const retry = await api.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', body);
-  assert.equal(retry.status, 200); assert.equal((await retry.json()).replayed, true);
-  const rejected = await api.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', { ...body, requestKey: 'b'.repeat(32), quantity: '99.000' });
-  assert.equal(rejected.status, 409);
+  const before = api.snapshot();
+  const body = { requestKey: 'a'.repeat(32), direction: 'out', quantity: '1.234', movementDate: '2026-11-16', sourceDestination: 'Customer pickup', reason: 'Manual adjustment', reference: null };
+  for (const direction of ['in', 'out']) {
+    const response = await api.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', { ...body, direction });
+    assert.equal(response.status, 403, await response.clone().text());
+  }
   await delay(50);
-  assert.equal(sales.events.length, 1); assert.equal(configuration.events.length, 1); assert.equal(warehouse.events.length, 0);
-  assert.equal(api.snapshot().products[0].stock, '3.766'); assert.equal(api.snapshot().movements.length, 1);
-  const failed = await fixture(t, { failAudit: true });
-  const listener = await failed.joined('sales');
-  const rolledBack = await failed.request('/api/sales/products/7/stock-movements', cookie('sales'), 'POST', body);
-  assert.equal(rolledBack.status, 409);
-  await delay(50);
-  assert.equal(failed.events.at(-1), 'rollback'); assert.equal(listener.events.length, 0);
-  assert.equal(failed.snapshot().products[0].stock, '5.000'); assert.equal(failed.snapshot().movements.length, 0);
+  assert.deepEqual(api.snapshot(), before);
+  assert.deepEqual(sales.events, []);
+  assert.deepEqual(configuration.events, []);
+  assert.deepEqual(warehouse.events, []);
 });
 
 test('logout revokes only its session; account edits revoke the affected system user and pending tickets', async t => {
