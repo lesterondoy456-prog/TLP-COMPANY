@@ -1,0 +1,79 @@
+{
+  "format": "TTICompany-transfer-v1",
+  "sourceDate": "2026-11-18",
+  "cipher": "aes-256-gcm",
+  "keyFingerprint": "9496f49ee5e4c894ecefa3e981328975083aa0b901f10b653ae00498bfcbfdff",
+  "archiveName": "TTICompany-transfer.tar.gz",
+  "archiveBytes": 102124970,
+  "archiveSha256": "43b272d7aa51ac49de8460883aca55009793f66954e63cb09024ad5830ab4070",
+  "includes": [
+    "ConfigurationSystem",
+    "NODE JS SERVER",
+    "PurchasingSystem",
+    "SalesSystem",
+    "WarehouseSystem"
+  ],
+  "includesNodeModules": true,
+  "includesEnvironment": true,
+  "backupFile": "NODE JS SERVER/migration/backup/TTICompany.bak",
+  "backup": {
+    "database": "TTICompany",
+    "bytes": 14798848,
+    "sha256": "DC6E3A371CF42BBCC4045405C2003E87B47AF21352622CDA2D586F415D19D137",
+    "verifyOnlyPassed": true,
+    "copyOnly": true,
+    "sqlVersion": "17.0.1000.7",
+    "sqlEdition": "Standard Developer Edition (64-bit)"
+  },
+  "parts": [
+    {
+      "number": 1,
+      "file": "TTICompany-transfer-20261118.part001.enc",
+      "iv": "1zKrrWlAdPp52VT5",
+      "tag": "G1Y/8Sh8eLqg96X7mftjOA==",
+      "plaintextBytes": 33554432,
+      "encryptedBytes": 33554432,
+      "sha256": "aaf2512a888b2576ea69f67a493ceb0f4b133aac9ef0732e0adeb25356be6c39"
+    },
+    {
+      "number": 2,
+      "file": "TTICompany-transfer-20261118.part002.enc",
+      "iv": "CXPVOy0lgvQMoFzS",
+      "tag": "+c1/TakXRBRU2p/ciPmSAQ==",
+      "plaintextBytes": 33554432,
+      "encryptedBytes": 33554432,
+      "sha256": "5ca32358275955567145481e083c64d07a5b700a27ca4e41ba60412fbe096642"
+    },
+    {
+      "number": 3,
+      "file": "TTICompany-transfer-20261118.part003.enc",
+      "iv": "UB0fSandkeCxEyRg",
+      "tag": "tx5VJlaAX/F3F98FmiBSUw==",
+      "plaintextBytes": 33554432,
+      "encryptedBytes": 33554432,
+      "sha256": "4f07f7d6337a07501b4a9d72ad9d95b50642aa2b2e34ce47756312aef2dc50ba"
+    },
+    {
+      "number": 4,
+      "file": "TTICompany-transfer-20261118.part004.enc",
+      "iv": "vlm1MJ0z5yGklnX6",
+      "tag": "K3Gw2hL29LEcVuQ+XNhuPw==",
+      "plaintextBytes": 1461674,
+      "encryptedBytes": 1461674,
+      "sha256": "19e370d7662f4017730cf9f6b8c99d4104254213b22ec8cb59cbe4234d70a509"
+    }
+  ],
+  "verification": {
+    "sourceFiles": 26085,
+    "sourceBytes": 363745149,
+    "allFiveProjectFolders": true,
+    "allFiveNodeModules": true,
+    "environmentIncluded": true,
+    "allSourceFileNamesAndSizesMatch": true,
+    "databaseCopyOnlyBackupVerified": true,
+    "encryptedRoundTripPassed": true,
+    "extractedEnvironmentAndBackupMatch": true,
+    "wrongKeyRejected": true,
+    "damagedPartRejected": true
+  }
+}

@@ -4,6 +4,8 @@ build/
 .env
 .env.*
 !.env.example
+*.bak
+*.key
 *.log
 .qa/
 test-results/
