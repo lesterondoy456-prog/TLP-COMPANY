@@ -48,7 +48,7 @@ function fakePools({ failBatch = 0, databaseExists = true, failCreate = false } 
 test('migration runner applies SQL files atomically without querying or changing account records', async () => {
   const fake = fakePools();
   await runMigrations({ database: 'MockMigrationDatabase', ...fake });
-  assert.deepEqual([...MIGRATION_FILES], ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql', 'sales-invoice-print.sql']);
+  assert.deepEqual([...MIGRATION_FILES], ['table-values.sql', 'schema.sql', 'system-accounts.sql', 'configuration-schema.sql', 'erp-schema.sql', 'sales-order-details.sql', 'text-max.sql', 'inventory-movements.sql', 'sales-document-items.sql', 'sales-invoice-print.sql', 'invoice-stock-delivery.sql']);
   const expected = await Promise.all(MIGRATION_FILES.map(filename => readFile(new URL('../migration/' + filename, import.meta.url), 'utf8')));
   assert.deepEqual(fake.batches, expected);
   assert.deepEqual(fake.events.filter(event => event[0] === 'query').map(event => event[1]), ['master']);
@@ -107,4 +107,14 @@ test('invoice print snapshots add only nullable MAX columns without backfilling 
     assert.ok(source.includes('ALTER TABLE dbo.SalesInvoices ADD ' + field + ' NVARCHAR(MAX) NULL;'), field);
   }
   assert.doesNotMatch(source, /\b(?:UPDATE|INSERT|MERGE|DELETE|DEFAULT|CHECK|TRIGGER|FUNCTION)\b/i);
+});
+
+test('invoice stock migration links only existing documents once and never rewrites stock or fabricates ledger rows', async () => {
+  const source = await readFile(new URL('../migration/invoice-stock-delivery.sql', import.meta.url), 'utf8');
+  assert.match(source, /IF @LegacyStockFlagNeeded=1\s+EXEC\(N'UPDATE dbo\.DeliveryReceipts SET stockDeducted=1;/);
+  assert.match(source, /IF @DeliveryLinkNeeded=1\s+EXEC\(N'UPDATE d SET invoiceId=i\.id FROM dbo\.DeliveryReceipts d JOIN dbo\.SalesInvoices i ON i\.orderId=d\.orderId/);
+  assert.match(source, /UNIQUE INDEX UQ_ProductStockMovements_InvoiceItem[\s\S]*WHERE invoiceItemId IS NOT NULL/);
+  assert.match(source, /UNIQUE INDEX UQ_DeliveryReceipts_Invoice[\s\S]*WHERE invoiceId IS NOT NULL/);
+  assert.match(source, /ALTER COLUMN receivedBy NVARCHAR\(MAX\) NULL/);
+  assert.doesNotMatch(source, /UPDATE\s+dbo\.(?:Products|SalesInvoices)|INSERT\s+INTO\s+dbo\.ProductStockMovements|UPDATE\s+dbo\.SalesInvoiceItems/i);
 });

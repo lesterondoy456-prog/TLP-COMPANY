@@ -60,12 +60,13 @@ function databaseFixture({ business, failAudit = false } = {}) {
             return query.query(statement);
           }
           if (text.includes('FROM dbo.Products')) return { recordset: current.products.filter(row => row.id === params.productId).map(row => ({ ...row })) };
-          if (text.includes('FROM dbo.ProductStockMovements WITH')) return { recordset: current.movements.filter(row => row.requestKey === params.requestKey).map(row => ({ ...row })) };
+          if (text.includes('FROM dbo.ProductStockMovements WITH')) return { recordset: current.movements.filter(row => row.requestKey === params.requestKey || params.invoiceItemId != null && row.invoiceItemId === params.invoiceItemId).map(row => ({ ...row })) };
           if (text.includes('FROM dbo.ProductStockMovements m JOIN')) return { recordset: current.movements.filter(row => row.id === params.movementId).map(row => ({ ...row, movementId: row.id, id: 'manual:' + row.id, type: 'manual-' + row.direction, createdByUsername: 'mock_1', createdByName: 'Mock sales 1' })) };
           if (text.startsWith('SELECT i.id') && text.includes('FROM dbo.SalesInvoices')) return { recordset: current.invoices.filter(row => row.id === params.id).map(row => ({ ...row, customerId: 100, customerName: 'Mock Customer', currency: 'USD', status: 'unpaid' })) };
-          if (text.startsWith('SELECT productId,productName') && text.includes('FROM dbo.SalesOrderItems')) return { recordset: [{ productId: 1, productName: 'Mock Product', sku: 'P1', unit: 'PCS', quantity: 1, unitPrice: 10, lineTotal: 10 }] };
+          if (text.startsWith('SELECT productId,productName') && text.includes('FROM dbo.SalesOrderItems')) return { recordset: [{ productId: 7, productName: 'Mock Product', sku: 'P7', unit: 'PCS', quantity: 1, unitPrice: 10, lineTotal: 10 }] };
           if (text.startsWith('SELECT productId,productName') && text.includes('FROM dbo.SalesInvoiceItems')) return { recordset: current.invoiceItems.filter(row => row.invoiceId === params.invoiceId) };
-          if (text.startsWith('SELECT buyer.tin AS buyerTin')) return { recordset: [{ buyerTin: null, shipToName: null }] };
+          if (text.startsWith('SELECT id,productId,productName,unit,CONVERT') && text.includes('FROM dbo.SalesInvoiceItems')) return { recordset: current.invoiceItems.filter(row => row.invoiceId === params.invoiceId) };
+          if (text.startsWith('SELECT buyer.tin AS buyerTin')) return { recordset: [{ buyerTin: null, buyerBusinessStyle: null, shipToName: null }] };
           assert.ok(scope, 'Every mutation must belong to the fake transaction.');
           if (text.startsWith('UPDATE dbo.Products SET stock=CAST')) {
             current.products.find(row => row.id === params.productId).stock = params.stockAfter;
@@ -83,7 +84,7 @@ function databaseFixture({ business, failAudit = false } = {}) {
             return { recordset: [{ id }] };
           }
           if (text.startsWith('INSERT INTO dbo.SalesInvoiceItems')) {
-            current.invoiceItems.push({ invoiceId: params.invoiceId, orderId: params.orderId, id: 1, orderItemId: 1, productId: 1, productName: 'Mock Product', sku: 'P1', unit: 'PCS', quantity: '1.000', unitPrice: '10.000000', lineTotal: '10.000000' });
+            current.invoiceItems.push({ invoiceId: params.invoiceId, orderId: params.orderId, id: 1, orderItemId: 1, productId: 7, productName: 'Mock Product', sku: 'P7', unit: 'PCS', quantity: '1.000', unitPrice: '10.000000', lineTotal: '10.000000' });
             return { recordset: [] };
           }
           if (text.startsWith('UPDATE dbo.SalesInvoices SET number=@number')) {
@@ -245,7 +246,7 @@ test('committed receiving notifies Warehouse once, while rollback and replay nev
   await delay(40); assert.deepEqual(watched.events, []); assert.equal(failedMemory.events.at(-1), 'rollback');
 });
 
-test('committed invoice creation refreshes Customer Last Sales Date while duplicate and rolled-back invoices emit nothing', async t => {
+test('committed invoice stock-out refreshes Inventory and Customer Last Sales Date while duplicates and rollbacks emit nothing', async t => {
   const api = await fixture(t);
   const sales = await api.joined('sales'), warehouse = await api.joined('warehouse');
   const received = once(sales.socket, 'data:changed');
@@ -257,11 +258,17 @@ test('committed invoice creation refreshes Customer Last Sales Date while duplic
   assert.ok(event.resources.includes('customers'));
   assert.ok(event.resources.includes('sales-invoices'));
   assert.ok(event.resources.includes('sales-orders'));
+  assert.ok(event.resources.includes('products'));
+  assert.ok(event.resources.includes('stock-movements'));
   assert.equal(api.snapshot().invoices[0].invoiceDate, '2026-11-14');
+  assert.equal(api.snapshot().products[0].stock, '4.000');
+  assert.deepEqual(api.snapshot().movements.map(({ invoiceId, invoiceItemId, stockBefore, stockAfter }) => ({ invoiceId, invoiceItemId, stockBefore, stockAfter })), [{ invoiceId: 1, invoiceItemId: 1, stockBefore: '5.000', stockAfter: '4.000' }]);
   assert.deepEqual(Object.keys(event).sort(), ['changedAt', 'resources', 'system'], 'Realtime events carry metadata, not invoice dates or records.');
   assert.equal((await api.request('/api/sales/sales-invoices', cookie('sales'), 'POST', body)).status, 409);
   await delay(40);
   assert.equal(sales.events.length, 1);
+  assert.equal(api.snapshot().products[0].stock, '4.000');
+  assert.equal(api.snapshot().movements.length, 1);
   assert.deepEqual(warehouse.events, []);
 
   const failed = await fixture(t, { failAudit: true });
@@ -269,6 +276,8 @@ test('committed invoice creation refreshes Customer Last Sales Date while duplic
   assert.equal((await failed.request('/api/sales/sales-invoices', cookie('sales'), 'POST', body)).status, 409);
   await delay(40);
   assert.deepEqual(failed.snapshot().invoices, []);
+  assert.equal(failed.snapshot().products[0].stock, '5.000');
+  assert.deepEqual(failed.snapshot().movements, []);
   assert.deepEqual(watcher.events, []);
   assert.equal(failed.events.at(-1), 'rollback');
 });

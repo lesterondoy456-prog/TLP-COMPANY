@@ -170,7 +170,7 @@ export default function InvoicePage({ data, loading, loaded, onReload, onSaved, 
       })}</div></>}
       <div className="table-footer"><span>{filtered.length ? ((safePage - 1) * 10 + 1) + '–' + Math.min(safePage * 10, filtered.length) : '0'} of {filtered.length.toLocaleString('en-PH')} invoices</span><div><button className="icon-button" aria-label="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" size={16} /></button><span>Page {safePage} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" size={16} /></button></div></div>
     </section>
-    {dialog?.type === 'new' && <CreateInvoiceForm orders={data['sales-orders']} customers={data.customers} onClose={() => setDialog(null)} onSaved={saved} />}
+    {dialog?.type === 'new' && <CreateInvoiceForm orders={data['sales-orders']} products={data.products} onClose={() => setDialog(null)} onSaved={saved} />}
     {dialog?.type === 'view' && <InvoiceView record={dialog.record} onClose={() => setDialog(null)} />}
     {dialog?.type === 'payment' && <InvoicePaymentForm record={dialog.record} onClose={() => setDialog(null)} onSaved={saved} />}
   </>;

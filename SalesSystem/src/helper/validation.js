@@ -302,9 +302,9 @@ export function validateSalesRequest(path, options = {}) {
     return;
   }
   if (route === '/delivery-receipts') {
-    idValue(input.orderId, 'sales order');
+    idValue(input.invoiceId, 'invoice');
     date(input, 'deliveryDate');
-    text(input, 'receivedBy', 150, true);
+    text(input, 'receivedBy', 150);
     text(input, 'address', 500, true);
     text(input, 'notes', 2000);
     return;
@@ -316,6 +316,23 @@ export function validateSalesRequest(path, options = {}) {
     text(input, 'trackingNumber', 100);
     text(input, 'notes', 2000);
   }
+}
+
+export function validateDeliveryReceiptForm(input, invoice, available = true) {
+  const errors = {};
+  if (!/^\d+$/.test(String(input.invoiceId || '')) || Number(input.invoiceId) < 1) errors.invoiceId = 'Choose an invoice.';
+  else if (!invoice || String(invoice.id) !== String(input.invoiceId)) errors.invoiceId = 'Load the saved invoice items before creating the receipt.';
+  else if (!available || invoice.delivered || invoice.deliveryReceiptId) errors.invoiceId = 'This invoice already has a delivery receipt or is no longer available.';
+  else if (!invoice.items?.length) errors.invoiceId = 'The invoice must contain saved items.';
+  try {
+    const deliveryDate = date(input, 'deliveryDate');
+    if (invoice?.invoiceDate && deliveryDate < String(invoice.invoiceDate).slice(0, 10)) errors.deliveryDate = 'Delivery date cannot be earlier than the invoice date.';
+  } catch { errors.deliveryDate = 'Enter a valid delivery date.'; }
+  if (String(input.receivedBy || '').trim().length > 150) errors.receivedBy = 'Received by must be 150 characters or fewer.';
+  if (!String(input.address || '').trim()) errors.address = 'Enter the delivery address.';
+  else if (String(input.address).trim().length > 500) errors.address = 'Delivery address must be 500 characters or fewer.';
+  if (String(input.notes || '').trim().length > 2000) errors.notes = 'Notes must be 2000 characters or fewer.';
+  return errors;
 }
 
 export { validateCustomer, validateProduct };
@@ -581,4 +598,30 @@ export function validateOrderQuantities(items, record) {
     else if (quantity < invoiced || quantity < delivered) errors[index] = 'Quantity cannot be below the invoiced or delivered quantity.';
   }
   return errors;
+}
+
+export function invoiceStockIssue(order, products) {
+  if (!order) return 'Select a confirmed sales order.';
+  if (order.delivered) return 'This order already has an earlier delivery. Review its stock posting before invoicing.';
+  if (!Array.isArray(order.items) || !order.items.length) return 'Refresh the sales order to load its items.';
+  const required = new Map();
+  for (const item of order.items) {
+    const amount = stockQuantityUnits(item.quantity);
+    const code = item.sku || item.productName || 'Product';
+    if (amount === null || amount <= 0n) return code + ': enter a valid invoiced quantity.';
+    const unit = String(item.unit ?? '').trim();
+    const previous = required.get(Number(item.productId));
+    if (!unit || previous && previous.unit !== unit) return code + ': review the sales order UOP.';
+    required.set(Number(item.productId), { code, unit, quantity: (previous?.quantity || 0n) + amount });
+  }
+  for (const [productId, item] of required) {
+    const product = products?.find(row => Number(row.id) === productId);
+    if (!product) return item.code + ': refresh the product list before invoicing.';
+    if (!product.isActive) return item.code + ': this product is inactive.';
+    if (String(product.unit ?? '').trim() !== item.unit) return item.code + ': the product UOP no longer matches the sales order.';
+    const available = product.stock == null || String(product.stock).trim() === '' ? null : stockQuantityUnits(product.stock);
+    if (available === null) return item.code + ': current stock is not set or is invalid.';
+    if (item.quantity > available) return item.code + ': insufficient stock. Required ' + stockQuantityText(item.quantity) + ' ' + item.unit + '; available ' + stockQuantityText(available) + '.';
+  }
+  return '';
 }

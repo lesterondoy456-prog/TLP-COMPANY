@@ -16,7 +16,7 @@ const options = {
 test('configured USD sales preserve micro-prices, invoice amounts and six-decimal payments', { timeout: 120_000 }, async t => {
   const products = [{ id: 10, sku: 'USD-MICRO', name: 'USD Micro Product', description: 'Micro component', unit: 'pcs', price: '0.115300', currency: 'USD', stock: 0, isActive: true }];
   const orders = [], writes = [];
-  const invoice = () => orders[0] ? { ...orders[0], id: 1, number: 'SI-MOCK-USD', orderNumber: orders[0].number, invoiceDate: '2026-11-14', dueDate: '2026-12-14', paidAmount: '0.000000', status: 'unpaid' } : null;
+  const invoice = () => orders[0] ? { ...orders[0], id: 1, number: 'SI-MOCK-USD', orderNumber: orders[0].number, billToName: customer.salesName, billToAddress: customer.address, vatClass: 'Zero Rated', invoiceDate: '2026-11-14', dueDate: '2026-12-14', paidAmount: '0.000000', status: 'unpaid' } : null;
   const { page, origin, screenshot, assertSafe } = await mockBrowser(t, async ({ method, pathname, body }) => {
     if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: actor } };
     const lists = { '/api/customers': [customer], '/api/products': products, '/api/sales-orders': orders, '/api/sales-invoices': invoice() ? [invoice()] : [], '/api/delivery-receipts': [], '/api/shipping-invoices': [], '/api/users': [actor] };
@@ -70,8 +70,8 @@ test('configured USD sales preserve micro-prices, invoice amounts and six-decima
   await page.getByRole('button', { name: 'Invoice', exact: true }).click();
   await page.getByRole('button', { name: 'View', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Invoice', exact: true });
-  await expect(dialog.locator('.document-totals')).toContainText(usdTotal);
-  await expect(dialog.getByRole('cell', { name: /0\.1153/ })).toBeVisible();
+  await expect(dialog.locator('[data-invoice-summary] [data-invoice-field="totalAmountDue"]')).toHaveText('207.54');
+  await expect(dialog.locator('[data-invoice-item="0"] [data-invoice-column="unitPrice"] > span').last()).toHaveText('0.11530');
   await expect(dialog).toContainText('Mock USD Billing');
   assert.equal((await dialog.innerText()).includes('₱'), false);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();

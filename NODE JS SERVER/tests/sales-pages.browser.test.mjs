@@ -6,11 +6,11 @@ import { mockBrowser } from './helpers/mock-browser.mjs';
 
 test('named Invoice, Shipping Invoice and Delivery Receipt pages save and view mocked documents on desktop and mobile', { timeout: 60_000 }, async t => {
   const actor = { id: 1, system: 'sales', name: 'Mock Administrator', username: 'mock_admin', role: 'admin', isActive: true };
-  const customer = { id: 2, name: 'Mock Customer', address: 'Office Address', contactPerson: 'Receiver', isActive: true };
+  const customer = { id: 2, name: 'Mock Customer', address: 'Office Address', contactPerson: 'Receiver', drName: 'Frozen delivery receiver', businessStyle: 'Manufacturing', isActive: true };
   const product = { id: 3, sku: 'P3', name: 'Product', unit: 'PCS', price: '0.115300', currency: 'USD', stock: 5, isActive: true };
   const item = { productId: 3, productName: 'Product', sku: 'P3', unit: 'PCS', quantity: 2, unitPrice: '0.115300', lineTotal: '0.23' };
   const order = { id: 7, number: 'SO-MOCK', customerId: 2, customerName: customer.name, customerAddress: customer.address, currency: 'USD', orderDate: '2026-11-13', total: '0.23', status: 'confirmed', invoiced: false, delivered: false, items: [item] };
-  const invoices = [], shipments = [], deliveries = [], writes = [];
+  const invoices = [], shipments = [], deliveries = [], writes = [], movements = [];
   const { page, origin, assertSafe } = await mockBrowser(t, async ({ method, pathname, body }) => {
     if (method === 'GET' && pathname === '/api/auth/session') return { json: { user: actor } };
     const lists = { '/api/customers': [customer], '/api/products': [product], '/api/sales-orders': [order], '/api/sales-invoices': invoices, '/api/shipping-invoices': shipments, '/api/delivery-receipts': deliveries, '/api/users': [actor] };
@@ -20,7 +20,10 @@ test('named Invoice, Shipping Invoice and Delivery Receipt pages save and view m
     }
     if (method === 'POST' && pathname === '/api/sales-invoices') {
       writes.push({ pathname, body }); order.invoiced = true;
-      const record = { ...body, id: 9, number: 'INV-MOCK', orderId: 7, orderNumber: order.number, customerName: customer.name, customerAddress: customer.address, currency: 'USD', total: order.total, paidAmount: '0.00', status: 'unpaid', items: [item] };
+      const before = product.stock;
+      product.stock -= 2;
+      movements.push({ id: 'invoice:1', type: 'invoice-out', quantity: '2.000', stockBefore: before.toFixed(3), stockAfter: product.stock.toFixed(3), invoiceNumber: 'INV-MOCK' });
+      const record = { ...body, id: 9, number: 'INV-MOCK', orderId: 7, orderNumber: order.number, customerName: customer.name, customerAddress: customer.address, billToName: customer.name, billToAddress: customer.address, shipToName: customer.drName, buyerBusinessStyle: customer.businessStyle, currency: 'USD', total: order.total, paidAmount: '0.00', status: 'unpaid', delivered: false, items: structuredClone(order.items) };
       invoices.push(record); return { status: 201, json: { record } };
     }
     if (method === 'POST' && pathname === '/api/shipping-invoices') {
@@ -29,8 +32,11 @@ test('named Invoice, Shipping Invoice and Delivery Receipt pages save and view m
       shipments.push(record); return { status: 201, json: { record } };
     }
     if (method === 'POST' && pathname === '/api/delivery-receipts') {
-      writes.push({ pathname, body }); order.delivered = true; product.stock -= 2;
-      const record = { ...body, id: 10, number: 'DR-MOCK', orderId: 7, orderNumber: order.number, customerName: customer.name, currency: 'USD', items: [item] };
+      assert.equal(body.invoiceId, 9); assert.equal(Object.hasOwn(body, 'orderId'), false);
+      writes.push({ pathname, body }); order.delivered = true;
+      const invoice = invoices[0];
+      invoice.delivered = true; invoice.deliveryReceiptId = 10; invoice.deliveryReceiptNumber = 'DR-MOCK';
+      const record = { ...body, id: 10, number: 'DR-MOCK', invoiceId: invoice.id, invoiceNumber: invoice.number, orderId: 7, orderNumber: order.number, customerName: invoice.customerName, deliveredTo: invoice.shipToName, businessStyle: invoice.buyerBusinessStyle, preparedByName: actor.name, purchaseOrderNumber: null, items: invoice.items.map(({ productId, productName, sku, description, unit, quantity }) => ({ productId, productName, sku, description, unit, quantity })) };
       deliveries.push(record); return { status: 201, json: { record } };
     }
   }, { screenshotName: 'sales-named-pages-mocked.png' });
@@ -45,6 +51,8 @@ test('named Invoice, Shipping Invoice and Delivery Receipt pages save and view m
   await dialog.getByLabel('Due date *', { exact: true }).fill('2026-11-13');
   await dialog.getByRole('button', { name: 'Create invoice', exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  assert.equal(product.stock, 3, 'Invoice creation is the stock-out event.');
+  assert.deepEqual(movements.map(({ type, stockBefore, stockAfter }) => ({ type, stockBefore, stockAfter })), [{ type: 'invoice-out', stockBefore: '5.000', stockAfter: '3.000' }]);
 
   await page.getByRole('button', { name: 'Shipping Invoice', exact: true }).click();
   await page.getByRole('button', { name: 'New shipping invoice', exact: false }).click();
@@ -63,11 +71,13 @@ test('named Invoice, Shipping Invoice and Delivery Receipt pages save and view m
   await page.getByRole('button', { name: 'Delivery Receipt', exact: true }).click();
   await page.getByRole('button', { name: 'New delivery receipt', exact: false }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByRole('combobox', { name: /^Sales order \*/ }).selectOption('7');
+  await dialog.getByRole('combobox', { name: /^Invoice \*/ }).selectOption('9');
   await dialog.getByLabel('Delivery date *', { exact: true }).fill('2026-11-13');
-  await expect(dialog.getByLabel('Received by *', { exact: true })).toHaveValue('Receiver');
+  await dialog.getByLabel('Received by', { exact: true }).fill('Receiver');
   await dialog.getByRole('button', { name: 'Create delivery receipt', exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  assert.equal(product.stock, 3, 'Printing or issuing a DR must not deduct invoice stock again.');
+  assert.equal(movements.length, 1);
   await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Delivery Receipt', exact: true })).toContainText('DR-MOCK');
   await page.getByRole('button', { name: 'Close', exact: true }).click();

@@ -148,9 +148,15 @@ test('Manual movement required fields, fractional precision and insufficient sto
   app.assertSafe();
 });
 
-test('Inventory history shows manual and Delivery Receipt sources and realtime refresh preserves the history, filters and unsaved movement', { timeout: 90000 }, async t => {
+test('Inventory history shows invoice stock-out balances, manual movements and legacy Delivery Receipts while realtime preserves open work', { timeout: 90000 }, async t => {
   let current = { ...product }, reads = 0;
-  let records = [manualRecord(), {
+  let records = [{
+    id: 'invoice:82', movementId: 82, type: 'invoice-out', direction: 'out', quantity: '2.001', unit: 'PCS', stockBefore: '14.346', stockAfter: '12.345',
+    movementDate: '2026-11-15', sourceDestination: 'Frozen invoice destination', reference: 'SI-STOCK-082', reason: null,
+    createdByUsername: 'mock_invoice_author', createdByName: 'Invoice Operator', createdAt: '2026-11-15T09:00:00.000Z',
+    invoiceId: 82, invoiceNumber: 'SI-STOCK-082', orderNumber: 'SO-STOCK-081', customerName: 'Frozen Invoice Customer',
+    deliveryReceiptId: null, deliveryReceiptNumber: null, address: null, receivedBy: null,
+  }, manualRecord({ stockBefore: '14.345', stockAfter: '14.346' }), {
     id: 'delivery:61:72', movementId: null, type: 'delivery-out', direction: 'out', quantity: '2.001', unit: 'PCS', stockBefore: null, stockAfter: null,
     movementDate: '2026-11-14', sourceDestination: 'Mock Delivery Customer', reference: 'DR-MOCK-061', reason: null,
     createdByUsername: 'mock_delivery', createdByName: 'Delivery Operator', createdAt: '2026-11-14T02:00:00.000Z',
@@ -173,8 +179,9 @@ test('Inventory history shows manual and Delivery Receipt sources and realtime r
   await productRow(page).getByRole('button', { name: 'View transactions', exact: true }).click();
   let dialog = page.getByRole('dialog', { name: 'Inventory transactions', exact: true });
   await expect(dialog).toContainText('REF-MOCK-041');
+  await expect(dialog).toContainText('SI-STOCK-082');
   await expect(dialog).toContainText('DR-MOCK-061');
-  await expect(dialog).toContainText('12.345'); await expect(dialog).toContainText('12.346');
+  await expect(dialog).toContainText('12.345'); await expect(dialog).toContainText('14.346');
   await expect(dialog).toContainText('2.001');
   await expect(dialog).not.toContainText(otherProduct.sku);
   const deliveryRow = dialog.locator('tbody > tr').filter({ hasText: 'DR-MOCK-061' });
@@ -186,22 +193,35 @@ test('Inventory history shows manual and Delivery Receipt sources and realtime r
   await expect(deliveryRow).toContainText('Mock Receiver');
   await expect(deliveryRow).toContainText('Mock receiving bay, Laguna');
   await expect(deliveryRow).toContainText('mock_delivery');
+  const invoiceRow = dialog.locator('tbody > tr').filter({ hasText: 'SI-STOCK-082' });
+  await expect(invoiceRow.locator('.badge')).toHaveText(/invoice/i);
+  await expect(invoiceRow.locator('td').nth(7)).toHaveText('2.001');
+  await expect(invoiceRow.locator('td').nth(8)).toHaveText('14.346');
+  await expect(invoiceRow.locator('td').nth(9)).toHaveText('12.345');
+  await expect(invoiceRow).toContainText('SO-STOCK-081');
+  await expect(invoiceRow).toContainText('Frozen invoice destination');
+  await expect(invoiceRow).toContainText('mock_invoice_author');
   await page.evaluate(() => { window.inventoryDocument = document; window.inventoryNode = document.querySelector('.inventory-page'); window.historyDialog = document.querySelector('dialog'); });
   for (const width of [320, 375, 768, 1920]) {
     await page.setViewportSize({ width, height: 900 }); await assertNoPageOverflow(page);
-    await expect(dialog).toContainText('REF-MOCK-041'); await expect(dialog).toContainText('DR-MOCK-061');
+    await expect(dialog).toContainText('REF-MOCK-041'); await expect(dialog).toContainText('DR-MOCK-061'); await expect(dialog).toContainText('SI-STOCK-082');
     if (width <= 600) {
       const deliveryCard = dialog.locator('.record-mobile-card').filter({ hasText: 'DR-MOCK-061' });
       await expect(deliveryCard.getByText('2.001', { exact: true })).toBeVisible();
       for (const details of await deliveryCard.locator('details').all()) if (await details.getAttribute('open') === null) await details.locator('summary').click();
       await expect(deliveryCard.getByText('Mock Receiver', { exact: true })).toBeVisible();
+      const invoiceCard = dialog.locator('.record-mobile-card').filter({ hasText: 'SI-STOCK-082' });
+      await expect(invoiceCard.getByText('2.001', { exact: true })).toBeVisible();
+      for (const details of await invoiceCard.locator('details').all()) if (await details.getAttribute('open') === null) await details.locator('summary').click();
+      await expect(invoiceCard.getByText('14.346', { exact: true })).toBeVisible();
+      await expect(invoiceCard.getByText('12.345', { exact: true })).toBeVisible();
       if (width === 375) await app.screenshot('sales-inventory-history-375.png');
     }
   }
   const before = reads;
   current = { ...current, stock: '11.125' };
-  records = [manualRecord({ id: 2, quantity: '1.221', direction: 'out', stockBefore: '12.346', stockAfter: '11.125', reference: 'REF-REALTIME-042' }), ...records];
-  app.emitChange('SalesSystem', ['products', 'stock-movements']);
+  records = [manualRecord({ id: 2, quantity: '1.220', direction: 'out', stockBefore: '12.345', stockAfter: '11.125', reference: 'REF-REALTIME-042' }), ...records];
+  app.emitChange('SalesSystem', ['sales-invoices']);
   await expect.poll(() => reads).toBeGreaterThan(before);
   await expect(dialog).toContainText('REF-REALTIME-042');
   assert.equal(await page.evaluate(() => window.historyDialog === document.querySelector('dialog')), true);

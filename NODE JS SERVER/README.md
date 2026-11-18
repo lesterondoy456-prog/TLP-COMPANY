@@ -125,6 +125,10 @@ All SQL files and database/schema checking live under `migration/`, including `i
 
 `GET /api/sales/sales-invoices/:id/excel` downloads a real Excel workbook for printing on the preprinted invoice form. The endpoint reads saved invoice snapshots and fills the blank `templates/SalesInvoice.xlsx` through ExcelJS directly inside its handler. The blank template preserves the supplied Excel layout without copying sample records. Downloads do not write to the database or create files on the server.
 
+`migration/invoice-stock-delivery.sql` links stock-out ledger rows and DRs to their invoices, captures buyer business style, and permits an optional DR recipient. New invoice issuance locks stock rows in product order and commits the invoice, frozen items, exact stock balances, ledger and audit together. Duplicate issuance or any failed item rolls back the whole operation. `POST /api/sales/delivery-receipts` accepts `invoiceId`, copies invoice snapshots, and never updates stock. Its responses and `GET /api/sales/delivery-receipts/:id/excel` contain no financial fields. DR Excel uses `templates/DeliveryReceipt.xlsx`, preserves the original Letter layout, and prints all pages from one worksheet.
+
+For this stock-posting change, recreate the backend with the new image so its startup migration runs after the previous API has stopped. The migration marks only pre-existing DRs as historical delivery stock-outs and links matching invoices without changing product balances or inventing old invoice movements. New DRs explicitly record that they did not deduct stock. Re-running migrations preserves those classifications.
+
 One company uses these systems. Product and Supplies forms have no Office selection, and their APIs do not save office links.
 Customers use their table row ID for links; there is no separate generated customer code. Customer discount values are shown and saved only when Percent or Amount is selected.
 

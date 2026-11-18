@@ -6,7 +6,7 @@ import RecordsCard from '../../components/RecordsCard.jsx';
 import { useRealtimeRefresh } from '../../hooks/useRealtime.js';
 
 const quantity = value => value == null || value === '' ? '\u2014' : new Intl.NumberFormat('en-PH', { maximumFractionDigits: 3 }).format(value);
-const movementLabel = type => ({ 'manual-in': 'Manual stock in', 'manual-out': 'Manual stock out', 'delivery-out': 'Delivery receipt' })[type] || type || '\u2014';
+const movementLabel = type => ({ 'manual-in': 'Manual stock in', 'manual-out': 'Manual stock out', 'invoice-out': 'Sales invoice', 'delivery-out': 'Delivery receipt' })[type] || type || '\u2014';
 const recordedAt = value => {
   if (!value || !Number.isFinite(new Date(value).getTime())) return '\u2014';
   return new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value));
@@ -39,7 +39,7 @@ export default function InventoryTransactions({ product, productId, onClose }) {
     return () => { sequence.current++; request.current?.abort(); };
   }, [load]);
   useRealtimeRefresh(change => {
-    if (change.resources?.some(resource => ['*', 'products', 'stock-movements', 'delivery-receipts'].includes(resource))) load();
+    if (change.resources?.some(resource => ['*', 'products', 'stock-movements', 'sales-invoices', 'delivery-receipts'].includes(resource))) load();
   });
   const currentProduct = snapshot?.product || product;
   const records = snapshot?.records || [];
@@ -55,14 +55,14 @@ export default function InventoryTransactions({ product, productId, onClose }) {
       {error && <button className="button secondary small inventory-history-retry" onClick={load} disabled={loading}>Retry transactions<Icon name="refresh" size={16} /></button>}
       {loading && !loaded ? <LoadingSkeleton label="Loading inventory transactions" /> : !loaded ? null : <>
         {loading && <p className="inventory-history-updating" role="status">Updating transactions...</p>}
-        <RecordsCard title="Stock movements" label="Stock movements" icon="clock" rows={records} loading={loading} loaded={loaded} onRefresh={load} emptyTitle="No recorded stock movements" emptyDetail="Recorded manual movements and delivery receipts appear here." mobilePreview={['Movement date', 'Reference', 'Customer', 'Source / destination', 'Quantity in', 'Quantity out']} headers={<>
+        <RecordsCard title="Stock movements" label="Stock movements" icon="clock" rows={records} loading={loading} loaded={loaded} onRefresh={load} emptyTitle="No recorded stock movements" emptyDetail="Stock in, stock out, and their invoice references appear here." mobilePreview={['Movement date', 'Reference', 'Customer', 'Source / destination', 'Quantity in', 'Quantity out']} headers={<>
           <th>Movement</th><th>Movement date</th><th>Reference</th><th>Customer</th><th>Source / destination</th><th>Reason</th>
           <th className="numeric">Quantity in</th><th className="numeric">Quantity out</th><th className="numeric">Stock before</th><th className="numeric">Stock after</th><th>UOP</th>
           <th>Sales order</th><th>Invoice</th><th>Received by</th><th>Recorded by</th><th>Recorded at</th>
         </>} renderRow={row => <>
           <td><Badge value={row.direction === 'in' ? 'active' : 'unpaid'}>{movementLabel(row.type)}</Badge>{row.deliveryReceiptNumber && <small>{row.deliveryReceiptNumber}</small>}</td>
           <td>{dateLabel(row.movementDate)}</td><td>{row.reference || row.deliveryReceiptNumber || '\u2014'}</td><td>{row.customerName || '\u2014'}</td>
-          <td className="inventory-history-address"><span className="inventory-direction-label">{row.direction === 'in' ? 'Source' : 'Destination'}</span><span>{row.type === 'delivery-out' ? row.address || row.sourceDestination || '\u2014' : row.sourceDestination || '\u2014'}</span></td><td className="inventory-history-reason">{row.reason || '\u2014'}</td>
+          <td className="inventory-history-address"><span className="inventory-direction-label">{row.direction === 'in' ? 'Source' : 'Destination'}</span><span>{row.sourceDestination || row.customerName || '\u2014'}</span>{['invoice-out', 'delivery-out'].includes(row.type) && row.address && <small>{row.address}</small>}</td><td className="inventory-history-reason">{row.reason || '\u2014'}</td>
           <td className="numeric">{row.direction === 'in' ? quantity(row.quantity) : '\u2014'}</td><td className="numeric">{row.direction === 'out' ? quantity(row.quantity) : '\u2014'}</td>
           <td className="numeric">{quantity(row.stockBefore)}</td><td className="numeric">{quantity(row.stockAfter)}</td><td>{row.unit || '\u2014'}</td>
           <td>{row.orderNumber || '\u2014'}</td><td>{row.invoiceNumber || '\u2014'}</td><td>{row.receivedBy || '\u2014'}</td>

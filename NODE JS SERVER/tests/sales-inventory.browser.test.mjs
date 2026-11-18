@@ -159,7 +159,7 @@ test('Sales Inventory receives real Socket.IO product changes without resetting 
   });
   const before = app.productReads();
   current = current.map(product => product.id === 1 ? { ...product, stock: '0.000000' } : product);
-  app.emitChange('SalesSystem', ['products', 'delivery-receipts']);
+  app.emitChange('SalesSystem', ['products', 'sales-invoices']);
   await expect.poll(() => app.productReads()).toBeGreaterThan(before);
   await expect(inventory.locator('.records-table > tbody > tr')).toHaveCount(0);
   await expect(stockFilter).toHaveValue('in-stock');

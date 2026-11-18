@@ -27,7 +27,7 @@ async function fixture(t, { invoice = {}, items = [baseItem], missing = false, s
           calls.push({ query, values: { ...values } });
           if (query.startsWith('SELECT i.id')) {
             for (const key of Object.keys(amounts)) assert.ok(query.includes('CONVERT(varchar(60),i.' + key + ') AS ' + key), key);
-            assert.match(query, /i\.buyerTin,i\.shipToName,i\.vatClass,COALESCE\(i\.preparedByName,invoiceCreator\.name\) AS preparedByName/);
+            assert.match(query, /i\.buyerTin,i\.buyerBusinessStyle,i\.shipToName,i\.vatClass,COALESCE\(i\.preparedByName,invoiceCreator\.name\) AS preparedByName/);
             assert.doesNotMatch(query, /JOIN dbo\.(?:Customers|ConfigVatCodes)/);
             return { recordset: missing || values.id !== 31 ? [] : [{ ...record }] };
           }

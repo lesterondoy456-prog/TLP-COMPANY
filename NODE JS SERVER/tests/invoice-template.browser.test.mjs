@@ -41,13 +41,14 @@ async function fixture(t, records, options = {}) {
     currency: 'USD', orderDate: '2026-11-17', expectedDeliveryDate: '2026-11-20', total: '11.06', status: 'confirmed', items: [records[0].items[0]],
   };
   const delivery = { ...order, id: 60, number: 'DR-SNAPSHOT', orderId: 50, orderNumber: order.number, deliveryDate: '2026-11-20', receivedBy: 'Mock receiver' };
+  const shipping = { ...order, id: 70, number: 'SHI-SNAPSHOT', orderId: 50, orderNumber: order.number, invoiceNumber: records[0].number, shippingDate: '2026-11-20' };
   const browser = await mockBrowser(t, async ({ method, pathname, requestPathname }) => {
     assert.equal(method, 'GET', 'Invoice template inspection must never save a business record.');
     if (pathname === '/api/auth/session') return { json: { user: actor } };
     const lists = {
       '/api/customers': [currentCustomer], '/api/products': [], '/api/sales-orders': [order],
       '/api/sales-invoices': records.map(({ items, ...header }) => header), '/api/delivery-receipts': [delivery],
-      '/api/shipping-invoices': [], '/api/users': [actor],
+      '/api/shipping-invoices': [shipping], '/api/users': [actor],
     };
     if (Object.hasOwn(lists, pathname)) return { json: { records: lists[pathname] } };
     const excel = pathname.match(/^\/api\/sales-invoices\/(\d+)\/excel$/);
@@ -61,6 +62,7 @@ async function fixture(t, records, options = {}) {
     if (detail) return { json: { record: records.find(record => record.id === Number(detail[1])) } };
     if (pathname === '/api/sales-orders/50') return { json: { record: order } };
     if (pathname === '/api/delivery-receipts/60') return { json: { record: delivery } };
+    if (pathname === '/api/shipping-invoices/70') return { json: { record: shipping } };
   }, { project: 'SalesSystem', viewport: { width: 1440, height: 1100 }, ...browserOptions });
   await browser.page.goto(browser.origin);
   await expect(browser.page.getByRole('heading', { name: 'Customer', exact: true })).toBeVisible();
@@ -249,14 +251,14 @@ test('invoice preview fits mobile width, supports readable zoom and prints unsca
   browser.assertSafe();
 });
 
-test('invoice-specific print styles leave Sales Order and Delivery Receipt document forms intact', { timeout: 90_000 }, async t => {
+test('invoice-specific print styles leave Sales Order and Shipping Invoice document forms intact', { timeout: 90_000 }, async t => {
   const record = invoice(501, 1);
   const browser = await fixture(t, [record]);
   const invoiceDialog = await browser.open(record);
   await invoiceDialog.getByRole('button', { name: 'Close', exact: true }).click();
   for (const [label, number, columns, filename] of [
     ['Sales Order', 'SO-SNAPSHOT', ['Product', 'Unit', 'Quantity', 'Unit price', 'Amount', 'Delivery date'], 'sales-order-after-invoice.pdf'],
-    ['Delivery Receipt', 'DR-SNAPSHOT', ['Product', 'Unit', 'Quantity', 'Delivery date'], 'delivery-receipt-after-invoice.pdf'],
+    ['Shipping Invoice', 'SHI-SNAPSHOT', ['Product', 'Unit', 'Quantity', 'Unit price', 'Amount', 'Delivery date'], 'shipping-invoice-after-invoice.pdf'],
   ]) {
     await browser.page.getByRole('button', { name: label, exact: true }).click();
     const row = browser.page.getByRole('row').filter({ hasText: number });

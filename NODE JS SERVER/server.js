@@ -47,7 +47,8 @@ function publishChanges(state, req, res, alreadyPosted) {
   const sales = ['customers', 'products', 'sales-orders', 'sales-invoices', 'delivery-receipts', 'shipping-invoices'];
   const purchasing = ['suppliers', 'supplies', 'purchase-requests', 'purchase-orders', 'receivings'];
   if (system === 'sales' && sales.includes(resource)) {
-    emit('sales', [resource, 'options', ...(resource === 'sales-invoices' ? ['sales-orders', 'customers'] : []), ...(resource === 'delivery-receipts' ? ['products', 'sales-invoices'] : [])]);
+    const invoiceCreated = resource === 'sales-invoices' && req.method === 'POST' && !id;
+    emit('sales', [resource, 'options', ...(resource === 'sales-invoices' ? ['sales-orders', 'customers'] : []), ...(invoiceCreated ? ['products', 'stock-movements'] : []), ...(resource === 'delivery-receipts' ? ['sales-orders', 'sales-invoices', 'stock-movements'] : [])]);
     if (resource === 'customers' || resource === 'products') emit('purchasing', ['options']);
     emit('configuration', ['audit-trail']);
   } else if (system === 'purchasing' && purchasing.includes(resource)) {

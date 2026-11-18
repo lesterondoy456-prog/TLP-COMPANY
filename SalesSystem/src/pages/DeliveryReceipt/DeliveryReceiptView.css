@@ -1,0 +1,76 @@
+.modal.delivery-receipt-view { width: min(1060px, calc(100vw - 28px)); }
+.dr-preview-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 22px; border-bottom: 1px solid var(--line); background: var(--surface-raised); }
+.dr-preview-controls p { margin: 0; font-size: 12px; font-weight: 650; }
+.dr-preview-controls p span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.dr-preview-controls label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.dr-preview-controls select { width: 85px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: var(--input-bg); font: inherit; }
+.delivery-receipt-view .dr-preview-body { padding: 12px; max-height: none; min-height: 0; overflow: auto; overscroll-behavior: contain; background: #dfe5ed; }
+.dr-preview-pages { display: flex; flex-direction: column; align-items: safe center; gap: 18px; width: max-content; min-width: 100%; }
+.dr-page-frame { position: relative; flex-shrink: 0; background: white; box-shadow: 0 3px 15px #15223826; }
+.dr-preprinted-page { position: absolute; left: 0; top: 0; width: 215.9mm; height: 279.4mm; transform-origin: top left; overflow: hidden; color: #111; background: #fff; font-family: 'Times New Roman', Times, serif; font-size: 9pt; line-height: 1.2; }
+.dr-form-chrome { position: absolute; inset: 0; width: 215.9mm; height: 279.4mm; }
+.dr-company-title { font: 700 5.5px 'Arial Narrow', Arial, sans-serif; letter-spacing: -.15px; }
+.dr-company-details { font: 2.25px 'Times New Roman', Times, serif; }
+.dr-form-title { font: 700 5px Arial, sans-serif; }
+.dr-form-number { fill: #943d39; font: 700 3.3px 'Times New Roman', Times, serif; }
+.dr-form-labels { fill: #454545; font: 3px Arial, sans-serif; }
+.dr-form-rules { fill: none; stroke: #494949; stroke-width: .15; }
+.dr-grid-headings { fill: #454545; font: 3.5px Arial, sans-serif; }
+.dr-form-footnotes { fill: #454545; font: 2.35px Arial, sans-serif; }
+.dr-signature-caption { font-size: 1.7px; }
+.dr-printer-details { fill: #454545; font: 1.8px Arial, sans-serif; }
+.dr-print-field { position: absolute; display: block; white-space: pre; }
+.dr-header-value { line-height: 2.7mm; }
+.dr-body-line { position: absolute; left: 5.842mm; width: 186.409mm; height: 6.35mm; display: flex; align-items: center; font-size: 9pt; line-height: 3.2mm; }
+.dr-body-line > span { display: block; flex-shrink: 0; min-width: 0; padding: 0 1.5mm; white-space: pre; }
+.dr-line-quantity { width: 24.895mm; text-align: right; font-variant-numeric: tabular-nums; }
+.dr-line-unit { width: 25.09mm; }
+.dr-line-description { width: 136.424mm; }
+.dr-continuation-line { padding-left: 49.985mm; }
+.dr-quantity-total { position: absolute; left: 8.721mm; top: 173.143mm; height: 4.763mm; display: flex; align-items: center; gap: 0; font-size: 9pt; font-style: italic; }
+.dr-quantity-total > span { width: 20.164mm; text-align: right; padding-right: 1mm; }
+.dr-quantity-total > strong { width: 15.626mm; font-weight: 700; }
+.dr-end-marker { position: absolute; left: 12.426mm; top: 178.7mm; font-size: 9pt; font-style: italic; }
+.dr-remarks { position: absolute; left: 12.426mm; top: 182.668mm; width: 177.8mm; font-size: 9pt; line-height: 2.8mm; white-space: pre; }
+.dr-signature-value { height: 5.4mm; font-size: 7pt; line-height: 2.7mm; font-weight: 700; }
+.dr-download-error { flex-shrink: 0; margin: 0; padding: 10px 22px; border-radius: 0; font-size: 12px; }
+.dr-invoice-items { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-muted); }
+.dr-invoice-items-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dr-invoice-items-heading h3 { margin: 0; font-size: 13px; }
+.dr-invoice-items-heading > span, .dr-invoice-items > p { color: var(--muted); font-size: 12px; }
+.dr-invoice-items > p { margin: 8px 0 14px; line-height: 1.5; }
+.dr-invoice-items-scroll { min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; overscroll-behavior-x: contain; }
+.dr-invoice-items-scroll table { width: 100%; min-width: 580px; border-collapse: collapse; font-size: 12px; }
+.dr-invoice-items-scroll th, .dr-invoice-items-scroll td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.dr-invoice-items-scroll th { color: var(--muted); background: var(--surface-raised); font-size: 11px; font-weight: 500; }
+.dr-invoice-items-scroll td { color: var(--text); background: var(--surface); overflow-wrap: anywhere; }
+.dr-invoice-items-scroll th.numeric, .dr-invoice-items-scroll td.numeric { text-align: right; white-space: nowrap; }
+.dr-invoice-items-scroll td:nth-child(2) { min-width: 230px; }
+.delivery-receipt-create .notice { align-items: center; flex-wrap: wrap; gap: 8px; }
+.delivery-receipt-create .document-summary { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .modal.delivery-receipt-view { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .delivery-receipt-view .modal-heading { padding: 16px; }
+  .dr-preview-controls { padding: 10px 12px; gap: 8px; }
+  .dr-preview-controls p { font-size: 11px; }
+  .dr-preview-controls p span { max-width: 180px; font-size: 10px; }
+  .dr-preview-controls label { font-size: 11px; }
+  .dr-preview-controls select { min-height: 40px; }
+  .delivery-receipt-view .modal-footer { padding: 12px; }
+  .delivery-receipt-view .modal-footer .button { min-height: 44px; }
+  .dr-invoice-items { padding: 12px; }
+}
+@media print {
+  @page delivery-receipt-preprinted { size: Letter portrait; margin: 0; }
+  body.dr-print-open { page: delivery-receipt-preprinted; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+  body.dr-print-open #root, body.dr-print-open .app-shell, body.dr-print-open .main-shell, body.dr-print-open .workspace-content, body.dr-print-open .page-transition { position: static !important; display: block !important; width: auto !important; min-width: 0 !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 0 !important; transform: none !important; overflow: visible !important; }
+  body.dr-print-open .sidebar, body.dr-print-open .sidebar-scrim, body.dr-print-open .mobile-navigation-trigger, body.dr-print-open .page-transition > :not(.delivery-receipt-view) { display: none !important; }
+  body.dr-print-open dialog.delivery-receipt-view { display: block !important; position: absolute !important; inset: 0 auto auto 0 !important; width: 215.9mm !important; max-width: none !important; height: auto !important; max-height: none !important; margin: 0 !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; overflow: visible !important; animation: none !important; }
+  .delivery-receipt-view .modal-heading, .delivery-receipt-view .modal-footer, .delivery-receipt-view .dr-preview-controls, .delivery-receipt-view .dr-download-error, .delivery-receipt-view [data-template-chrome] { display: none !important; }
+  .delivery-receipt-view .dr-preview-body, .delivery-receipt-view .dr-preview-pages { display: block !important; position: static !important; width: 215.9mm !important; min-width: 0 !important; height: auto !important; max-height: none !important; margin: 0 !important; padding: 0 !important; gap: 0 !important; overflow: visible !important; background: #fff !important; }
+  .delivery-receipt-view .dr-page-frame { page: delivery-receipt-preprinted; position: relative !important; width: 215.9mm !important; height: 279.4mm !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; break-inside: avoid; break-after: page; }
+  .delivery-receipt-view .dr-page-frame:last-child { break-after: auto; }
+  .delivery-receipt-view .dr-preprinted-page { visibility: visible !important; position: relative !important; width: 215.9mm !important; height: 279.4mm !important; transform: none !important; margin: 0 !important; padding: 0 !important; background: #fff !important; color: #000 !important; }
+  .delivery-receipt-view .dr-preprinted-page * { visibility: visible !important; color: #000 !important; }
+  .delivery-receipt-view .dr-preprinted-page [data-template-chrome] { visibility: hidden !important; }
+}

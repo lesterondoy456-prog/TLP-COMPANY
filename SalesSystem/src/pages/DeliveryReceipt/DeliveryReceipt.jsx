@@ -1,13 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { api, money, unitMoney, dateLabel } from '../../api.js';
-import { Icon } from '../../components/Icons.jsx';
-import { Avatar, Badge, roleLabel } from '../../components/UI.jsx';
+import { api, dateLabel } from '../../api.js';
 import RecordsCard, { PageHeading } from '../../components/RecordsCard.jsx';
 import CreateDeliveryReceiptForm from './CreateDeliveryReceiptForm.jsx';
-import DocumentView from '../../components/DocumentView.jsx';
-const count = value => new Intl.NumberFormat('en-PH', {
-  maximumFractionDigits: 3
-}).format(Number(value) || 0);
+import DeliveryReceiptView from './DeliveryReceiptView.jsx';
 export default function DeliveryReceiptPage({
   data,
   user,
@@ -46,12 +41,12 @@ export default function DeliveryReceiptPage({
     }
   }
   return <>
-    <PageHeading title="Delivery Receipt" description="Record deliveries and keep your inventory up to date." addLabel="New delivery receipt" loading={loading} onAdd={() => setDialog({
+    <PageHeading title="Delivery Receipt" description="Create a delivery receipt from the saved invoice items." addLabel="New delivery receipt" loading={loading} onAdd={() => setDialog({
       type: 'new'
     })} />
     {overview}
-    <RecordsCard title="Delivery Receipt" label="Delivery receipts" icon="arrowUpRight" addLabel="New delivery receipt" mobilePreview={['Customer', 'Delivery date', 'Received by']} rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<><><th>Receipt</th><th>Sales order</th><th>Customer</th><th>Delivery date</th><th>Received by</th></><th className="actions-heading">Actions</th></>} renderRow={row => <><><td><strong className="document-number">{row.number}</strong></td><td>{row.orderNumber}</td><td>{row.customerName}</td><td className="nowrap">{dateLabel(row.deliveryDate)}</td><td>{row.receivedBy || '—'}</td></><td><div className="row-actions"><button className="text-button" disabled={busyRow === row.id} onClick={() => details(row)}>{busyRow === row.id ? 'Opening?' : 'View'}</button></div></td></>} />
-    {['new', 'edit'].includes(dialog?.type) && <CreateDeliveryReceiptForm record={dialog.record} orders={data['sales-orders']} customers={data.customers} onClose={() => setDialog(null)} onSaved={saved} />}
-    {dialog?.type === 'view' && <DocumentView kind="delivery-receipts" record={dialog.record} onClose={() => setDialog(null)} />}
+    <RecordsCard title="Delivery Receipt" label="Delivery receipts" icon="arrowUpRight" addLabel="New delivery receipt" mobilePreview={['Invoice', 'Delivered to', 'Delivery date', 'Received by']} rows={rows} loading={loading} loaded={loaded} onRefresh={onReload} headers={<><th>Receipt</th><th>Invoice</th><th>Sales order</th><th>Delivered to</th><th>Delivery date</th><th>Received by</th><th className="actions-heading">Actions</th></>} renderRow={row => <><td><strong className="document-number">{row.number}</strong></td><td>{row.invoiceNumber || '—'}</td><td>{row.orderNumber || '—'}</td><td>{row.deliveredTo ?? row.customerName ?? '—'}</td><td className="nowrap">{dateLabel(row.deliveryDate)}</td><td>{row.receivedBy || '—'}</td><td><div className="row-actions"><button className="text-button" disabled={busyRow === row.id} onClick={() => details(row)}>{busyRow === row.id ? 'Opening...' : 'View'}</button></div></td></>} />
+    {dialog?.type === 'new' && <CreateDeliveryReceiptForm invoices={data['sales-invoices']} onClose={() => setDialog(null)} onSaved={saved} />}
+    {dialog?.type === 'view' && <DeliveryReceiptView record={dialog.record} onClose={() => setDialog(null)} />}
   </>;
 }

@@ -99,7 +99,7 @@ test('An invoiced Sales Order exposes quantity-only edits, enforces invoice and 
   let current = orderFixture();
   const documentItems = current.items.map((item, index) => ({ ...item, quantity: index ? '1.250' : '6.125', grossAmount: index ? '2.500000' : '61.250000', netAmount: index ? '2.500000' : '61.250000', amount: index ? '2.500000' : '61.250000', lineTotal: index ? '2.500000' : '61.250000' }));
   const invoice = { ...structuredClone(current), id: 71, number: 'SI-QTY-SNAPSHOT', orderId: 11, orderNumber: current.number, invoiceDate: '2026-11-14', dueDate: '2026-12-14', total: '63.750000', grossAmount: '63.750000', netAmount: '63.750000', paidAmount: '0.000000', status: 'unpaid', items: documentItems };
-  const delivery = { ...structuredClone(current), id: 81, number: 'DR-QTY-SNAPSHOT', orderId: 11, orderNumber: current.number, deliveryDate: '2026-11-15', receivedBy: 'Snapshot Receiver', address: 'Snapshot receiving bay', items: current.items.map((item, index) => ({ ...item, quantity: index ? '2.375' : '4.000' })) };
+  const delivery = { id: 81, number: 'DR-QTY-SNAPSHOT', invoiceId: null, invoiceNumber: null, orderId: 11, orderNumber: current.number, customerName: current.customerName, deliveredTo: 'Legacy snapshot receiver company', deliveryDate: '2026-11-15', receivedBy: 'Snapshot Receiver', address: 'Snapshot receiving bay', paymentTerm: current.paymentTerm, preparedByName: actor.name, items: current.items.map(({ productId, productName, sku, description, unit }, index) => ({ productId, productName, sku, description, unit, quantity: index ? '2.375' : '4.000' })) };
   const shipping = { ...structuredClone(invoice), id: 91, number: 'SHI-QTY-SNAPSHOT', shippingDate: '2026-11-15', invoiceNumber: invoice.number, deliveryNumber: delivery.number, carrier: 'Snapshot carrier', trackingNumber: 'TRACK-SNAPSHOT' };
   const snapshots = JSON.stringify({ invoice, delivery, shipping });
   const writes = [];
@@ -171,6 +171,12 @@ test('An invoiced Sales Order exposes quantity-only edits, enforces invoice and 
       await expect(rows.nth(0).locator('[data-invoice-column="quantity"]')).toHaveText(quantities[0]);
       await expect(rows.nth(1).locator('[data-invoice-column="quantity"]')).toHaveText(quantities[1]);
       await expect(dialog.locator('[data-invoice-summary] [data-invoice-field="totalAmountDue"]')).toHaveText('63.75');
+    } else if (title === 'Delivery Receipt') {
+      const rows = dialog.locator('[data-dr-item]');
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0).locator('[data-dr-column="quantity"]')).toHaveText(quantities[0]);
+      await expect(rows.nth(1).locator('[data-dr-column="quantity"]')).toHaveText(quantities[1]);
+      await expect(dialog.locator('[data-dr-column="unitPrice"], [data-dr-field="totalAmountDue"]')).toHaveCount(0);
     } else {
       const rows = dialog.locator('.document-table > tbody > tr');
       await expect(rows).toHaveCount(2);
